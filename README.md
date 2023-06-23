@@ -37,11 +37,11 @@ Alternatively:
 
 SGEMM, every square matrix from 1&ndash;1536:
 
-![Max GFLOPS achieved](./Documentation/SGEMM_ensemble.png)
+![Max GFLOPS achieved](./Documentation/SGEMM.png)
 
 HGEMM\*\*, every square matrix from 1&ndash;2048:
 
-![Max GFLOPS achieved](./Documentation/HGEMM_ensemble.png)
+![Max GFLOPS achieved](./Documentation/HGEMM.png)
 
 GFLOPS during general matrix multiplication:
 
