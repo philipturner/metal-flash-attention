@@ -36,6 +36,7 @@
 		987E360D2A45E6A100ACACE3 /* metal_simdgroup_event */ = {isa = PBXFileReference; explicitFileType = sourcecode.metal; path = metal_simdgroup_event; sourceTree = "<group>"; };
 		987E36122A45E74800ACACE3 /* metal_simdgroup_matrix_storage */ = {isa = PBXFileReference; explicitFileType = sourcecode.metal; path = metal_simdgroup_matrix_storage; sourceTree = "<group>"; };
 		987E36142A45E90700ACACE3 /* GEMM.metal */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.metal; path = GEMM.metal; sourceTree = "<group>"; };
+		987E36162A4614D600ACACE3 /* metal_precision */ = {isa = PBXFileReference; lastKnownFileType = text; path = metal_precision; sourceTree = "<group>"; };
 /* End PBXFileReference section */
 
 /* Begin PBXFrameworksBuildPhase section */
@@ -94,6 +95,7 @@
 			children = (
 				987E360D2A45E6A100ACACE3 /* metal_simdgroup_event */,
 				987E36122A45E74800ACACE3 /* metal_simdgroup_matrix_storage */,
+				987E36162A4614D600ACACE3 /* metal_precision */,
 				987E36142A45E90700ACACE3 /* GEMM.metal */,
 			);
 			path = Sources;

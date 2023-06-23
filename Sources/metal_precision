@@ -1,0 +1,11 @@
+// -*- Metal -*-
+//===-- metal_precision ---------------------------------------------------===//
+// Copyright (c) 2023 Philip Turner. See MIT LICENSE
+//===----------------------------------------------------------------------===//
+
+#ifndef __METAL_PRECISION
+#define __METAL_PRECISION
+
+// TODO: Enumeration for selecting precision with function constants.
+
+#endif // __METAL_PRECISION
