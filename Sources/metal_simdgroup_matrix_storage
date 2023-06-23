@@ -1,0 +1,11 @@
+// -*- Metal -*-
+//===-- metal_simdgroup_matrix_storage ------------------------------------===//
+// Copyright (c) 2023 Philip Turner. See MIT LICENSE
+//===----------------------------------------------------------------------===//
+
+#ifndef __METAL_SIMDGROUP_MATRIX_STORAGE
+#define __METAL_SIMDGROUP_MATRIX_STORAGE
+
+
+
+#endif // __METAL_SIMDGROUP_MATRIX_STORAGE
