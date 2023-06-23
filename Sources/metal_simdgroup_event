@@ -6,6 +6,10 @@
 #ifndef __METAL_SIMDGROUP_EVENT
 #define __METAL_SIMDGROUP_EVENT
 
+// Contains C++ symbols accessible to a developer through automatic code
+// completion in Xcode 14.2. Formatted with the same style as the Metal Standard
+// Library for consistency with other Metal code.
+
 #if defined(__HAVE_SIMDGROUP_FUTURE__)
 #include <metal_simdgroup_future>
 #endif
