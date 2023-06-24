@@ -197,7 +197,7 @@ void _gemm_impl(device T *A [[buffer(0)]],
     }
   }
   
-  // If K_splits == 1, never access sid.z.
+  // If there are no K splits, do not access sid.z.
   ushort3 offset_in_group(sid.x * N_simd + offset_in_simd.x,
                           sid.y * M_simd + offset_in_simd.y, 0);
   if (K_splits > 1) {
@@ -236,16 +236,16 @@ void _gemm_impl(device T *A [[buffer(0)]],
 #pragma clang loop unroll(full)
     for (ushort k = 0; k < K_simd_padded; k += 8) {
       multiply_accumulate(sram, A_block_src, B_block_src);
-      A_block_src += 8;
-      B_block_src += 8 + N_group;
+      A_block_src += A_trans ? 8 * M_group : 8;
+      B_block_src += B_trans ? 8 : 8 * N_group;
     }
     
     if (K_floor + K_group < K) {
 #pragma clang loop unroll(full)
       for (ushort k = K_simd_padded; k < K_simd; k += 8) {
         multiply_accumulate(sram, A_block_src, B_block_src);
-        A_block_src += 8;
-        B_block_src += 8 + N_group;
+        A_block_src += A_trans ? 8 * M_group : 8;
+        B_block_src += B_trans ? 8 : 8 * N_group;
       }
       threadgroup_barrier(mem_flags::mem_threadgroup);
       
@@ -264,12 +264,12 @@ kernel void hgemm(device half *A [[buffer(0)]],
                   device half *B [[buffer(1)]],
                   device half *C [[buffer(2)]],
                   device void *D [[buffer(3), function_constant(fused_activation)]],
-                                   
+                  
                   threadgroup half *threadgroup_block [[threadgroup(0)]],
                   constant ulong3 *matrix_offsets [[buffer(10), function_constant(batched)]],
                   typename activation_functor<half>::function_table table [[buffer(11), function_constant(fused_activation)]],
                   constant uint *activation_function_offsets [[buffer(12), function_constant(batched_fused_activation)]],
-                                   
+                  
                   uint3 gid [[threadgroup_position_in_grid]],
                   ushort sidx [[simdgroup_index_in_threadgroup]],
                   ushort lane_id [[thread_index_in_simdgroup]])
@@ -281,12 +281,12 @@ kernel void sgemm(device float *A [[buffer(0)]],
                   device float *B [[buffer(1)]],
                   device float *C [[buffer(2)]],
                   device void *D [[buffer(3), function_constant(fused_activation)]],
-                                   
+                  
                   threadgroup float *threadgroup_block [[threadgroup(0)]],
                   constant ulong3 *matrix_offsets [[buffer(10), function_constant(batched)]],
                   typename activation_functor<float>::function_table table [[buffer(11), function_constant(fused_activation)]],
                   constant uint *activation_function_offsets [[buffer(12), function_constant(batched_fused_activation)]],
-                                   
+                  
                   uint3 gid [[threadgroup_position_in_grid]],
                   ushort sidx [[simdgroup_index_in_threadgroup]],
                   ushort lane_id [[thread_index_in_simdgroup]])
