@@ -112,7 +112,8 @@ METAL_FUNC void prefetch(threadgroup T *A_block, device T *A,
 template <typename T>
 METAL_FUNC void multiply_accumulate(thread simdgroup_matrix_storage<T> *sram,
                                     const threadgroup T *A_block,
-                                    const threadgroup T *B_block)
+                                    const threadgroup T *B_block,
+                                    bool accumulate = true)
 {
   // Elide multiplications on the edge if any matrix dimension is smaller than
   // the block dimension.
@@ -140,7 +141,7 @@ METAL_FUNC void multiply_accumulate(thread simdgroup_matrix_storage<T> *sram,
     for (ushort n = 0; n < N_padded; n += 8) {
       auto B = B_sram(sram, ushort2(0, n));
       auto C = C_sram(sram, ushort2(m, n));
-      C->multiply(*A, *B);
+      C->multiply(*A, *B, accumulate);
     }
   }
 }
@@ -214,11 +215,13 @@ void _gemm_impl(device T *A [[buffer(0)]],
     prefetch(A_block, A, A_tile_src, A_offset, B_block, B, B_tile_src, B_offset, 0);
   }
   
+  if (K > K_simd) {
 #pragma clang loop unroll(full)
-  for (int m = 0; m < M_simd; m += K_simd) {
+    for (int m = 0; m < M_simd; m += K_simd) {
 #pragma clang loop unroll(full)
-    for (int n = 0; n < N_simd; n += K_simd) {
-      *C_sram(sram, ushort2(n, m)) = simdgroup_matrix_storage<T>(0);
+      for (int n = 0; n < N_simd; n += K_simd) {
+        *C_sram(sram, ushort2(n, m)) = simdgroup_matrix_storage<T>(0);
+      }
     }
   }
   
@@ -235,7 +238,8 @@ void _gemm_impl(device T *A [[buffer(0)]],
     
 #pragma clang loop unroll(full)
     for (ushort k = 0; k < K_simd_padded; k += 8) {
-      multiply_accumulate(sram, A_block_src, B_block_src);
+      bool accumulate = !(k == 0 && K <= K_simd);
+      multiply_accumulate(sram, A_block_src, B_block_src, accumulate);
       A_block_src += A_trans ? 8 * M_group : 8;
       B_block_src += B_trans ? 8 : 8 * N_group;
     }
