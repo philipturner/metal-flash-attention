@@ -37,6 +37,7 @@
 		987E36122A45E74800ACACE3 /* metal_simdgroup_matrix_storage */ = {isa = PBXFileReference; explicitFileType = sourcecode.metal; path = metal_simdgroup_matrix_storage; sourceTree = "<group>"; };
 		987E36142A45E90700ACACE3 /* GEMM.metal */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.metal; path = GEMM.metal; sourceTree = "<group>"; };
 		987E36162A4614D600ACACE3 /* metal_precision */ = {isa = PBXFileReference; lastKnownFileType = text; path = metal_precision; sourceTree = "<group>"; };
+		98F7440E2A4A008C00B5E60A /* build.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = build.swift; sourceTree = "<group>"; };
 /* End PBXFileReference section */
 
 /* Begin PBXFrameworksBuildPhase section */
@@ -53,6 +54,7 @@
 		987E35D22A45E4F400ACACE3 = {
 			isa = PBXGroup;
 			children = (
+				98F7440E2A4A008C00B5E60A /* build.swift */,
 				987E36032A45E5D200ACACE3 /* Documentation */,
 				987E36022A45E5CC00ACACE3 /* README.md */,
 				987E36012A45E5C600ACACE3 /* LICENSE */,

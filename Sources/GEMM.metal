@@ -146,8 +146,7 @@ METAL_FUNC void multiply_accumulate(thread simdgroup_matrix_storage<T> *sram,
 
 template <typename T>
 METAL_FUNC void partial_store(thread simdgroup_matrix_storage<T> *sram,
-                              threadgroup T *C_block, bool is_k_summation,
-                              bool is_fused_activation = false)
+                              threadgroup T *C_block, bool is_k_summation)
 {
 #pragma clang loop unroll(full)
   for (ushort m = 0; m < M_padded; m += 8) {
@@ -156,8 +155,6 @@ METAL_FUNC void partial_store(thread simdgroup_matrix_storage<T> *sram,
       ushort2 origin(n, m);
       if (is_k_summation) {
         C_sram(sram, origin)->store(C_block, N_simd, origin);
-      } else if (is_fused_activation) {
-        C_sram(sram, origin)->store(C_block, N_group, origin);
       } else {
         C_sram(sram, origin)->store(C_block, C_block_leading_dim, origin, C_trans);
       }
@@ -198,6 +195,23 @@ METAL_FUNC void partial_accumulate(thread simdgroup_matrix_storage<T> *sram,
 }
 
 template <typename T>
+METAL_FUNC void async_access_accumulator(threadgroup T *C_block, device T *C,
+                                         uint2 C_offset, bool is_store)
+{
+  ushort2 C_tile(min(uint(N_group), N - C_offset.x),
+                 min(uint(M_group), M - C_offset.y));
+  auto C_src = simdgroup_matrix_storage<T>::apply_offset(C, C_leading_dim, C_offset, C_trans);
+  
+  simdgroup_event event;
+  if (is_store) {
+    event.async_copy(C_src, C_leading_dim, C_tile, C_block, C_block_leading_dim, C_tile, C_trans);
+  } else {
+    event.async_copy(C_block, C_block_leading_dim, C_tile, C_src, C_leading_dim, C_tile, C_trans);
+    simdgroup_event::wait(1, &event);
+  }
+}
+
+template <typename T>
 METAL_FUNC void store_accumulator(thread simdgroup_matrix_storage<T> *sram,
                                   device T *C, bool m_is_edge, bool n_is_edge)
 {
@@ -223,7 +237,8 @@ struct activation_functor {
                         uint grid_index_in_batch,
                         uint2 matrix_origin,
                         ushort2 tile_dimensions,
-                        ushort lane_id);
+                        ushort lane_id,
+                        bool C_trans); // ignore if you know C won't transpose
   
   typedef visible_function_table<function> function_table;
 };
@@ -377,13 +392,7 @@ void _gemm_impl(device T *A [[buffer(0)]],
   
   if (beta != 0) {
     if (sidx == 0) {
-      ushort2 C_tile(min(uint(N_group), N - C_offset.x),
-                     min(uint(M_group), M - C_offset.y));
-      auto C_src = simdgroup_matrix_storage<T>::apply_offset(C, C_leading_dim, C_offset, C_trans);
-      
-      simdgroup_event event;
-      event.async_copy(threadgroup_block, C_block_leading_dim, C_tile, C_src, C_leading_dim, C_tile, C_trans);
-      simdgroup_event::wait(1, &event);
+      async_access_accumulator(threadgroup_block, C, C_offset, false);
     }
     threadgroup_barrier(mem_flags::mem_threadgroup);
     
@@ -394,7 +403,7 @@ void _gemm_impl(device T *A [[buffer(0)]],
   
   if (fused_activation) {
     auto C_block = simdgroup_matrix_storage<T>::apply_offset(threadgroup_block, N_group, C_block_offset);
-    partial_store(sram, C_block, false, true);
+    partial_store(sram, C_block, false);
     simdgroup_barrier(mem_flags::mem_threadgroup);
     
     uint grid_index_in_batch = (batched ? gid.z : 0);
@@ -406,38 +415,20 @@ void _gemm_impl(device T *A [[buffer(0)]],
     if (batched_fused_activation) {
       function_index = activation_function_offsets[gid.z];
     }
-    table[function_index](C_block, D, grid_index_in_batch, matrix_origin, tile_dimensions, lane_id);
-    
-    if (C_trans) {
-      simdgroup_barrier(mem_flags::mem_threadgroup);
-#pragma clang loop unroll(full)
-      for (ushort m = 0; m < M_padded; m += 8) {
-#pragma clang loop unroll(full)
-        for (ushort n = 0; n < N_padded; n += 8) {
-          ushort2 origin(n, m);
-          C_sram(sram, origin)->load(C_block, N_group, origin);
-        }
-      }
-    }
+    table[function_index](C_block, D, grid_index_in_batch, matrix_origin, tile_dimensions, lane_id, C_trans);
     threadgroup_barrier(mem_flags::mem_threadgroup);
-  }
-  
-  if ((fused_activation && !C_trans) || (M % 8 != 0) || (N % 8 != 0)) {
-    if (fused_activation && !C_trans) {
-      // Already stored in threadgroup memory.
-    } else {
-      auto C_block = simdgroup_matrix_storage<T>::apply_offset(threadgroup_block, C_block_leading_dim, C_block_offset, C_trans);
-      partial_store(sram, C_block, false);
-      threadgroup_barrier(mem_flags::mem_threadgroup);
+    
+    if (sidx != 0) {
+      async_access_accumulator(threadgroup_block, C, C_offset, true);
+      return;
     }
+  } else if ((M % 8 != 0) || (N % 8 != 0)) {
+    auto C_block = simdgroup_matrix_storage<T>::apply_offset(threadgroup_block, C_block_leading_dim, C_block_offset, C_trans);
+    partial_store(sram, C_block, false);
+    threadgroup_barrier(mem_flags::mem_threadgroup);
     
     if (sidx == 0) {
-      ushort2 C_tile(min(uint(N_group), N - C_offset.x),
-                     min(uint(M_group), M - C_offset.y));
-      auto C_src = simdgroup_matrix_storage<T>::apply_offset(C, C_leading_dim, C_offset, C_trans);
-      
-      simdgroup_event event;
-      event.async_copy(C_src, C_leading_dim, C_tile, threadgroup_block, C_block_leading_dim, C_tile, C_trans);
+      async_access_accumulator(threadgroup_block, C, C_offset, true);
     }
   } else {
     uint2 matrix_origin = C_offset + uint2(C_block_offset);
