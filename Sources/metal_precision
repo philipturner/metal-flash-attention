@@ -6,6 +6,8 @@
 #ifndef __METAL_PRECISION
 #define __METAL_PRECISION
 
-// TODO: Enumeration for selecting precision with function constants.
+#pragma METAL internals : enable
+
+#pragma METAL internals : disable
 
 #endif // __METAL_PRECISION

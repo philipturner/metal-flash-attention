@@ -164,26 +164,41 @@ METAL_FUNC void partial_store(thread simdgroup_matrix_storage<T> *sram,
 
 template <typename T>
 METAL_FUNC void partial_accumulate(thread simdgroup_matrix_storage<T> *sram,
-                                   threadgroup T *C_block)
+                                   threadgroup T *C_block, bool is_k_summation)
 {
 #pragma clang loop unroll(full)
   for (ushort m = 0; m < M_padded; m += 8) {
 #pragma clang loop unroll(full)
     for (ushort n = 0; n < N_padded; n += 8) {
+      ushort2 origin(n, m);
       auto B = B_sram(sram, ushort2(n, 0));
-      B->load(C_block, N_simd, ushort2(n, m));
+      if (is_k_summation || !C_trans) {
+        B->load(C_block, N_simd, origin);
+      } else if (C_trans) {
+        B->load(C_block, M_group, origin, true);
+      } else {
+        B->load(C_block, N_group, origin);
+      }
     }
 #pragma clang loop unroll(full)
     for (ushort n = 0; n < N_padded; n += 8) {
+      ushort2 origin(n, m);
       auto B = B_sram(sram, ushort2(n, 0));
-      auto C = C_sram(sram, ushort2(n, m));
-      C->thread_elements()[0] += B->thread_elements()[0];
+      auto C = C_sram(sram, origin);
+      if (is_k_summation) {
+        C->thread_elements()[0] += B->thread_elements()[0];
+      } else {
+        float2 C_old = float2(B->thread_elements()[0]);
+        float2 C_new = float2(C->thread_elements()[0]);
+        C->thread_elements()[0] = vec<T, 2>(fast::fma(C_old, beta, C_new));
+      }
     }
   }
 }
 
 template <typename T>
 struct activation_functor {
+  // WARNING: C is already transposed if you specify `C_trans`.
   using function = void(threadgroup T *C,
                         device void *D,
                         uint grid_index_in_batch,
@@ -262,8 +277,8 @@ void _gemm_impl(device T *A [[buffer(0)]],
   for (uint K_floor = 0; K_floor < K; K_floor += K_group) {
     ushort2 A_block_offset(offset_in_group.z, offset_in_group.y);
     ushort2 B_block_offset(offset_in_group.x, offset_in_group.z);
-    auto A_block_src = simdgroup_matrix_storage<T>::apply_offset(A_block, A_block_leading_dim, A_block_offset);
-    auto B_block_src = simdgroup_matrix_storage<T>::apply_offset(B_block, B_block_leading_dim, B_block_offset);
+    auto A_block_src = simdgroup_matrix_storage<T>::apply_offset(A_block, A_block_leading_dim, A_block_offset, A_trans);
+    auto B_block_src = simdgroup_matrix_storage<T>::apply_offset(B_block, B_block_leading_dim, B_block_offset, B_trans);
     threadgroup_barrier(mem_flags::mem_threadgroup);
     
     if (K_splits > 1 && K_floor + offset_in_group.z >= K) {
@@ -302,7 +317,7 @@ void _gemm_impl(device T *A [[buffer(0)]],
       threadgroup_barrier(mem_flags::mem_threadgroup);
       
       if (id_in_sum > 0) {
-        ushort index = receivers * 2 + (id_in_sum - 1);
+        ushort index = (sid.z % receivers) * 2 + (id_in_sum - 1);
         partial_store(sram, threadgroup_block + index * M_simd * N_simd);
       }
       threadgroup_barrier(mem_flags::mem_threadgroup);
@@ -311,7 +326,7 @@ void _gemm_impl(device T *A [[buffer(0)]],
 #pragma clang loop unroll(full)
       for (ushort id_in_sum = 0; id_in_sum < 2; ++id_in_sum) {
         ushort index = receivers * 2 + id_in_sum;
-        partial_accumulate(sram, threadgroup_block + index * M_simd * N_simd);
+        partial_accumulate(sram, threadgroup_block + index * M_simd * N_simd, true);
       }
       reach = K_splits / 6;
     }
@@ -325,7 +340,7 @@ void _gemm_impl(device T *A [[buffer(0)]],
       }
       threadgroup_barrier(mem_flags::mem_threadgroup);
       if (sid.z >= reach) { return; }
-      partial_accumulate(sram, threadgroup_block + sid.z * M_simd * N_simd);
+      partial_accumulate(sram, threadgroup_block + sid.z * M_simd * N_simd, true);
     }
   }
   
@@ -341,7 +356,10 @@ void _gemm_impl(device T *A [[buffer(0)]],
   }
   
   uint2 C_offset(B_offset.x, A_offset.y);
+  ushort2 C_block_offset = offset_in_group.xy;
+  auto C_block_src = simdgroup_matrix_storage<T>::apply_offset(threadgroup_block, C_block_leading_dim, C_block_offset, C_trans);
   threadgroup_barrier(mem_flags::mem_threadgroup);
+  
   if (beta != 0) {
     // To properly implement beta in the presence of alpha, fetch the previous C
     // value at the end when storing the accumulator.
@@ -351,15 +369,20 @@ void _gemm_impl(device T *A [[buffer(0)]],
       C_tile.y = min(uint(M_group), M - A_offset.y);
       auto C_src = simdgroup_matrix_storage<T>::apply_offset(C, C_leading_dim, C_offset, C_trans);
       
-//      simdgroup_event event;
-//      event.async_copy(threadgroup_block, C_block_leading_dim, , <#const device T *src#>, <#ulong src_elements_per_row#>, <#ulong src_element_stride#>, <#ulong2 src_tile_dimensions#>, <#long2 offset_in_src_tile#>, <#simdgroup_async_copy_clamp_mode clamp_mode#>)
+      simdgroup_event event;
+      event.async_copy(threadgroup_block, C_block_leading_dim, C_tile, C_src, C_leading_dim, C_tile, C_trans);
+      simdgroup_event::wait(1, &event);
     }
     threadgroup_barrier(mem_flags::mem_threadgroup);
-    // update
-    // auto C_block = simdgroup_matrix_storage<T>::apply_offset();
+    partial_accumulate(sram, C_block_src, false);
   }
   
-  // TODO: Properly account for C_trans.
+  // No need for another threadgroup barrier here. The simd will overwrite the
+  // exact same zone it read from in 'if (beta != 0) { ... }'.
+  
+  // TODO: Apply activation function. Transpose before writing to TG memory.
+  
+  // TODO: Properly account for C_trans during direct store.
 //  uint2 C_offset(B_offset.x, A_offset.y);
 }
 
