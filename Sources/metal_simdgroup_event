@@ -42,23 +42,23 @@ namespace metal
     }
     
     template <typename T>
-    METAL_FUNC void async_copy(threadgroup T *dst, ulong dst_elements_per_row, ulong dst_element_stride, ulong2 dst_tile_dimensions, const device T *src, ulong src_elements_per_row, ulong src_element_stride, ulong2 src_tile_dimensions, long2 offset_in_src_tile, simdgroup_async_copy_clamp_mode clamp_mode, bool transpose_matrix = false) thread {
+    METAL_FUNC void async_copy(threadgroup T *dst, ulong dst_elements_per_row, ulong2 dst_tile_dimensions, const device T *src, ulong src_elements_per_row, ulong2 src_tile_dimensions, long2 offset_in_src_tile, simdgroup_async_copy_clamp_mode clamp_mode, bool transpose_matrix = false) thread {
 #if defined(__HAVE_SIMDGROUP_FUTURE__)
       if (transpose_matrix) {
-        event = __metal_simdgroup_async_copy_2d(sizeof(T), alignof(T), reinterpret_cast<threadgroup void *>(dst), dst_elements_per_row, dst_element_stride, dst_tile_dimensions.yx, reinterpret_cast<const device void *>(src), src_elements_per_row, src_element_stride, src_tile_dimensions.yx, offset_in_src_tile, static_cast<int>(clamp_mode));
+        event = __metal_simdgroup_async_copy_2d(sizeof(T), alignof(T), reinterpret_cast<threadgroup void *>(dst), dst_elements_per_row, 1, dst_tile_dimensions.yx, reinterpret_cast<const device void *>(src), src_elements_per_row, 1, src_tile_dimensions.yx, offset_in_src_tile, static_cast<int>(clamp_mode));
       } else {
-        event = __metal_simdgroup_async_copy_2d(sizeof(T), alignof(T), reinterpret_cast<threadgroup void *>(dst), dst_elements_per_row, dst_element_stride, dst_tile_dimensions, reinterpret_cast<const device void *>(src), src_elements_per_row, src_element_stride, src_tile_dimensions, offset_in_src_tile, static_cast<int>(clamp_mode));
+        event = __metal_simdgroup_async_copy_2d(sizeof(T), alignof(T), reinterpret_cast<threadgroup void *>(dst), dst_elements_per_row, 1, dst_tile_dimensions, reinterpret_cast<const device void *>(src), src_elements_per_row, 1, src_tile_dimensions, offset_in_src_tile, static_cast<int>(clamp_mode));
       }
 #endif
     }
     
     template <typename T>
-    METAL_FUNC void async_copy(device T *dst, ulong dst_elements_per_row, ulong dst_element_stride, ulong2 dst_tile_dimensions, long2 offset_in_dst_tile, const threadgroup T *src, ulong src_elements_per_row, ulong src_element_stride, ulong2 src_tile_dimensions, bool transpose_matrix = false) thread {
+    METAL_FUNC void async_copy(device T *dst, ulong dst_elements_per_row,  ulong2 dst_tile_dimensions, long2 offset_in_dst_tile, const threadgroup T *src, ulong src_elements_per_row, ulong2 src_tile_dimensions, bool transpose_matrix = false) thread {
 #if defined(__HAVE_SIMDGROUP_FUTURE__)
       if (transpose_matrix) {
-        event = __metal_simdgroup_async_copy_2d(sizeof(T), alignof(T), reinterpret_cast<device void *>(dst), dst_elements_per_row, dst_element_stride, dst_tile_dimensions.yx, reinterpret_cast<const threadgroup void *>(src), src_elements_per_row, src_element_stride, src_tile_dimensions.yx, offset_in_dst_tile, 0);
+        event = __metal_simdgroup_async_copy_2d(sizeof(T), alignof(T), reinterpret_cast<device void *>(dst), dst_elements_per_row, 1, dst_tile_dimensions.yx, reinterpret_cast<const threadgroup void *>(src), src_elements_per_row, src_element_stride, src_tile_dimensions.yx, offset_in_dst_tile, 0);
       } else {
-        event = __metal_simdgroup_async_copy_2d(sizeof(T), alignof(T), reinterpret_cast<device void *>(dst), dst_elements_per_row, dst_element_stride, dst_tile_dimensions, reinterpret_cast<const threadgroup void *>(src), src_elements_per_row, src_element_stride, src_tile_dimensions, offset_in_dst_tile, 0);
+        event = __metal_simdgroup_async_copy_2d(sizeof(T), alignof(T), reinterpret_cast<device void *>(dst), dst_elements_per_row, 1, dst_tile_dimensions, reinterpret_cast<const threadgroup void *>(src), src_elements_per_row, src_element_stride, src_tile_dimensions, offset_in_dst_tile, 0);
       }
 #endif
     }
