@@ -126,14 +126,12 @@ METAL_FUNC void multiply_accumulate(thread simdgroup_matrix_storage<T> *sram,
 #pragma clang loop unroll(full)
   for (ushort m = 0; m < M_padded; m += 8) {
     ushort2 origin(0, m);
-    auto A = A_sram(sram, origin);
-    A->load(A_block, A_block_leading_dim, origin, A_trans);
+    A_sram(sram, origin)->load(A_block, A_block_leading_dim, origin, A_trans);
   }
 #pragma clang loop unroll(full)
   for (ushort n = 0; n < N_padded; n += 8) {
     ushort2 origin(n, 0);
-    auto B = B_sram(sram, origin);
-    B->load(B_block, B_block_leading_dim, origin, B_trans);
+    B_sram(sram, origin)->load(B_block, B_block_leading_dim, origin, B_trans);
   }
 #pragma clang loop unroll(full)
   for (ushort m = 0; m < M_padded; m += 8) {
@@ -156,8 +154,7 @@ METAL_FUNC void partial_store(thread simdgroup_matrix_storage<T> *sram,
 #pragma clang loop unroll(full)
     for (ushort n = 0; n < N_padded; n += 8) {
       ushort2 origin(n, m);
-      auto C = C_sram(sram, origin);
-      C->store(C_block, N_simd, origin);
+      C_sram(sram, origin)->store(C_block, N_simd, origin);
     }
   }
 }
@@ -174,10 +171,8 @@ METAL_FUNC void partial_accumulate(thread simdgroup_matrix_storage<T> *sram,
       auto B = B_sram(sram, ushort2(n, 0));
       if (is_k_summation || !C_trans) {
         B->load(C_block, N_simd, origin);
-      } else if (C_trans) {
-        B->load(C_block, M_group, origin, true);
       } else {
-        B->load(C_block, N_group, origin);
+        B->load(C_block, C_block_leading_dim, origin, C_trans);
       }
     }
 #pragma clang loop unroll(full)
@@ -266,9 +261,9 @@ void _gemm_impl(device T *A [[buffer(0)]],
   
   if (K > K_simd) {
 #pragma clang loop unroll(full)
-    for (int m = 0; m < M_simd; m += K_simd) {
+    for (int m = 0; m < M_padded; m += K_simd) {
 #pragma clang loop unroll(full)
-      for (int n = 0; n < N_simd; n += K_simd) {
+      for (int n = 0; n < N_padded; n += K_simd) {
         *C_sram(sram, ushort2(n, m)) = simdgroup_matrix_storage<T>(0);
       }
     }
@@ -346,27 +341,25 @@ void _gemm_impl(device T *A [[buffer(0)]],
   
   if (abs(alpha) != 0) {
 #pragma clang loop unroll(full)
-    for (int m = 0; m < M_simd; m += K_simd) {
+    for (int m = 0; m < M_padded; m += K_simd) {
 #pragma clang loop unroll(full)
-      for (int n = 0; n < N_simd; n += K_simd) {
-        auto C = C_sram(sram, ushort2(n, m));
-        C->thread_elements()[0] *= alpha;
+      for (int n = 0; n < N_padded; n += K_simd) {
+        C_sram(sram, ushort2(n, m))->thread_elements()[0] *= alpha;
       }
     }
   }
   
   uint2 C_offset(B_offset.x, A_offset.y);
   ushort2 C_block_offset = offset_in_group.xy;
-  auto C_block_src = simdgroup_matrix_storage<T>::apply_offset(threadgroup_block, C_block_leading_dim, C_block_offset, C_trans);
+  auto C_block = simdgroup_matrix_storage<T>::apply_offset(threadgroup_block, C_block_leading_dim, C_block_offset, C_trans);
   threadgroup_barrier(mem_flags::mem_threadgroup);
   
   if (beta != 0) {
     // To properly implement beta in the presence of alpha, fetch the previous C
     // value at the end when storing the accumulator.
     if (sidx == 0) {
-      ushort2 C_tile;
-      C_tile.x = min(uint(N_group), N - B_offset.x);
-      C_tile.y = min(uint(M_group), M - A_offset.y);
+      ushort2 C_tile(min(uint(N_group), N - C_offset.x),
+                     min(uint(M_group), M - C_offset.y));
       auto C_src = simdgroup_matrix_storage<T>::apply_offset(C, C_leading_dim, C_offset, C_trans);
       
       simdgroup_event event;
@@ -374,16 +367,34 @@ void _gemm_impl(device T *A [[buffer(0)]],
       simdgroup_event::wait(1, &event);
     }
     threadgroup_barrier(mem_flags::mem_threadgroup);
-    partial_accumulate(sram, C_block_src, false);
+    partial_accumulate(sram, C_block, false);
   }
   
-  // No need for another threadgroup barrier here. The simd will overwrite the
-  // exact same zone it read from in 'if (beta != 0) { ... }'.
-  
-  // TODO: Apply activation function. Transpose before writing to TG memory.
-  
-  // TODO: Properly account for C_trans during direct store.
-//  uint2 C_offset(B_offset.x, A_offset.y);
+  if (fused_activation || (M % 8 != 0) || (N % 8 != 0)) {
+    // No need for another threadgroup barrier here. The simd will overwrite the
+    // exact same zone it read from in 'if (beta != 0) { ... }'.
+#pragma clang loop unroll(full)
+    for (int m = 0; m < M_padded; m += K_simd) {
+#pragma clang loop unroll(full)
+      for (int n = 0; n < N_padded; n += K_simd) {
+        ushort2 origin(n, m);
+        C_sram(sram, origin)->store(C_block, C_block_leading_dim, origin, C_trans);
+      }
+    }
+    
+    if (fused_activation) {
+      uint grid_index_in_batch = (batched ? gid.z : 0);
+      uint2 matrix_origin = C_offset + uint2(C_block_offset);
+      matrix_origin &= ~7;
+      ushort2 tile_dimensions(min(uint(N_group), N - matrix_origin.x),
+                              min(uint(M_group), M - matrix_origin.y));
+      
+      // TODO: Apply activation function. Transpose before writing to TG memory.
+    }
+  } else {
+    // TODO: Properly account for C_trans during direct store.
+  //  uint2 C_offset(B_offset.x, A_offset.y);
+  }
 }
 
 kernel void hgemm(device half *A [[buffer(0)]],
