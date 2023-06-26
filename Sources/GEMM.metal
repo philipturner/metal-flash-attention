@@ -68,7 +68,6 @@ constant ushort B_sram_offset = A_sram_offset + A_sram_length;
 constant ushort C_sram_offset = B_sram_offset + B_sram_length;
 constant ushort A_block_offset = 0;
 constant ushort B_block_offset = A_block_offset + A_block_length;
-constant ushort threadgroup_memory_length = B_block_offset + B_block_length;
 
 template <typename T>
 METAL_FUNC thread simdgroup_matrix_storage<T>* A_sram(thread simdgroup_matrix_storage<T> *sram, ushort2 matrix_origin) {
@@ -225,7 +224,7 @@ void _gemm_impl(device T *A [[buffer(0)]],
   ushort2 offset_in_simd = simdgroup_matrix_storage<T>::offset(lane_id);
   
   uint2 A_offset(0, gid.y * M_group);
-  uint2 B_offset(gid.x * N_group);
+  uint2 B_offset(gid.x * N_group, 0);
   {
     uint C_base_offset_x = B_offset.x + sid.x * N_simd;
     uint C_base_offset_y = A_offset.y + sid.y * M_simd;
@@ -329,9 +328,37 @@ void _gemm_impl(device T *A [[buffer(0)]],
     }
   }
   
-  // To properly implement beta in the presence of alpha, fetch the previous C
-  // value at the end when storing the accumulator.
+  if (abs(alpha) != 0) {
+#pragma clang loop unroll(full)
+    for (int m = 0; m < M_simd; m += K_simd) {
+#pragma clang loop unroll(full)
+      for (int n = 0; n < N_simd; n += K_simd) {
+        auto C = C_sram(sram, ushort2(n, m));
+        C->thread_elements()[0] *= alpha;
+      }
+    }
+  }
+  
+  uint2 C_offset(B_offset.x, A_offset.y);
+  threadgroup_barrier(mem_flags::mem_threadgroup);
+  if (beta != 0) {
+    // To properly implement beta in the presence of alpha, fetch the previous C
+    // value at the end when storing the accumulator.
+    if (sidx == 0) {
+      ushort2 C_tile;
+      C_tile.x = min(uint(N_group), N - B_offset.x);
+      C_tile.y = min(uint(M_group), M - A_offset.y);
+      auto C_src = simdgroup_matrix_storage<T>::apply_offset(C, C_leading_dim, C_offset, C_trans);
+      
+      simdgroup_event event;
+//      event.a
+    }
+    threadgroup_barrier(mem_flags::mem_threadgroup);
+    // update
+  }
+  
   // TODO: Properly account for C_trans.
+//  uint2 C_offset(B_offset.x, A_offset.y);
 }
 
 kernel void hgemm(device half *A [[buffer(0)]],
