@@ -84,8 +84,8 @@ namespace metal
     
     METAL_FUNC void store(device T *src, uint elements_per_row, uint2 matrix_origin, bool transpose_matrix = false) {
       if (transpose_matrix) {
-        src[ulong(matrix_origin.x * elements_per_row) + matrix_origin.y] = *(thread_elements())[0];
-        src[ulong((matrix_origin.x + 1) * elements_per_row) + matrix_origin.y] = *(thread_elements())[1];
+        src[ulong(matrix_origin.x * elements_per_row) + matrix_origin.y] = thread_elements()[0][0];
+        src[ulong((matrix_origin.x + 1) * elements_per_row) + matrix_origin.y] = thread_elements()[0][1];
       } else {
         *reinterpret_cast<threadgroup vec<T, 2>*>(src + matrix_origin.y * elements_per_row + matrix_origin.x) = *(thread_elements());
       }
@@ -93,8 +93,8 @@ namespace metal
     
     METAL_FUNC void store(threadgroup T *src, ushort elements_per_row, ushort2 matrix_origin, bool transpose_matrix = false) {
       if (transpose_matrix) {
-        src[matrix_origin.x * elements_per_row + matrix_origin.y] = *(thread_elements())[0];
-        src[(matrix_origin.x + 1) * elements_per_row + matrix_origin.y] = *(thread_elements())[1];
+        src[matrix_origin.x * elements_per_row + matrix_origin.y] = thread_elements()[0][0];
+        src[(matrix_origin.x + 1) * elements_per_row + matrix_origin.y] = thread_elements()[0][1];
       } else {
         *reinterpret_cast<threadgroup vec<T, 2>*>(src + matrix_origin.y * elements_per_row + matrix_origin.x) = *(thread_elements());
       }

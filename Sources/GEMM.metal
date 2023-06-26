@@ -35,6 +35,13 @@ constant ushort M_simd [[function_constant(200)]];
 constant ushort N_simd [[function_constant(201)]];
 constant ushort K_simd [[function_constant(202)]];
 
+// Elide multiplications on the edge if any matrix dimension is smaller than
+// the block dimension.
+constant ushort M_modulo = (M % M_simd == 0) ? M_simd : (M % M_simd);
+constant ushort N_modulo = (N % N_simd == 0) ? N_simd : (N % N_simd);
+constant ushort M_padded = (M < M_simd) ? (M_modulo + 7) / 8 * 8 : M_simd;
+constant ushort N_padded = (N < N_simd) ? (N_modulo + 7) / 8 * 8 : N_simd;
+
 constant ushort M_splits [[function_constant(210)]];
 constant ushort N_splits [[function_constant(211)]];
 constant ushort K_splits [[function_constant(212)]];
@@ -55,6 +62,7 @@ constant ushort B_sram_length = 1 * (N_simd / 8);
 constant ushort A_block_length = (M_simd * M_splits) * (K_simd * K_splits);
 constant ushort B_block_length = (K_simd * K_splits) * (N_simd * N_splits);
 
+// Threadgroup block must fit entire C accumulator and partial sums.
 constant ushort A_sram_offset = 0;
 constant ushort B_sram_offset = A_sram_offset + A_sram_length;
 constant ushort C_sram_offset = B_sram_offset + B_sram_length;
@@ -115,33 +123,61 @@ METAL_FUNC void multiply_accumulate(thread simdgroup_matrix_storage<T> *sram,
                                     const threadgroup T *B_block,
                                     bool accumulate = true)
 {
-  // Elide multiplications on the edge if any matrix dimension is smaller than
-  // the block dimension.
-  const ushort M_modulo = (M % M_simd == 0) ? M_simd : (M % M_simd);
-  const ushort N_modulo = (N % N_simd == 0) ? N_simd : (N % N_simd);
-  const ushort M_padded = (M < M_simd) ? (M_modulo + 7) / 8 * 8 : M_simd;
-  const ushort N_padded = (N < N_simd) ? (N_modulo + 7) / 8 * 8 : N_simd;
-  
 #pragma clang loop unroll(full)
   for (ushort m = 0; m < M_padded; m += 8) {
-    ushort2 origin(m, 0);
+    ushort2 origin(0, m);
     auto A = A_sram(sram, origin);
     A->load(A_block, A_block_leading_dim, origin, A_trans);
   }
 #pragma clang loop unroll(full)
   for (ushort n = 0; n < N_padded; n += 8) {
-    ushort2 origin(0, n);
+    ushort2 origin(n, 0);
     auto B = B_sram(sram, origin);
     B->load(B_block, B_block_leading_dim, origin, B_trans);
   }
 #pragma clang loop unroll(full)
   for (ushort m = 0; m < M_padded; m += 8) {
-    auto A = A_sram(sram, ushort2(m, 0));
+    auto A = A_sram(sram, ushort2(0, m));
 #pragma clang loop unroll(full)
     for (ushort n = 0; n < N_padded; n += 8) {
-      auto B = B_sram(sram, ushort2(0, n));
-      auto C = C_sram(sram, ushort2(m, n));
+      auto B = B_sram(sram, ushort2(n, 0));
+      auto C = C_sram(sram, ushort2(n, m));
       C->multiply(*A, *B, accumulate);
+    }
+  }
+}
+
+template <typename T>
+METAL_FUNC void partial_store(thread simdgroup_matrix_storage<T> *sram,
+                              threadgroup T *C_block)
+{
+#pragma clang loop unroll(full)
+  for (ushort m = 0; m < M_padded; m += 8) {
+#pragma clang loop unroll(full)
+    for (ushort n = 0; n < N_padded; n += 8) {
+      ushort2 origin(n, m);
+      auto C = C_sram(sram, origin);
+      C->store(C_block, N_simd, origin);
+    }
+  }
+}
+
+template <typename T>
+METAL_FUNC void partial_accumulate(thread simdgroup_matrix_storage<T> *sram,
+                                   threadgroup T *C_block)
+{
+#pragma clang loop unroll(full)
+  for (ushort m = 0; m < M_padded; m += 8) {
+#pragma clang loop unroll(full)
+    for (ushort n = 0; n < N_padded; n += 8) {
+      auto B = B_sram(sram, ushort2(n, 0));
+      B->load(C_block, N_simd, ushort2(n, m));
+    }
+#pragma clang loop unroll(full)
+    for (ushort n = 0; n < N_padded; n += 8) {
+      auto B = B_sram(sram, ushort2(n, 0));
+      auto C = C_sram(sram, ushort2(n, m));
+      C->thread_elements()[0] += B->thread_elements()[0];
     }
   }
 }
@@ -207,8 +243,6 @@ void _gemm_impl(device T *A [[buffer(0)]],
   
   ushort2 A_tile_src;
   ushort2 B_tile_src;
-  const uint K_edge_floor = K - K_group_padded;
-  const uint K_edge_ceil = K_edge_floor + K_group_padded;
   if (sidx == 0) {
     A_tile_src.y = min(uint(M_group), M - A_offset.y);
     B_tile_src.x = min(uint(N_group), N - B_offset.x);
@@ -226,16 +260,15 @@ void _gemm_impl(device T *A [[buffer(0)]],
   }
   
   for (uint K_floor = 0; K_floor < K; K_floor += K_group) {
-    threadgroup_barrier(mem_flags::mem_threadgroup);
-    if (K_splits > 1 && K_floor + offset_in_group.z >= K) {
-      break;
-    }
-    
     ushort2 A_block_offset(offset_in_group.z, offset_in_group.y);
     ushort2 B_block_offset(offset_in_group.x, offset_in_group.z);
     auto A_block_src = simdgroup_matrix_storage<T>::apply_offset(A_block, A_block_leading_dim, A_block_offset);
     auto B_block_src = simdgroup_matrix_storage<T>::apply_offset(B_block, B_block_leading_dim, B_block_offset);
+    threadgroup_barrier(mem_flags::mem_threadgroup);
     
+    if (K_splits > 1 && K_floor + offset_in_group.z >= K) {
+      break;
+    }
 #pragma clang loop unroll(full)
     for (ushort k = 0; k < K_simd_padded; k += 8) {
       bool accumulate = !(k == 0 && K <= K_simd);
@@ -260,8 +293,45 @@ void _gemm_impl(device T *A [[buffer(0)]],
     }
   }
   
+  // Consolidate partial sums. K_splits can be 2, 3, 4, 6.
+  if (K_splits > 1) {
+    ushort reach = K_splits / 2;
+    if (K_splits % 3 == 0) {
+      ushort receivers = K_splits / 3;
+      ushort id_in_sum = sid.z / receivers;
+      threadgroup_barrier(mem_flags::mem_threadgroup);
+      
+      if (id_in_sum > 0) {
+        ushort index = receivers * 2 + (id_in_sum - 1);
+        partial_store(sram, threadgroup_block + index * M_simd * N_simd);
+      }
+      threadgroup_barrier(mem_flags::mem_threadgroup);
+      if (id_in_sum > 0) { return; }
+      
+#pragma clang loop unroll(full)
+      for (ushort id_in_sum = 0; id_in_sum < 2; ++id_in_sum) {
+        ushort index = receivers * 2 + id_in_sum;
+        partial_accumulate(sram, threadgroup_block + index * M_simd * N_simd);
+      }
+      reach = K_splits / 6;
+    }
+    
+#pragma clang loop unroll(full)
+    for (; reach > 0; reach /= 2) {
+      threadgroup_barrier(mem_flags::mem_threadgroup);
+      if (sid.z >= reach) {
+        ushort index = sid.z - reach;
+        partial_store(sram, threadgroup_block + index * M_simd * N_simd);
+      }
+      threadgroup_barrier(mem_flags::mem_threadgroup);
+      if (sid.z >= reach) { return; }
+      partial_accumulate(sram, threadgroup_block + sid.z * M_simd * N_simd);
+    }
+  }
+  
   // To properly implement beta in the presence of alpha, fetch the previous C
   // value at the end when storing the accumulator.
+  // TODO: Properly account for C_trans.
 }
 
 kernel void hgemm(device half *A [[buffer(0)]],
