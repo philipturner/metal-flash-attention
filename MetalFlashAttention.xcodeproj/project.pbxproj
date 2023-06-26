@@ -7,6 +7,8 @@
 	objects = {
 
 /* Begin PBXBuildFile section */
+		9835F45A2A4A3BA40095D0D0 /* Attention.metal in Sources */ = {isa = PBXBuildFile; fileRef = 9835F4592A4A3BA40095D0D0 /* Attention.metal */; };
+		9835F45C2A4A3BAD0095D0D0 /* Convolution.metal in Sources */ = {isa = PBXBuildFile; fileRef = 9835F45B2A4A3BAD0095D0D0 /* Convolution.metal */; };
 		987E35DF2A45E4F400ACACE3 /* main.swift in Sources */ = {isa = PBXBuildFile; fileRef = 987E35DE2A45E4F400ACACE3 /* main.swift */; };
 		987E36152A45E90700ACACE3 /* GEMM.metal in Sources */ = {isa = PBXBuildFile; fileRef = 987E36142A45E90700ACACE3 /* GEMM.metal */; };
 /* End PBXBuildFile section */
@@ -24,6 +26,8 @@
 /* End PBXCopyFilesBuildPhase section */
 
 /* Begin PBXFileReference section */
+		9835F4592A4A3BA40095D0D0 /* Attention.metal */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.metal; path = Attention.metal; sourceTree = "<group>"; };
+		9835F45B2A4A3BAD0095D0D0 /* Convolution.metal */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.metal; path = Convolution.metal; sourceTree = "<group>"; };
 		987E35DB2A45E4F400ACACE3 /* MetalFlashAttention */ = {isa = PBXFileReference; explicitFileType = "compiled.mach-o.executable"; includeInIndex = 0; path = MetalFlashAttention; sourceTree = BUILT_PRODUCTS_DIR; };
 		987E35DE2A45E4F400ACACE3 /* main.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = main.swift; sourceTree = "<group>"; };
 		987E36012A45E5C600ACACE3 /* LICENSE */ = {isa = PBXFileReference; fileEncoding = 4; lastKnownFileType = text; path = LICENSE; sourceTree = "<group>"; };
@@ -36,8 +40,8 @@
 		987E360D2A45E6A100ACACE3 /* metal_simdgroup_event */ = {isa = PBXFileReference; explicitFileType = sourcecode.metal; path = metal_simdgroup_event; sourceTree = "<group>"; };
 		987E36122A45E74800ACACE3 /* metal_simdgroup_matrix_storage */ = {isa = PBXFileReference; explicitFileType = sourcecode.metal; path = metal_simdgroup_matrix_storage; sourceTree = "<group>"; };
 		987E36142A45E90700ACACE3 /* GEMM.metal */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.metal; path = GEMM.metal; sourceTree = "<group>"; };
-		987E36162A4614D600ACACE3 /* metal_precision */ = {isa = PBXFileReference; lastKnownFileType = text; path = metal_precision; sourceTree = "<group>"; };
 		98F7440E2A4A008C00B5E60A /* build.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = build.swift; sourceTree = "<group>"; };
+		98F7440F2A4A0CB200B5E60A /* API.md */ = {isa = PBXFileReference; lastKnownFileType = net.daringfireball.markdown; path = API.md; sourceTree = "<group>"; };
 /* End PBXFileReference section */
 
 /* Begin PBXFrameworksBuildPhase section */
@@ -83,6 +87,7 @@
 		987E36032A45E5D200ACACE3 /* Documentation */ = {
 			isa = PBXGroup;
 			children = (
+				98F7440F2A4A0CB200B5E60A /* API.md */,
 				987E36042A45E5D200ACACE3 /* HGEMM.png */,
 				987E36052A45E5D200ACACE3 /* old-gemm.metal */,
 				987E36062A45E5D200ACACE3 /* old-flash-attention.metal */,
@@ -97,7 +102,8 @@
 			children = (
 				987E360D2A45E6A100ACACE3 /* metal_simdgroup_event */,
 				987E36122A45E74800ACACE3 /* metal_simdgroup_matrix_storage */,
-				987E36162A4614D600ACACE3 /* metal_precision */,
+				9835F4592A4A3BA40095D0D0 /* Attention.metal */,
+				9835F45B2A4A3BAD0095D0D0 /* Convolution.metal */,
 				987E36142A45E90700ACACE3 /* GEMM.metal */,
 			);
 			path = Sources;
@@ -110,6 +116,7 @@
 			isa = PBXNativeTarget;
 			buildConfigurationList = 987E35E22A45E4F400ACACE3 /* Build configuration list for PBXNativeTarget "MetalFlashAttention" */;
 			buildPhases = (
+				9835F4582A4A328D0095D0D0 /* ShellScript */,
 				987E35D72A45E4F400ACACE3 /* Sources */,
 				987E35D82A45E4F400ACACE3 /* Frameworks */,
 				987E35D92A45E4F400ACACE3 /* CopyFiles */,
@@ -157,12 +164,34 @@
 		};
 /* End PBXProject section */
 
+/* Begin PBXShellScriptBuildPhase section */
+		9835F4582A4A328D0095D0D0 /* ShellScript */ = {
+			isa = PBXShellScriptBuildPhase;
+			buildActionMask = 2147483647;
+			files = (
+			);
+			inputFileListPaths = (
+			);
+			inputPaths = (
+			);
+			outputFileListPaths = (
+			);
+			outputPaths = (
+			);
+			runOnlyForDeploymentPostprocessing = 0;
+			shellPath = /bin/sh;
+			shellScript = "# Type a script or drag a script file from your workspace to insert its path.\nswift \"$(pwd)/build.swift\" --platform=macOS --verbose\n";
+		};
+/* End PBXShellScriptBuildPhase section */
+
 /* Begin PBXSourcesBuildPhase section */
 		987E35D72A45E4F400ACACE3 /* Sources */ = {
 			isa = PBXSourcesBuildPhase;
 			buildActionMask = 2147483647;
 			files = (
 				987E35DF2A45E4F400ACACE3 /* main.swift in Sources */,
+				9835F45A2A4A3BA40095D0D0 /* Attention.metal in Sources */,
+				9835F45C2A4A3BAD0095D0D0 /* Convolution.metal in Sources */,
 				987E36152A45E90700ACACE3 /* GEMM.metal in Sources */,
 			);
 			runOnlyForDeploymentPostprocessing = 0;
@@ -295,6 +324,7 @@
 				CODE_SIGN_STYLE = Automatic;
 				DEVELOPMENT_TEAM = 6T952M2592;
 				ENABLE_HARDENED_RUNTIME = YES;
+				ENABLE_USER_SCRIPT_SANDBOXING = NO;
 				PRODUCT_NAME = "$(TARGET_NAME)";
 				SWIFT_OPTIMIZATION_LEVEL = "-Onone";
 				SWIFT_VERSION = 5.0;
@@ -308,6 +338,7 @@
 				CODE_SIGN_STYLE = Automatic;
 				DEVELOPMENT_TEAM = 6T952M2592;
 				ENABLE_HARDENED_RUNTIME = YES;
+				ENABLE_USER_SCRIPT_SANDBOXING = NO;
 				PRODUCT_NAME = "$(TARGET_NAME)";
 				SWIFT_VERSION = 5.0;
 			};

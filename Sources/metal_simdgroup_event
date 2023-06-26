@@ -65,7 +65,7 @@ namespace metal
     
     METAL_FUNC static void wait(int count, thread simdgroup_event *events) {
 #if defined(__HAVE_SIMDGROUP_FUTURE__)
-      __metal_simdgroup_wait_events(count, reinterpret_cast<thread __metal_simdgroup_event_t*>(events));
+      __metal_wait_simdgroup_events(count, reinterpret_cast<thread __metal_simdgroup_event_t*>(events));
 #endif
     }
     

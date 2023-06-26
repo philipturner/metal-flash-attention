@@ -15,13 +15,11 @@ constant uint M [[function_constant(0)]];
 constant uint N [[function_constant(1)]];
 constant uint K [[function_constant(2)]];
 
-// Whether each matrix is transposed.
+// Whether each input is transposed.
 constant bool A_trans [[function_constant(10)]];
 constant bool B_trans [[function_constant(11)]];
-constant bool C_trans [[function_constant(12)]];
 constant uint A_leading_dim = (A_trans ? M : K);
 constant uint B_leading_dim = (B_trans ? K : N);
-constant uint C_leading_dim = (C_trans ? M : N);
 
 // Alpha and beta constants from BLAS.
 constant float alpha [[function_constant(20)]];
@@ -50,7 +48,6 @@ constant ushort N_group = N_simd * N_splits;
 constant ushort K_group = K_simd * K_splits;
 constant ushort A_block_leading_dim = (A_trans ? M_group : K_group);
 constant ushort B_block_leading_dim = (B_trans ? K_group : N_group);
-constant ushort C_block_leading_dim = (C_trans ? M_group : N_group);
 
 // There is no padding for M reads/writes.
 // There is no padding for N reads/writes.
@@ -156,7 +153,7 @@ METAL_FUNC void partial_store(thread simdgroup_matrix_storage<T> *sram,
       if (is_k_summation) {
         C_sram(sram, origin)->store(C_block, N_simd, origin);
       } else {
-        C_sram(sram, origin)->store(C_block, C_block_leading_dim, origin, C_trans);
+        C_sram(sram, origin)->store(C_block, N_group, origin);
       }
     }
   }
@@ -175,7 +172,7 @@ METAL_FUNC void partial_accumulate(thread simdgroup_matrix_storage<T> *sram,
       if (is_k_summation) {
         B->load(C_block, N_simd, origin);
       } else {
-        B->load(C_block, C_block_leading_dim, origin, C_trans);
+        B->load(C_block, N_group, origin);
       }
     }
 #pragma clang loop unroll(full)
@@ -200,13 +197,13 @@ METAL_FUNC void async_access_accumulator(threadgroup T *C_block, device T *C,
 {
   ushort2 C_tile(min(uint(N_group), N - C_offset.x),
                  min(uint(M_group), M - C_offset.y));
-  auto C_src = simdgroup_matrix_storage<T>::apply_offset(C, C_leading_dim, C_offset, C_trans);
+  auto C_src = simdgroup_matrix_storage<T>::apply_offset(C, N, C_offset);
   
   simdgroup_event event;
   if (is_store) {
-    event.async_copy(C_src, C_leading_dim, C_tile, C_block, C_block_leading_dim, C_tile, C_trans);
+    event.async_copy(C_src, N, C_tile, C_block, N_group, C_tile);
   } else {
-    event.async_copy(C_block, C_block_leading_dim, C_tile, C_src, C_leading_dim, C_tile, C_trans);
+    event.async_copy(C_block, N_group, C_tile, C_src, N, C_tile);
     simdgroup_event::wait(1, &event);
   }
 }
@@ -225,7 +222,7 @@ METAL_FUNC void store_accumulator(thread simdgroup_matrix_storage<T> *sram,
 #pragma clang loop unroll(full)
     for (ushort n = n_start; n < n_end; n += 8) {
       ushort2 origin(n, m);
-      C_sram(sram, origin)->store(C, C_leading_dim, origin, C_trans);
+      C_sram(sram, origin)->store(C, N, origin);
     }
   }
 }
@@ -237,8 +234,7 @@ struct activation_functor {
                         uint grid_index_in_batch,
                         uint2 matrix_origin,
                         ushort2 tile_dimensions,
-                        ushort lane_id,
-                        bool C_trans); // ignore if you know C won't transpose
+                        ushort lane_id);
   
   typedef visible_function_table<function> function_table;
 };
@@ -396,7 +392,7 @@ void _gemm_impl(device T *A [[buffer(0)]],
     }
     threadgroup_barrier(mem_flags::mem_threadgroup);
     
-    auto C_block = simdgroup_matrix_storage<T>::apply_offset(threadgroup_block, C_block_leading_dim, C_block_offset, C_trans);
+    auto C_block = simdgroup_matrix_storage<T>::apply_offset(threadgroup_block, N_group, C_block_offset);
     partial_accumulate(sram, C_block, false);
     threadgroup_barrier(mem_flags::mem_threadgroup);
   }
@@ -415,15 +411,15 @@ void _gemm_impl(device T *A [[buffer(0)]],
     if (batched_fused_activation) {
       function_index = activation_function_offsets[gid.z];
     }
-    table[function_index](C_block, D, grid_index_in_batch, matrix_origin, tile_dimensions, lane_id, C_trans);
+    table[function_index](C_block, D, grid_index_in_batch, matrix_origin, tile_dimensions, lane_id);
     threadgroup_barrier(mem_flags::mem_threadgroup);
     
-    if (sidx != 0) {
+    if (sidx == 0) {
       async_access_accumulator(threadgroup_block, C, C_offset, true);
-      return;
     }
+    return;
   } else if ((M % 8 != 0) || (N % 8 != 0)) {
-    auto C_block = simdgroup_matrix_storage<T>::apply_offset(threadgroup_block, C_block_leading_dim, C_block_offset, C_trans);
+    auto C_block = simdgroup_matrix_storage<T>::apply_offset(threadgroup_block, N_group, C_block_offset);
     partial_store(sram, C_block, false);
     threadgroup_barrier(mem_flags::mem_threadgroup);
     
@@ -432,7 +428,7 @@ void _gemm_impl(device T *A [[buffer(0)]],
     }
   } else {
     uint2 matrix_origin = C_offset + uint2(C_block_offset);
-    auto C_src = simdgroup_matrix_storage<T>::apply_offset(C, C_leading_dim, matrix_origin, C_trans);
+    auto C_src = simdgroup_matrix_storage<T>::apply_offset(C, N, matrix_origin);
     store_accumulator(sram, C_src, false, false);
     
     const uint M_edge_floor = M - M % M_simd;

@@ -5,21 +5,31 @@ A faster alternative to Metal Performance Shaders, a reference implementation of
 Algorithms:
 - [ ] Attention
   - [ ] Dense FlashAttention (TBD% ALU @ 64 heads)
-  - [ ] Triangular FlashAttention
+  - [ ] Triangular FlashAttention (TBD% ALU effective @ 64 heads)
 - [ ] Convolution
-  - [ ] ConvGEMM 1x1
-  - [ ] ConvGEMM 3x3
-  - [ ] Winograd w/ 2.25x speedup
-  - [ ] Winograd w/ 4.0x speedup
+  - [ ] ConvGEMM 1x1 (TBD% ALU)
+  - [ ] ConvGEMM 3x3 (TBD% ALU)
+  - [ ] Winograd 4x4 (TBD% ALU effective)
+  - [ ] Winograd 5x5 (TBD% ALU effective)
+  - [ ] Winograd 6x6 (TBD% ALU effective)
+  - [ ] 6-Bit Palletization
 - [x] GEMM
   - [x] FP16 (93.3% ALU)
   - [x] FP32 (87.2% ALU)
   - [x] SIMD Futures
   - [x] [Stream-K](https://arxiv.org/abs/2301.03598)
 - [ ] Normalization
-  - [ ] Group Normalization
+  - [ ] Group Normalization (TBD% SLC Bandwidth)
 
 ## Usage
+
+| Progamming Language | MFA Supports | MPSGraph Supports | PyTorch Supports |
+| ------------------- | ------------ | ------------ | ---------------- |
+| CPU C++ (metal-cpp)                | ✅ | ❌ | ✅ |
+| GPU C++ (Indirect Command Buffers) | ✅ | ❌ | ❌ | 
+| Swift (iPadOS, Playgrounds)        | ✅ | ✅ | ❌ |
+| Swift (macOS, Xcode)               | ✅ | ✅ | ✅ |
+| Predecessor to Swift       | not tested | ✅ | ✅ |
 
 Usage:
 - Download Xcode 14.2 from the Apple [developer tools archive](https://developer.apple.com/download/all/?q=xcode)
