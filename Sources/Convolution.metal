@@ -14,7 +14,7 @@ using namespace metal;
 // - boolean constant
 // Whether to transform the data or weights.
 // - boolean constant
-// Does not fuse the transform with the GEMM; use batched GEMM instead.
+// Does not fuse the transform with the GEMM yet; use batched GEMM instead.
 
 // Numerical function constant for dimensionality.
 // - only 2 supported
