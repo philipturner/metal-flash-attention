@@ -35,8 +35,7 @@ constant ushort M_simd [[function_constant(200)]];
 constant ushort N_simd [[function_constant(201)]];
 constant ushort K_simd [[function_constant(202)]];
 
-// Elide multiplications on the edge if any matrix dimension is smaller than
-// the SRAM block dimension.
+// Elide work on the edge when matrix dimension < SRAM block dimension.
 constant ushort M_modulo = (M % M_simd == 0) ? M_simd : (M % M_simd);
 constant ushort N_modulo = (N % N_simd == 0) ? N_simd : (N % N_simd);
 constant ushort M_padded = (M < M_simd) ? (M_modulo + 7) / 8 * 8 : M_simd;
@@ -44,7 +43,7 @@ constant ushort N_padded = (N < N_simd) ? (N_modulo + 7) / 8 * 8 : N_simd;
 
 constant ushort M_splits [[function_constant(210)]];
 constant ushort N_splits [[function_constant(211)]];
-constant ushort K_splits [[function_constant(212)]]; /* 1, 2, 3, 4, 6 */
+constant ushort K_splits [[function_constant(212)]]; /* 1, 2, 3, 4, 6, 8 */
 
 constant ushort M_group = M_simd * M_splits;
 constant ushort N_group = N_simd * N_splits;
@@ -61,7 +60,7 @@ constant ushort K_simd_padded = (K % K_simd == 0) ? K_simd : ~7 & (K % K_simd + 
 constant ushort A_sram_length = (M_simd / 8) * 1;
 constant ushort B_sram_length = 1 * (N_simd / 8);
 constant ushort A_block_length = (M_simd * M_splits) * (K_simd * K_splits);
-constant ushort B_block_length = (K_simd * K_splits) * (N_simd * N_splits);
+//constant ushort B_block_length = (K_simd * K_splits) * (N_simd * N_splits);
 
 // Threadgroup block must fit entire C accumulator and partial sums.
 constant ushort A_sram_offset = 0;
@@ -194,6 +193,25 @@ METAL_FUNC void partial_accumulate(thread simdgroup_matrix_storage<T> *sram,
         float2 C_new = float2(C->thread_elements()[0]);
         C->thread_elements()[0] = vec<T, 2>(fast::fma(C_old, beta, C_new));
       }
+    }
+  }
+}
+
+template <typename T>
+METAL_FUNC void store_accumulator(thread simdgroup_matrix_storage<T> *sram,
+                                  device T *C, bool m_is_edge, bool n_is_edge)
+{
+  const ushort m_start = (m_is_edge) ? M_modulo : 0;
+  const ushort n_start = (n_is_edge) ? N_modulo : 0;
+  const ushort m_end = (m_is_edge) ? M_simd : M_modulo;
+  const ushort n_end = (n_is_edge) ? N_simd : N_modulo;
+  
+#pragma clang loop unroll(full)
+  for (ushort m = m_start; m < m_end; m += 8) {
+#pragma clang loop unroll(full)
+    for (ushort n = n_start; n < n_end; n += 8) {
+      ushort2 origin(n, m);
+      C_sram(sram, origin)->store(C, C_leading_dim, origin, C_trans);
     }
   }
 }
@@ -371,44 +389,72 @@ void _gemm_impl(device T *A [[buffer(0)]],
     
     auto C_block = simdgroup_matrix_storage<T>::apply_offset(threadgroup_block, C_block_leading_dim, C_block_offset, C_trans);
     partial_accumulate(sram, C_block, false);
-    if (fused_activation || C_trans) {
-      threadgroup_barrier(mem_flags::mem_threadgroup);
-    }
+    threadgroup_barrier(mem_flags::mem_threadgroup);
   }
   
   if (fused_activation) {
     auto C_block = simdgroup_matrix_storage<T>::apply_offset(threadgroup_block, N_group, C_block_offset);
     partial_store(sram, C_block, false, true);
+    simdgroup_barrier(mem_flags::mem_threadgroup);
     
+    uint grid_index_in_batch = (batched ? gid.z : 0);
     uint2 matrix_origin = C_offset + uint2(C_block_offset);
     matrix_origin &= ~7;
     ushort2 tile_dimensions(min(uint(N_group), N - matrix_origin.x),
                             min(uint(M_group), M - matrix_origin.y));
-    
-    // TODO: Apply activation function. Transpose before writing to TG memory.
-    uint grid_index_in_batch = (batched ? gid.z : 0);
-    
-    threadgroup_barrier(mem_flags::mem_threadgroup);
-    if (C_trans) {
-      // TODO: Write the accumulator back to registers.
-      // No helper function to abstract away this load.
-      
-      // TODO: Is this necessary?
-      threadgroup_barrier(mem_flags::mem_threadgroup);
+    uint function_index = 0;
+    if (batched_fused_activation) {
+      function_index = activation_function_offsets[gid.z];
     }
+    table[function_index](C_block, D, grid_index_in_batch, matrix_origin, tile_dimensions, lane_id);
+    
+    if (C_trans) {
+      simdgroup_barrier(mem_flags::mem_threadgroup);
+#pragma clang loop unroll(full)
+      for (ushort m = 0; m < M_padded; m += 8) {
+#pragma clang loop unroll(full)
+        for (ushort n = 0; n < N_padded; n += 8) {
+          ushort2 origin(n, m);
+          C_sram(sram, origin)->load(C_block, N_group, origin);
+        }
+      }
+    }
+    threadgroup_barrier(mem_flags::mem_threadgroup);
   }
   
-  if (fused_activation || (M % 8 != 0) || (N % 8 != 0)) {
-    if (!fused_activation || C_trans) {
+  if ((fused_activation && !C_trans) || (M % 8 != 0) || (N % 8 != 0)) {
+    if (fused_activation && !C_trans) {
+      // Already stored in threadgroup memory.
+    } else {
       auto C_block = simdgroup_matrix_storage<T>::apply_offset(threadgroup_block, C_block_leading_dim, C_block_offset, C_trans);
       partial_store(sram, C_block, false);
       threadgroup_barrier(mem_flags::mem_threadgroup);
     }
-
-    // async copy.
+    
+    if (sidx == 0) {
+      ushort2 C_tile(min(uint(N_group), N - C_offset.x),
+                     min(uint(M_group), M - C_offset.y));
+      auto C_src = simdgroup_matrix_storage<T>::apply_offset(C, C_leading_dim, C_offset, C_trans);
+      
+      simdgroup_event event;
+      event.async_copy(C_src, C_leading_dim, C_tile, threadgroup_block, C_block_leading_dim, C_tile, C_trans);
+    }
   } else {
-    // TODO: Properly account for C_trans during direct store.
-  //  uint2 C_offset(B_offset.x, A_offset.y);
+    uint2 matrix_origin = C_offset + uint2(C_block_offset);
+    auto C_src = simdgroup_matrix_storage<T>::apply_offset(C, C_leading_dim, matrix_origin, C_trans);
+    store_accumulator(sram, C_src, false, false);
+    
+    const uint M_edge_floor = M - M % M_simd;
+    const uint N_edge_floor = N - N % N_simd;
+    if (matrix_origin.y < M_edge_floor) {
+      store_accumulator(sram, C_src, true, false);
+    }
+    if (matrix_origin.x < N_edge_floor) {
+      store_accumulator(sram, C_src, false, true);
+      if (matrix_origin.y < M_edge_floor) {
+        store_accumulator(sram, C_src, true, true);
+      }
+    }
   }
 }
 
