@@ -111,8 +111,8 @@ METAL_FUNC void prefetch(threadgroup T *A_block, device T *A,
   ushort2 B_tile_dst(B_tile_src.x, K_padded);
   
   simdgroup_event events[2];
-  events[0].async_copy(A_block, A_block_leading_dim, ulong2(A_tile_dst), A_src, A_leading_dim, ulong2(A_tile_src), long2(0), simdgroup_async_copy_clamp_mode::clamp_to_zero, A_trans);
-  events[1].async_copy(B_block, B_block_leading_dim, ulong2(B_tile_dst), B_src, B_leading_dim, ulong2(B_tile_src), long2(0), simdgroup_async_copy_clamp_mode::clamp_to_zero, B_trans);
+  events[0].async_copy(A_block, A_block_leading_dim, A_tile_dst, A_src, A_leading_dim, A_tile_src, A_trans);
+  events[1].async_copy(B_block, B_block_leading_dim, B_tile_dst, B_src, B_leading_dim, B_tile_src, B_trans);
   simdgroup_event::wait(2, events);
 }
 
@@ -352,7 +352,7 @@ void _gemm_impl(device T *A [[buffer(0)]],
       auto C_src = simdgroup_matrix_storage<T>::apply_offset(C, C_leading_dim, C_offset, C_trans);
       
 //      simdgroup_event event;
-//      event.async_copy(threadgroup_block, C_block_leading_dim, <#ulong dst_element_stride#>, <#ulong2 dst_tile_dimensions#>, <#const device T *src#>, <#ulong src_elements_per_row#>, <#ulong src_element_stride#>, <#ulong2 src_tile_dimensions#>, <#long2 offset_in_src_tile#>, <#simdgroup_async_copy_clamp_mode clamp_mode#>)
+//      event.async_copy(threadgroup_block, C_block_leading_dim, , <#const device T *src#>, <#ulong src_elements_per_row#>, <#ulong src_element_stride#>, <#ulong2 src_tile_dimensions#>, <#long2 offset_in_src_tile#>, <#simdgroup_async_copy_clamp_mode clamp_mode#>)
     }
     threadgroup_barrier(mem_flags::mem_threadgroup);
     // update
