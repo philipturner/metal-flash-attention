@@ -62,6 +62,8 @@ MTLCommandQueue {
 // weights: 6-bit palletized FP16
 // output: BF16
 MTLCommandQueue {
+  // Perhaps chunk this into smaller data x smaller filters blocks, so the
+  // explicit GEMM fits inside the system-level cache.
   MTLCommandBuffer {
     MTLComputeCommandEncoder {
       // `convolution` on data: FP16 -> FP16 Winograd 4x4

@@ -9,6 +9,7 @@
 /* Begin PBXBuildFile section */
 		9835F45A2A4A3BA40095D0D0 /* Attention.metal in Sources */ = {isa = PBXBuildFile; fileRef = 9835F4592A4A3BA40095D0D0 /* Attention.metal */; };
 		9835F45C2A4A3BAD0095D0D0 /* Convolution.metal in Sources */ = {isa = PBXBuildFile; fileRef = 9835F45B2A4A3BAD0095D0D0 /* Convolution.metal */; };
+		9835F45E2A4A81150095D0D0 /* Normalization.metal in Sources */ = {isa = PBXBuildFile; fileRef = 9835F45D2A4A81150095D0D0 /* Normalization.metal */; };
 		987E35DF2A45E4F400ACACE3 /* main.swift in Sources */ = {isa = PBXBuildFile; fileRef = 987E35DE2A45E4F400ACACE3 /* main.swift */; };
 		987E36152A45E90700ACACE3 /* GEMM.metal in Sources */ = {isa = PBXBuildFile; fileRef = 987E36142A45E90700ACACE3 /* GEMM.metal */; };
 /* End PBXBuildFile section */
@@ -28,6 +29,7 @@
 /* Begin PBXFileReference section */
 		9835F4592A4A3BA40095D0D0 /* Attention.metal */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.metal; path = Attention.metal; sourceTree = "<group>"; };
 		9835F45B2A4A3BAD0095D0D0 /* Convolution.metal */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.metal; path = Convolution.metal; sourceTree = "<group>"; };
+		9835F45D2A4A81150095D0D0 /* Normalization.metal */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.metal; path = Normalization.metal; sourceTree = "<group>"; };
 		987E35DB2A45E4F400ACACE3 /* MetalFlashAttention */ = {isa = PBXFileReference; explicitFileType = "compiled.mach-o.executable"; includeInIndex = 0; path = MetalFlashAttention; sourceTree = BUILT_PRODUCTS_DIR; };
 		987E35DE2A45E4F400ACACE3 /* main.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = main.swift; sourceTree = "<group>"; };
 		987E36012A45E5C600ACACE3 /* LICENSE */ = {isa = PBXFileReference; fileEncoding = 4; lastKnownFileType = text; path = LICENSE; sourceTree = "<group>"; };
@@ -100,11 +102,12 @@
 		987E360B2A45E68500ACACE3 /* Sources */ = {
 			isa = PBXGroup;
 			children = (
-				987E360D2A45E6A100ACACE3 /* metal_simdgroup_event */,
-				987E36122A45E74800ACACE3 /* metal_simdgroup_matrix_storage */,
 				9835F4592A4A3BA40095D0D0 /* Attention.metal */,
 				9835F45B2A4A3BAD0095D0D0 /* Convolution.metal */,
 				987E36142A45E90700ACACE3 /* GEMM.metal */,
+				9835F45D2A4A81150095D0D0 /* Normalization.metal */,
+				987E360D2A45E6A100ACACE3 /* metal_simdgroup_event */,
+				987E36122A45E74800ACACE3 /* metal_simdgroup_matrix_storage */,
 			);
 			path = Sources;
 			sourceTree = "<group>";
@@ -192,6 +195,7 @@
 				987E35DF2A45E4F400ACACE3 /* main.swift in Sources */,
 				9835F45A2A4A3BA40095D0D0 /* Attention.metal in Sources */,
 				9835F45C2A4A3BAD0095D0D0 /* Convolution.metal in Sources */,
+				9835F45E2A4A81150095D0D0 /* Normalization.metal in Sources */,
 				987E36152A45E90700ACACE3 /* GEMM.metal in Sources */,
 			);
 			runOnlyForDeploymentPostprocessing = 0;
