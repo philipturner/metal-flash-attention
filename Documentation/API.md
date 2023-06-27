@@ -42,7 +42,7 @@ List:
 
 Examples:
 
-```
+```swift
 // Mixed precision GEMM
 // A (FP16)
 // B (FP32)
@@ -57,22 +57,42 @@ MTLCommandQueue {
   }
 }
 
-// In-place Winograd with 2.25x speedup
-// data: FP16
-// weights: 6-bit palletized FP16
-// output: BF16
+// FlashAttention
+// input sequence: X
+// output sequence: Y
 MTLCommandQueue {
-  // Perhaps chunk this into smaller data x smaller filters blocks, so the
-  // explicit GEMM fits inside the system-level cache.
   MTLCommandBuffer {
     MTLComputeCommandEncoder {
-      // `convolution` on data: FP16 -> FP16 Winograd 4x4
-      // `convolution` on weights: 6-bit palletized -> FP16 Winograd 4x4
-      // custom elementwise shader converts data: FP16 -> FP32
-      // custom elementwise shader converts weights: FP16 -> FP32
-      // `sgemm` with `batched = true`
-      // `convolution` on weights + data: FP32 Winograd 4x4 -> FP32
-      // custom elementwise shader converts data: FP32 -> BF16
+      // `hgemm` batched: X -> 3xHxDxN (Q, K, V)
+      // `attention` batched: Hx(sm(Q^T K)V^T) -> O
+      // `hgemm` batched, fused activations: O -> Y
+    }
+  }
+}
+
+// In-place Winograd with 3.24x speedup
+// data: FP16
+// weights: 6-bit palletized FP16
+// output: FP16
+MTLCommandQueue {
+  // Partition the system-level cache into a zone for the image, a zone for
+  // the filters, and a zone of breathing room for other applications.
+  let imageIters = (0..<imageBatch * inputHeight / imageBlock)
+  let filterIters = (0..<outputChannels / filterBlock)
+  
+  // Split the GEMM into smaller blocks that fit inside the SLC. Recompute
+  // the im2col (image) and depalletize (filter) as needed.
+  for i in filterIters.map({ $0 * filterBlock }) {
+    // Put the cheaper decompression operation in the inner loop.
+    for j in imageIters.map({ $0 * imageBlock }) {
+      MTLCommandBuffer {
+        MTLComputeCommandEncoder {
+          // `convolution` on data: FP16 -> FP16 Winograd 5x5
+          // `convolution` on weights: 6-bit palletized -> FP16 Winograd 5x5
+          // `hgemm` batched
+          // `convolution` on weights + data: FP16 Winograd 5x5 -> FP16
+        }
+      }
     }
   }
 }
