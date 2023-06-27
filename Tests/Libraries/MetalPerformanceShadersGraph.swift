@@ -11,11 +11,24 @@ import MetalPerformanceShadersGraph
 // libraries do. This is not the way MPSGraph is intended to be used, and incurs
 // a heavy sequential throughput bottleneck.
 
-class MPS_GEMM: Operation {
-  
+struct MPS_Backend: MetalBackend {
+  typealias _AsyncResource = AsyncGraph
+  typealias _GEMM = MPS_GEMM
 }
 
-class MPS_Tensor/*: Tensor */ {
+class AsyncGraph: AsyncResource {
+  typealias Resource = MPSGraph
+  
+  func finish(resource: MPSGraph) {
+    fatalError("Not implemented.")
+  }
+  
+  var resource: MPSGraph {
+    fatalError("Not implemented.")
+  }
+}
+
+class MPS_TensorBuffer/*: Tensor */ {
   var buffer: MTLBuffer
   var tensorData: MPSGraphTensorData
   
@@ -23,3 +36,12 @@ class MPS_Tensor/*: Tensor */ {
     fatalError()
   }
 }
+
+class MPS_GEMM: GEMM {
+  var parameters: GEMM_Parameters
+  
+  init(parameters: GEMM_Parameters) {
+    self.parameters = parameters
+  }
+}
+

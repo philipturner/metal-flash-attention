@@ -52,7 +52,7 @@ MTLCommandQueue {
     MTLComputeCommandEncoder {
       // custom elementwise shader converts A: FP16 -> FP32
       // `sgemm`
-      // custom elementwise shader converts C: BF32 -> BF16
+      // custom elementwise shader converts C: FP32 -> BF16
     }
   }
 }
