@@ -28,9 +28,9 @@ using namespace metal;
 // - must always be specified, even if not doing Winograd
 
 // Numerical function constant for bits of palletization.
-// - only 1 and 6 supported
+// - only 0 and 6 supported
 // - only supports one-way quantized -> dequantized for now
-// constant bool is_palletized = (palletization_bits > 1);
+// constant bool is_palletized = (palletization_bits > 0);
 
 kernel void convolution(/*reserve buffers 0-9*/
                         /*data input*/
@@ -41,7 +41,7 @@ kernel void convolution(/*reserve buffers 0-9*/
                         /*actual weights output for palletized*/
                         /*more buffers might be needed for Winograd temporaries*/
                         
-                        /*reserve buffers 10-19*/
-                        /*device void * (metadata for quantization)*/) {
+                        /*reserve buffers 10-19*/)
+{
   
 }

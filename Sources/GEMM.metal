@@ -6,6 +6,7 @@
 //
 
 #include <metal_stdlib>
+#include "metal_data_type"
 #include "metal_simdgroup_event"
 #include "metal_simdgroup_matrix_storage"
 using namespace metal;
@@ -24,6 +25,11 @@ constant uint B_leading_dim = (B_trans ? K : N);
 // Alpha and beta constants from BLAS.
 constant float alpha [[function_constant(20)]];
 constant float beta [[function_constant(21)]];
+
+// Data type for functions that support mixed precision.
+constant uint A_data_type [[function_constant(30)]];
+constant uint B_data_type [[function_constant(31)]];
+constant uint C_data_type [[function_constant(32)]];
 
 constant bool batched [[function_constant(100)]];
 constant bool fused_activation [[function_constant(101)]];
@@ -461,6 +467,11 @@ kernel void hgemm(device half *A [[buffer(0)]],
 {
   _gemm_impl<half>(A, B, C, D, threadgroup_block, matrix_offsets, table, activation_function_offsets, gid, sidx, lane_id);
 }
+
+// TODO: 'bgemm' accepting FP16 or BF16 for any input, requiring enough
+// threadgroup SRAM for FP16, allocating enough register SRAM for FP32,
+// returing FP32 in the activation function, optional downcast before writing to
+// device memory.
 
 kernel void sgemm(device float *A [[buffer(0)]],
                   device float *B [[buffer(1)]],

@@ -4,5 +4,7 @@
 xcuserdata/
 DerivedData/
 .swiftpm/xcode
+.swiftpm
+Package.resolved
 
 /build/

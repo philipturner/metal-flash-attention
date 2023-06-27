@@ -12,7 +12,6 @@ Algorithms:
   - [ ] Winograd 4x4 (TBD% ALU effective)
   - [ ] Winograd 5x5 (TBD% ALU effective)
   - [ ] Winograd 6x6 (TBD% ALU effective)
-  - [ ] 6-Bit Palletization
 - [x] GEMM
   - [x] FP16 (93.3% ALU)
   - [x] FP32 (87.2% ALU)
