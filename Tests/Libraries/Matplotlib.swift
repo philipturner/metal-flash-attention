@@ -8,13 +8,9 @@
 import Foundation
 import PythonKit
 
-// A set of example Python tensors to ensure the graph works correctly.
-// TODO: Change these to Tensor<Float>.
-func MPL_exampleMatrices(
+// Example Python tensors to ensure the graph works correctly.
+func MPL_showExamples(
   withGEMM: Bool
-) -> (
-  matrices: [PythonObject],
-  parameters: EuclideanDistanceParameters
 ) {
   let M = 100
   let N = 100
@@ -31,7 +27,14 @@ func MPL_exampleMatrices(
       return rng.random(PythonObject(tupleOf: M, K), dtype: np.float32)
     }
   }
-  return (matrices, EuclideanDistanceParameters(matrixK: K))
+  
+  let parameters = EuclideanDistanceParameters(matrixK: K)
+  MPL_showGraphs(
+    primary: matrices[0],
+    secondary: matrices[1],
+    ternary: matrices[2],
+    parameters: parameters,
+    isComparison: false)
 }
 
 func MPL_showBackends<T: TensorElement>(
@@ -40,8 +43,8 @@ func MPL_showBackends<T: TensorElement>(
   numpy: Tensor<T>,
   parameters: EuclideanDistanceParameters
 ) {
-  precondition(mfa.buffer.backend == .numpy)
-  precondition(mps.buffer.backend == .numpy)
+  precondition(mfa.buffer.backend == .mfa)
+  precondition(mps.buffer.backend == .mps)
   precondition(numpy.buffer.backend == .numpy)
   
   let primary = mfa.numpy()
@@ -60,10 +63,9 @@ func MPL_showComparison<T: TensorElement>(
   expected: Tensor<T>,
   parameters: EuclideanDistanceParameters
 ) {
-  // TODO: Once working, the tensors should have different, not same, backends.
   let actualBackend = actual.buffer.backend
-  let expectedBackend = actual.buffer.backend
-  precondition(actualBackend == expectedBackend)
+  let expectedBackend = expected.buffer.backend
+  precondition(actualBackend != expectedBackend)
   
   let primary = actual.numpy()
   let secondary = expected.numpy()

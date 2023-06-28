@@ -14,42 +14,23 @@ _ = MetalContext.global
 _ = PythonContext.global
 
 // Global setting for the precision used in tests.
-typealias Real = Float16
+typealias Real = Float
 
-let py_matrixA = Tensor<Real>(
-  shape: [20, 20], randomUniform: 0..<1, backend: .numpy)
-let py_matrixB = Tensor<Real>(
-  shape: [20, 20], randomUniform: 0..<1, backend: .numpy)
-let py_matrixC = Tensor<Real>(
-  shape: [20, 20], randomUniform: 0..<1, backend: .numpy)
+let M = 20
+let N = 20
+let K = 20
+let parameters = EuclideanDistanceParameters(matrixK: K)
 
-#if false
-MPL_showBackends(
-  mfa: py_matrixA,
-  mps: py_matrixB,
-  numpy: py_matrixC,
-  parameters: .init(matrixK: 2))
-#else
-MPL_showComparison(
-  actual: py_matrixA,
-  expected: py_matrixB,
-  parameters: .init(matrixK: 2))
-#endif
-
-#if false
-let (matrices, parameters) = MPL_exampleMatrices(withGEMM: true)
+func makeTensor(on backend: TensorBackend) -> Tensor<Real> {
+  return Tensor<Real>(
+    shape: [M, N], randomUniform: 0..<1, backend: backend)
+}
 
 MPL_showBackends(
-  mfa: matrices[0],
-  mps: matrices[1],
-  numpy: matrices[2],
+  mfa: makeTensor(on: .mfa),
+  mps: makeTensor(on: .mps),
+  numpy: makeTensor(on: .numpy),
   parameters: parameters)
-
-MPL_showComparison(
-  actual: matrices[0],
-  expected: matrices[1],
-  parameters: parameters)
-#endif
 
 // Currently, the tests only cover:
 // M = 1 - 1000
@@ -61,7 +42,7 @@ MPL_showComparison(
 // beta = 0
 // batched = false
 // fused_activation = false
-
+//
 // TODO: Run a rigorous test suite, covering all the functionality you added to
 // MFA. Randomly generate a vast number of hyperparameter combinations and look
 // for correctness regressions.
@@ -73,6 +54,4 @@ MPL_showComparison(
 // This will happen in the distant future; correctness is the current priority.
 // TODO: However, we will at least ensure there are no register spills (GEMM
 // must execute reasonably fast: >7000 GFLOPS for all HGEMM sizes >1000).
-#if false
 MFATestCase.runTests(speed: .veryLong)
-#endif
