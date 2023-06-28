@@ -8,21 +8,38 @@
 import Accelerate
 import Metal
 
+struct EuclideanDistanceParameters {
+  // `averageMagnitude` is 0.5 for uniformly distributed random numbers.
+  var averageMagnitude: Float
+  
+  // `averageDeviation` is sqrt(K) during a matrix multiplication.
+  var averageDeviation: Float
+  
+  init(averageMagnitude: Float, averageDeviation: Float) {
+    self.averageMagnitude = averageMagnitude
+    self.averageDeviation = averageDeviation
+  }
+  
+  init(matrixK: Int) {
+    self.averageMagnitude = 0.5 * Float(matrixK)
+    self.averageDeviation = sqrt(averageMagnitude)
+  }
+}
+
 extension Tensor {
   func euclideanDistance(to other: Tensor<Element>) -> Float {
     buffer.euclideanDistance(to: other.buffer)
   }
   
-  // `averageMagnitude` is 0.5 for uniformly distributed random numbers.
-  // `averageDeviation` is sqrt(K) during a matrix multiplication.
   func isApproximatelyEqual(
     to other: Tensor<Element>,
-    averageMagnitude: Float,
-    averageDeviation: Float
+    parameters: EuclideanDistanceParameters
   ) -> Bool {
     precondition(self.count == other.count)
     var tolerance = Float(self.count)
     
+    let averageMagnitude = parameters.averageMagnitude
+    let averageDeviation = parameters.averageDeviation
     switch Element.mtlDataType {
     case .float:
       tolerance *= max(0.002 * averageMagnitude, 3e-7 * averageDeviation)

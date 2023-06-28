@@ -32,7 +32,14 @@ extension TensorBuffer {
     let ctx = PythonContext.global
     let data = Data(bytes: pointer, count: allocatedSize)
     let bytes = PythonBytes(data)
-    return ctx.np.frombuffer(bytes, dtype: dataType.numpy)
+    let raw = ctx.np.frombuffer(bytes, dtype: dataType.numpy)
+    return ctx.np.reshape(raw, self.shape)
+  }
+}
+
+extension Tensor {
+  func numpy() -> PythonObject {
+    buffer.numpy()
   }
 }
 

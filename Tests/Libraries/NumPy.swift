@@ -60,7 +60,7 @@ final class Py_TensorBuffer: TensorBuffer {
     let np = PythonContext.global.np
     self.ndarray = np.empty(shape, dtype: dataType.numpy)
     
-    let pyInt = x.ctypes.data
+    let pyInt = ndarray.ctypes.data
     let uinteger = UInt(Int(pyInt)!)
     self.pointer = UnsafeMutableRawPointer(bitPattern: uinteger)!
   }

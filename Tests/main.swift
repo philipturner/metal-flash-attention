@@ -13,24 +13,43 @@ import PythonKit
 _ = MetalContext.global
 _ = PythonContext.global
 
+// Global setting for the precision used in tests.
+typealias Real = Float16
 
-let ctx = PythonContext.global
-let x = ctx.np.array([[0, 1], [2, 3]], dtype: ctx.np.int32)
-print(x)
-print(x.ctypes.data)
+let py_matrixA = Tensor<Real>(
+  shape: [20, 20], randomUniform: 0..<1, backend: .numpy)
+let py_matrixB = Tensor<Real>(
+  shape: [20, 20], randomUniform: 0..<1, backend: .numpy)
+let py_matrixC = Tensor<Real>(
+  shape: [20, 20], randomUniform: 0..<1, backend: .numpy)
 
-let pyInt = x.ctypes.data
-let integer = UInt(Int(pyInt)!)
-print(integer)
+#if false
+MPL_showBackends(
+  mfa: py_matrixA,
+  mps: py_matrixB,
+  numpy: py_matrixC,
+  parameters: .init(matrixK: 2))
+#else
+MPL_showComparison(
+  actual: py_matrixA,
+  expected: py_matrixB,
+  parameters: .init(matrixK: 2))
+#endif
 
-let pointer = UnsafeMutablePointer<Int32>(bitPattern: integer)!
-print(pointer)
-print(pointer[0])
-print(pointer[1])
-print(pointer[2])
-print(pointer[3])
+#if false
+let (matrices, parameters) = MPL_exampleMatrices(withGEMM: true)
 
-exit(0)
+MPL_showBackends(
+  mfa: matrices[0],
+  mps: matrices[1],
+  numpy: matrices[2],
+  parameters: parameters)
+
+MPL_showComparison(
+  actual: matrices[0],
+  expected: matrices[1],
+  parameters: parameters)
+#endif
 
 // Currently, the tests only cover:
 // M = 1 - 1000
@@ -46,7 +65,7 @@ exit(0)
 // TODO: Run a rigorous test suite, covering all the functionality you added to
 // MFA. Randomly generate a vast number of hyperparameter combinations and look
 // for correctness regressions.
-
+//
 // TODO: Use Matplotlib to visualize performance, search for performance
 // regressions, ensure everything is faster or 90% as fast as MPSGraph, generate
 // graphs from the Nvidia Stream-K paper.
@@ -54,4 +73,6 @@ exit(0)
 // This will happen in the distant future; correctness is the current priority.
 // TODO: However, we will at least ensure there are no register spills (GEMM
 // must execute reasonably fast: >7000 GFLOPS for all HGEMM sizes >1000).
+#if false
 MFATestCase.runTests(speed: .veryLong)
+#endif
