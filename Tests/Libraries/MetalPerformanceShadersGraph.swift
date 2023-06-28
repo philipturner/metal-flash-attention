@@ -8,7 +8,7 @@
 import MetalPerformanceShadersGraph
 
 struct MPS_Backend: MetalBackend {
-  typealias _AsyncResource = AsyncGraph
+  typealias Resource = AsyncGraph
   typealias _GEMM = MPS_GEMM
 }
 
@@ -84,6 +84,10 @@ final class MPS_TensorBuffer: TensorBuffer {
   }
 }
 
-protocol MPS_Operation: Operation {
+protocol _Has_MPS_Backend {
+  typealias Backend = MPS_Backend
+}
+
+protocol MPS_Operation: MetalOperation, _Has_MPS_Backend {
   
 }

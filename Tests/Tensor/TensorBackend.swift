@@ -20,6 +20,11 @@ protocol _TensorBackend {
   // associatedtype _Normalization: Normalization
   
   // TODO: Function for the backend to dispatch an attention, dispatch a GEMM
+  
+  // static var global: Self { get }
+  // func markFirstCommand()
+  // func markLastCommand()
+  // func synchronize()
 }
 
 enum TensorBackend {
@@ -52,19 +57,18 @@ enum TensorBackend {
   // Some backends do not eagerly dispatch the commands, so you must manually
   // commit them. This method tells the internal profiling timer to start.
   func markFirstCommand() {
-    
+    // self.typeObject.markFirstCommand()
   }
   
-  // Tells the backend that the next command must be synchronous. This may be
-  // called immediately after `markFirstCommand` to dispatch only one command.
-  func markPenultimateCommand() {
-    
+  // Tells the backend to dispatch the buffered up commands. This will signal
+  // the profiling timer to stop.
+  func markLastCommand() {
+    // self.typeObject.markLastCommand()
   }
   
-  // Returns the total execution time and resets the profiling timer.
-  func blockingExecute() -> Double {
-    // TODO: Assert that one, and only one, command was dispatched between the
-    // penultimate command and now.
-    fatalError("Not implemented.")
+  // Synchronizes with the backend and reports the execution time.
+  func synchronize() -> Double {
+    // self.typeObject.synchronize()
+    fatalError()
   }
 }

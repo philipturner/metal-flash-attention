@@ -9,7 +9,7 @@ import AppleGPUInfo
 import Metal
 
 struct MFA_Backend: MetalBackend {
-  typealias _AsyncResource = AsyncPipeline
+  typealias Resource = AsyncPipeline
   typealias _GEMM = MFA_GEMM
 }
 
@@ -18,8 +18,22 @@ class AsyncPipeline: AsyncResource {
   private var _semaphore: DispatchSemaphore
   private var _finished = false
   
-  init(function: MTLFunction) {
+  // Pre-compute some of the dispatch metadata to speed up encoding. Some
+  // functions will ignore the metadata or overwrite some of its values.
+  var threadgroupMemoryLength: UInt16
+  var gridSize: MTLSize
+  var groupSize: MTLSize
+  
+  init(
+    function: MTLFunction,
+    threadgroupMemoryLength: UInt16,
+    gridSize: MTLSize,
+    groupSize: MTLSize
+  ) {
     self._semaphore = DispatchSemaphore(value: 0)
+    self.threadgroupMemoryLength = threadgroupMemoryLength
+    self.gridSize = gridSize
+    self.groupSize = groupSize
     
     let device = MetalContext.global.device
     device.makeComputePipelineState(function: function) { pipeline, error in
@@ -68,13 +82,12 @@ final class MFA_TensorBuffer: TensorBuffer {
   }
 }
 
-protocol MFA_Operation: Operation {
+protocol _Has_MFA_Backend {
+  typealias Backend = MFA_Backend
+}
+
+protocol MFA_Operation: MetalOperation, _Has_MFA_Backend {
   // Shader configuration that the main script can modify, to measure the
   // performance difference.
   static var functionConstants: [String: MTLConvertible] { get }
-  
-  // Make an async pipeline if the cache doesn't already contain it.
-  func makeAsyncPipeline() -> AsyncPipeline
 }
-
-

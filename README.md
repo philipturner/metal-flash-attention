@@ -17,6 +17,7 @@ Algorithms:
   - [x] FP32 (87.2% ALU)
   - [x] SIMD Futures
   - [x] [Stream-K](https://arxiv.org/abs/2301.03598)
+  - [ ] Fused Activations
 - [ ] Normalization
   - [ ] Group Normalization (TBD% SLC Bandwidth)
 

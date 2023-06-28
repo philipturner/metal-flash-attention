@@ -57,8 +57,8 @@ constant ushort K_simd_padded = (K % K_simd == 0) ? K_simd : ~7 & (K % K_simd + 
 
 constant ushort A_sram_length = (M_simd / 8) * 1;
 constant ushort B_sram_length = 1 * (N_simd / 8);
-constant ushort A_block_length = (M_simd * M_splits) * (K_simd * K_splits);
-//constant ushort B_block_length = (K_simd * K_splits) * (N_simd * N_splits);
+constant ushort A_block_length = M_group * K_group;
+//constant ushort B_block_length = K_group * N_group;
 
 // Threadgroup block must fit entire C accumulator and partial sums.
 constant ushort A_sram_offset = 0;

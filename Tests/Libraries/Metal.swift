@@ -32,7 +32,7 @@ struct MetalContext {
 }
 
 protocol MetalBackend: _TensorBackend {
-  associatedtype _AsyncResource
+  associatedtype Resource: AsyncResource
 }
 
 protocol AsyncResource {
@@ -45,9 +45,20 @@ protocol AsyncResource {
   var resource: Resource { get }
 }
 
-struct OperationCache<Backend: MetalBackend> {
-  var gemm: [GEMM_Parameters: Backend._AsyncResource]
+protocol MetalOperation {
+  associatedtype Backend: MetalBackend
+  associatedtype Encoder
+  associatedtype Tensors
   
-  // TODO: Function that throws an error because you didn't run a ghost
-// execution pass beforehand.
+  // Make an async resource if the cache doesn't already contain it.
+  func makeAsyncResource() -> Backend.Resource
+  
+  // Never called during ghost execution.
+  func encode(encoder: Encoder, tensors: Tensors, resource: Backend.Resource)
+}
+
+struct OperationCache<Backend: MetalBackend> {
+  var gemm: [GEMM_Parameters: Backend.Resource]
+  
+  // TODO: Throw an error when you forgot the ghost pass.
 }

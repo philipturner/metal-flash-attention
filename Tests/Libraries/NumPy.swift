@@ -8,6 +8,10 @@
 import Metal
 import PythonKit
 
+struct Py_Backend: _TensorBackend {
+  typealias _GEMM = Py_GEMM
+}
+
 final class Py_TensorBuffer: TensorBuffer {
   var shape: [Int]
   var dataType: MTLDataType
@@ -31,12 +35,9 @@ final class Py_TensorBuffer: TensorBuffer {
   }
 }
 
-// class Py_Attention
-
-// class Py_Convolution
-
-// class Py_GEMM
-
-// class Py_Normalization
-
-// class Py_Tensor
+protocol Py_Operation {
+  typealias Backend = Py_Backend
+  associatedtype Tensors
+  
+  func execute(tensors: Tensors)
+}
