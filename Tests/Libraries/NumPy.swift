@@ -32,6 +32,17 @@ final class Py_Backend: _TensorBackend {
   }
 }
 
+extension Py_Backend {
+  func dispatch(parameters: GEMM_Parameters, tensors: GEMM_Tensors) {
+    let operation = _GEMM(parameters: parameters)
+    if context.ghost {
+      // do nothing
+    } else {
+      operation.execute(tensors: tensors)
+    }
+  }
+}
+
 final class Py_TensorBuffer: TensorBuffer {
   var shape: [Int]
   var dataType: MTLDataType

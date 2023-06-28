@@ -96,7 +96,7 @@ extension Tensor {
     
     let la = aShape.endIndex - 1
     let lb = bShape.endIndex - 1
-    let lc = cShape.endIndex - 1
+//    let lc = cShape.endIndex - 1
     var M: Int
     var A_K: Int
     var B_K: Int
@@ -124,7 +124,6 @@ extension Tensor {
       fatalError("Batched GEMM not supported yet.")
     }
     
-    // Make GEMM_Parameters
     var parameters = GEMM_Parameters(
       dataType: Element.mtlDataType,
       M: M, N: N, K: K,
@@ -140,7 +139,7 @@ extension Tensor {
     let tensors = GEMM_Tensors(a: a.buffer, b: b.buffer, c: self.buffer)
     
     // Dispatch to the backend
-    // TODO: Code for dispatching to the backend.
+    buffer.backend.dispatch(parameters: parameters, tensors: tensors)
   }
   
   // TODO: Ensure all other functions are mutating, because they overwrite the

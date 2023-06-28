@@ -29,8 +29,7 @@ protocol _TensorBackend: AnyObject {
   
   func synchronize() -> Double
   
-  // TODO: Function that dispatches the operation (the backend will determine
-  // whether it is `ghost`).
+  func dispatch(parameters: GEMM_Parameters, tensors: GEMM_Tensors)
 }
 
 struct _ExecutionContext {
@@ -156,5 +155,9 @@ enum TensorBackend {
     ) {
       $0.synchronize()
     }
+  }
+  
+  func dispatch(parameters: GEMM_Parameters, tensors: GEMM_Tensors) {
+    self.backendObject.dispatch(parameters: parameters, tensors: tensors)
   }
 }

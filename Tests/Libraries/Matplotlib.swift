@@ -13,8 +13,6 @@ func testImports() {
   let plt = PythonContext.global.plt
   let mpl = PythonContext.global.mpl
   
-  // TODO: Generate random matrices using numpy instead of Swift code in debug
-  // mode, access the raw data using 'ctypes'.
   let M = 100
   let N = 100
   let K = 100

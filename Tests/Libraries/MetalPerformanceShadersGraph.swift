@@ -11,11 +11,14 @@ import QuartzCore
 final class MPS_Backend: MetalBackend {
   typealias Resource = AsyncGraph
   typealias _GEMM = MPS_GEMM
+  typealias __GEMM = MPS_GEMM
   static let global = MPS_Backend()
   
   var context: _ExecutionContext = _ExecutionContext()
   var usesCustomProfiler: Bool { false }
+  var encoder: MPSCommandBuffer { commandBuffer! }
   
+  var cache: OperationCache<MPS_Backend> = .init()
   var commandBuffer: MPSCommandBuffer?
   var timerStart: Double = -1
   var timerEnd: Double = -1

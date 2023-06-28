@@ -10,7 +10,10 @@ import MetalPerformanceShadersGraph
 import PythonKit
 
 protocol GEMM: Operation {
+  typealias Tensors = GEMM_Tensors
   var parameters: GEMM_Parameters { get }
+
+  init(parameters: GEMM_Parameters)
 }
 
 extension GEMM {
