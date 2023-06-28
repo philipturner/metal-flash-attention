@@ -10,19 +10,15 @@ import PythonKit
 
 protocol TensorBuffer {
   var shape: [Int] { get }
-  var pointer: UnsafeMutableRawPointer { get }
   var dataType: MTLDataType { get }
   var backend: TensorBackend { get }
+  var pointer: UnsafeMutableRawPointer { get }
   
-  // Number of elements.
-  //
-  // Cache the count because we use it a lot. Shapes should never change.
-  var count: Int { get } // shape.reduce(1, *)
+  // Number of elements. Cache the count because we use it a lot.
+  // Shapes should never change.
+  var count: Int { get }
   
-  // A simple set of initializers; none deal with pointers directly.
-  init(randomUniform distribution: Range<Float>)
-  init(zerosLike shape: [Int])
-  init(copying other: TensorBuffer)
+  init(unsafeUninitializedShape shape: [Int], dataType: MTLDataType)
 }
 
 extension TensorBuffer {
@@ -40,16 +36,3 @@ extension TensorBuffer {
   }
 }
 
-extension TensorBuffer {
-  // TODO: Provide functionality for checking this inside the GEMM type object.
-  func dispatchCompatible(_ other: TensorBuffer) -> Bool {
-    // Data type must be the same because mixed precision not supported yet.
-    return self.dataType == other.dataType &&
-           self.backend == other.backend
-  }
-  
-  func matmul(_ a: TensorBuffer, _ b: TensorBuffer, _ c: TensorBuffer) {
-    precondition(a.dispatchCompatible(b))
-    precondition(a.dispatchCompatible(c))
-  }
-}

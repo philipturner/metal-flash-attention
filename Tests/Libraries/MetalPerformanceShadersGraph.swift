@@ -28,20 +28,23 @@ class AsyncGraph: AsyncResource {
   }
 }
 
-class MPS_TensorBuffer/*: Tensor */ {
+class MPS_TensorBuffer/*: TensorBuffer */ {
+  var shape: [Int]
+  var nsShape: [NSNumber] { tensorData.shape }
+  var backend: TensorBackend { .mps }
+  
   var buffer: MTLBuffer
   var tensorData: MPSGraphTensorData
+  var pointer: UnsafeMutableRawPointer { buffer.contents() }
+  private var _count: Int
+  var count: Int { _count }
   
-  init() {
+  init(shape: [Int], randomUniform distribution: Range<Float>) {
+    self._count = shape.reduce(1, *)
     fatalError()
   }
 }
 
-class MPS_GEMM: GEMM {
-  var parameters: GEMM_Parameters
+protocol MPS_Operation: Operation {
   
-  init(parameters: GEMM_Parameters) {
-    self.parameters = parameters
-  }
 }
-

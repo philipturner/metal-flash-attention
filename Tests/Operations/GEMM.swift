@@ -29,3 +29,49 @@ struct GEMM_Parameters: Hashable, Equatable {
   var batched: Bool
   var fused_activation: Bool
 }
+
+#if false
+extension TensorBuffer {
+  // TODO: Provide functionality for checking this inside the GEMM type object.
+  func dispatchCompatible(_ other: TensorBuffer) -> Bool {
+    // Data type must be the same because mixed precision not supported yet.
+    return self.dataType == other.dataType &&
+           self.backend == other.backend
+  }
+  
+  func matmul(_ a: TensorBuffer, _ b: TensorBuffer, _ c: TensorBuffer) {
+    precondition(a.dispatchCompatible(b))
+    precondition(a.dispatchCompatible(c))
+  }
+}
+#endif
+
+class MFA_GEMM: GEMM, MFA_Operation {
+  var parameters: GEMM_Parameters
+  
+  static var functionConstants: [String: MTLConvertible] = [
+    "M_simd": UInt16(16), // 24
+    "N_simd": UInt16(16), // 24
+    "K_simd": UInt16(32), // 24-32
+    "M_splits": UInt16(2),
+    "N_splits": UInt16(2),
+    "K_splits": UInt16(1),
+  ]
+  
+  init(parameters: GEMM_Parameters) {
+    self.parameters = parameters
+  }
+  
+  func makeAsyncPipeline() -> AsyncPipeline {
+    fatalError()
+  }
+}
+
+class MPS_GEMM: GEMM, MPS_Operation {
+  var parameters: GEMM_Parameters
+  
+  init(parameters: GEMM_Parameters) {
+    self.parameters = parameters
+  }
+}
+

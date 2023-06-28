@@ -50,7 +50,7 @@ class MFA_TensorBuffer/*: TensorBuffer*/ {
   
 }
 
-protocol MFA_Operation {
+protocol MFA_Operation: Operation {
   // Shader configuration that the main script can modify, to measure the
   // performance difference.
   static var functionConstants: [String: MTLConvertible] { get }
@@ -59,23 +59,4 @@ protocol MFA_Operation {
   func makeAsyncPipeline() -> AsyncPipeline
 }
 
-class MFA_GEMM: GEMM, MFA_Operation {
-  var parameters: GEMM_Parameters
-  
-  static var functionConstants: [String: MTLConvertible] = [
-    "M_simd": UInt16(16), // 24
-    "N_simd": UInt16(16), // 24
-    "K_simd": UInt16(32), // 24-32
-    "M_splits": UInt16(2),
-    "N_splits": UInt16(2),
-    "K_splits": UInt16(1),
-  ]
-  
-  init(parameters: GEMM_Parameters) {
-    self.parameters = parameters
-  }
-  
-  func makeAsyncPipeline() -> AsyncPipeline {
-    fatalError()
-  }
-}
+
