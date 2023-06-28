@@ -6,10 +6,46 @@
 //
 
 import MetalPerformanceShadersGraph
+import QuartzCore
 
-struct MPS_Backend: MetalBackend {
+final class MPS_Backend: MetalBackend {
   typealias Resource = AsyncGraph
   typealias _GEMM = MPS_GEMM
+  static let global = MPS_Backend()
+  
+  var context: _ExecutionContext = _ExecutionContext()
+  var usesCustomProfiler: Bool { false }
+  
+  var commandBuffer: MPSCommandBuffer?
+  var timerStart: Double = -1
+  var timerEnd: Double = -1
+  
+  func markFirstCommand() {
+    precondition(commandBuffer == nil)
+    if !context.ghost {
+      let ctx = MetalContext.global
+      commandBuffer = MPSCommandBuffer(from: ctx.commandQueue)
+      timerStart = CACurrentMediaTime()
+    }
+  }
+  
+  func markLastCommand() {
+    if !context.ghost {
+      commandBuffer!.commit()
+    }
+  }
+  
+  func synchronize() -> Double {
+    if context.ghost {
+      return 0
+    } else {
+      // MPS has to end the timer here (instead of during `markLastCommand()`)
+      // because it must synchronize beforehand.
+      commandBuffer!.waitUntilCompleted()
+      timerEnd = CACurrentMediaTime()
+      return timerEnd - timerStart
+    }
+  }
 }
 
 class AsyncGraph: AsyncResource {

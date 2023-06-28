@@ -7,9 +7,29 @@
 
 import Metal
 import PythonKit
+import QuartzCore
 
-struct Py_Backend: _TensorBackend {
+final class Py_Backend: _TensorBackend {
   typealias _GEMM = Py_GEMM
+  static let global = Py_Backend()
+  
+  var context: _ExecutionContext = _ExecutionContext()
+  var usesCustomProfiler: Bool { false }
+  
+  var timerStart: Double = -1
+  var timerEnd: Double = -1
+  
+  func markFirstCommand() {
+    timerStart = CACurrentMediaTime()
+  }
+  
+  func markLastCommand() {
+    timerEnd = CACurrentMediaTime()
+  }
+  
+  func synchronize() -> Double {
+    return timerEnd - timerStart
+  }
 }
 
 final class Py_TensorBuffer: TensorBuffer {

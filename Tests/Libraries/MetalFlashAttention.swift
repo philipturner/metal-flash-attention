@@ -8,9 +8,48 @@
 import AppleGPUInfo
 import Metal
 
-struct MFA_Backend: MetalBackend {
+final class MFA_Backend: MetalBackend {
   typealias Resource = AsyncPipeline
   typealias _GEMM = MFA_GEMM
+  static let global = MFA_Backend()
+  
+  var context: _ExecutionContext = _ExecutionContext()
+  var usesCustomProfiler: Bool { true }
+  
+  var commandBuffer: MTLCommandBuffer?
+  var encoder: MTLComputeCommandEncoder?
+  var gpuTime: Double = -1 // set by the command buffer's completion handler
+  
+  func markFirstCommand() {
+    precondition(commandBuffer == nil)
+    precondition(encoder == nil)
+    if !context.ghost {
+      let ctx = MetalContext.global
+      commandBuffer = ctx.commandQueue.makeCommandBuffer()!
+      encoder = commandBuffer!.makeComputeCommandEncoder()!
+    }
+  }
+  
+  func markLastCommand() {
+    if !context.ghost {
+      encoder!.endEncoding()
+      commandBuffer!.addCompletedHandler { commandBuffer in
+        self.gpuTime = commandBuffer.gpuEndTime - commandBuffer.gpuStartTime
+      }
+      commandBuffer!.commit()
+    }
+  }
+  
+  func synchronize() -> Double {
+    if context.ghost {
+      return 0
+    } else {
+      commandBuffer!.waitUntilCompleted()
+      commandBuffer = nil
+      encoder = nil
+      return gpuTime
+    }
+  }
 }
 
 class AsyncPipeline: AsyncResource {

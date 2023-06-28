@@ -14,7 +14,7 @@ struct Tensor<Element: TensorElement> {
   var count: Int { buffer.count }
   
   private init(unsafeUninitializedShape shape: [Int], backend: TensorBackend) {
-    buffer = backend.typeObject.init(
+    buffer = backend.bufferObject.init(
       unsafeUninitializedShape: shape, dataType: Element.mtlDataType)
   }
   
