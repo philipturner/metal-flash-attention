@@ -18,8 +18,10 @@ class AsyncPipeline: AsyncResource {
   private var _semaphore: DispatchSemaphore
   private var _finished = false
   
-  init(device: MTLDevice, function: MTLFunction) {
+  init(function: MTLFunction) {
     self._semaphore = DispatchSemaphore(value: 0)
+    
+    let device = MetalContext.global.device
     device.makeComputePipelineState(function: function) { pipeline, error in
       if let error {
         fatalError(error.localizedDescription)

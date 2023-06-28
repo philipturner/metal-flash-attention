@@ -7,24 +7,54 @@
 
 import MetalPerformanceShadersGraph
 
-// Load MPSGraph, but use it as an eager execution engine like many real-world
-// libraries do. This is not the way MPSGraph is intended to be used, and incurs
-// a heavy sequential throughput bottleneck.
-
 struct MPS_Backend: MetalBackend {
   typealias _AsyncResource = AsyncGraph
   typealias _GEMM = MPS_GEMM
 }
 
 class AsyncGraph: AsyncResource {
-  typealias Resource = MPSGraph
+  private var _executable: MPSGraphExecutable?
+  private var _semaphore: DispatchSemaphore
+  private var _finished = false
   
-  func finish(resource: MPSGraph) {
-    fatalError("Not implemented.")
+  init(
+    graph: MPSGraph,
+    feeds: [MPSGraphTensor : MPSGraphShapedType],
+    targetTensors: [MPSGraphTensor]
+  ) {
+    self._semaphore = DispatchSemaphore(value: 0)
+    
+    let compileDesc = MPSGraphCompilationDescriptor()
+    compileDesc.optimizationLevel = .level1
+    compileDesc.waitForCompilationCompletion = false
+    compileDesc.compilationCompletionHandler = { executable, error in
+      if let error {
+        fatalError(error.localizedDescription)
+      }
+      self.finish(resource: executable)
+    }
+    
+    let graphDevice = MetalContext.global.graphDevice
+    graph.compile(
+      with: graphDevice, feeds: feeds, targetTensors: targetTensors,
+      targetOperations: nil, compilationDescriptor: compileDesc)
   }
   
-  var resource: MPSGraph {
-    fatalError("Not implemented.")
+  private func _blockingWait() {
+    self._semaphore.wait()
+    self._finished = true
+  }
+  
+  func finish(resource: MPSGraphExecutable) {
+    self._executable = resource
+    self._semaphore.signal()
+  }
+  
+  var resource: MPSGraphExecutable {
+    if !_finished {
+      _blockingWait()
+    }
+    return _executable!
   }
 }
 

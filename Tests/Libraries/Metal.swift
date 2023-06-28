@@ -6,25 +6,28 @@
 //
 
 import AppleGPUInfo
-import Metal
+import MetalPerformanceShadersGraph
 
 struct MetalContext {
   static let global = MetalContext()
   
   var device: MTLDevice
   var infoDevice: GPUInfoDevice
-  var commandQueue: MTLCommandQueue
+  var graphDevice: MPSGraphDevice
+  
   var library: MTLLibrary
+  var commandQueue: MTLCommandQueue
   
   init() {
     self.device = MTLCopyAllDevices().first!
     self.infoDevice = try! GPUInfoDevice()
-    self.commandQueue = device.makeCommandQueue()!
+    self.graphDevice = MPSGraphDevice(mtlDevice: device)
     
     var libraryURL = Bundle.main.resourceURL!
     libraryURL.append(component: "lib")
     libraryURL.append(component: "libMetalFlashAttention.metallib")
     self.library = try! device.makeLibrary(URL: libraryURL)
+    self.commandQueue = device.makeCommandQueue()!
   }
 }
 
@@ -44,4 +47,7 @@ protocol AsyncResource {
 
 struct OperationCache<Backend: MetalBackend> {
   var gemm: [GEMM_Parameters: Backend._AsyncResource]
+  
+  // TODO: Function that throws an error because you didn't run a ghost
+// execution pass beforehand.
 }
