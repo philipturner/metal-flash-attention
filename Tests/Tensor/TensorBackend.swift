@@ -18,6 +18,8 @@ protocol _TensorBackend {
   // associatedtype _Convolution: Convolution
   associatedtype _GEMM: GEMM
   // associatedtype _Normalization: Normalization
+  
+  // TODO: Function for the backend to dispatch an attention, dispatch a GEMM
 }
 
 enum TensorBackend {

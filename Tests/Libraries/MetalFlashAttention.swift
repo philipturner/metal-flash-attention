@@ -46,8 +46,24 @@ class AsyncPipeline: AsyncResource {
   }
 }
 
-class MFA_TensorBuffer/*: TensorBuffer*/ {
+final class MFA_TensorBuffer: TensorBuffer {
+  var shape: [Int]
+  var dataType: MTLDataType
+  var backend: TensorBackend { .mfa }
   
+  var buffer: MTLBuffer
+  var pointer: UnsafeMutableRawPointer { buffer.contents() }
+  private(set) var count: Int
+  
+  init(unsafeUninitializedShape shape: [Int], dataType: MTLDataType) {
+    self.shape = shape
+    self.dataType = dataType
+    self.count = shape.reduce(1, *)
+    
+    let bufferSize = count * dataType.size
+    let device = MetalContext.global.device
+    self.buffer = device.makeBuffer(length: bufferSize)!
+  }
 }
 
 protocol MFA_Operation: Operation {

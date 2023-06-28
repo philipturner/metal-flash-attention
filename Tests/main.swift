@@ -7,10 +7,30 @@
 
 import AppleGPUInfo
 import Foundation
+import PythonKit
 
 // Ensure all contexts load correctly.
 _ = MetalContext.global
 _ = PythonContext.global
+
+
+let ctx = PythonContext.global
+let x = ctx.np.array([[0, 1], [2, 3]], dtype: ctx.np.int32)
+print(x)
+print(x.ctypes.data)
+
+let pyInt = x.ctypes.data
+let integer = UInt(Int(pyInt)!)
+print(integer)
+
+let pointer = UnsafeMutablePointer<Int32>(bitPattern: integer)!
+print(pointer)
+print(pointer[0])
+print(pointer[1])
+print(pointer[2])
+print(pointer[3])
+
+exit(0)
 
 // Currently, the tests only cover:
 // M = 1 - 1000

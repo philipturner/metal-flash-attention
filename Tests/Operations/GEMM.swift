@@ -30,22 +30,6 @@ struct GEMM_Parameters: Hashable, Equatable {
   var fused_activation: Bool
 }
 
-#if false
-extension TensorBuffer {
-  // TODO: Provide functionality for checking this inside the GEMM type object.
-  func dispatchCompatible(_ other: TensorBuffer) -> Bool {
-    // Data type must be the same because mixed precision not supported yet.
-    return self.dataType == other.dataType &&
-           self.backend == other.backend
-  }
-  
-  func matmul(_ a: TensorBuffer, _ b: TensorBuffer, _ c: TensorBuffer) {
-    precondition(a.dispatchCompatible(b))
-    precondition(a.dispatchCompatible(c))
-  }
-}
-#endif
-
 class MFA_GEMM: GEMM, MFA_Operation {
   var parameters: GEMM_Parameters
   

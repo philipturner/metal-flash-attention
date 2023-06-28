@@ -7,6 +7,7 @@
 
 import Metal
 import PythonKit
+import MetalPerformanceShadersGraph
 
 // Used for setting function constants.
 protocol MTLConvertible {
@@ -45,39 +46,28 @@ extension MTLDataType {
     fatalError("MTLDataType with code \(self.rawValue) not recognized.")
   }
   
+  var mps: MPSDataType {
+    switch self {
+    case .half: return .float16
+    case .float: return .float32
+    default: unrecognizedError()
+    }
+  }
+  
   var numpy: PythonObject {
     let ctx = PythonContext.global
     switch self {
-    case .half:
-      return ctx.np.float16
-    case .float:
-      return ctx.np.float32
-    default:
-      unrecognizedError()
+    case .half: return ctx.np.float16
+    case .float: return ctx.np.float32
+    default: unrecognizedError()
     }
   }
   
   var size: Int {
     switch self {
-    case .half:
-      return 2
-    case .float:
-      return 4
-    default:
-      unrecognizedError()
+    case .half: return 2
+    case .float: return 4
+    default: unrecognizedError()
     }
   }
-  
-  /*
-   let input1 = bufferC_mfa.contents()
-   let input2 = bufferC_mps.contents()
-   var tolerance = Float(B * M * N) * sqrt(Float(K))
-   if precision == .f32 {
-     tolerance = max(0.001, 3e-7 * tolerance)
-   } else {
-     // Up the tolerance a little for FP16
-     tolerance = max(0.01, 1e-2 * tolerance)
-     //        tolerance = max(0.01, 5e-3 * tolerance)
-   }
-   */
 }

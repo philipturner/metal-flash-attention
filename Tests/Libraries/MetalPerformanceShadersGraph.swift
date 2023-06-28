@@ -28,20 +28,29 @@ class AsyncGraph: AsyncResource {
   }
 }
 
-class MPS_TensorBuffer/*: TensorBuffer */ {
+final class MPS_TensorBuffer: TensorBuffer {
   var shape: [Int]
   var nsShape: [NSNumber] { tensorData.shape }
+  var dataType: MTLDataType
   var backend: TensorBackend { .mps }
   
   var buffer: MTLBuffer
   var tensorData: MPSGraphTensorData
   var pointer: UnsafeMutableRawPointer { buffer.contents() }
-  private var _count: Int
-  var count: Int { _count }
+  private(set) var count: Int
   
-  init(shape: [Int], randomUniform distribution: Range<Float>) {
-    self._count = shape.reduce(1, *)
-    fatalError()
+  init(unsafeUninitializedShape shape: [Int], dataType: MTLDataType) {
+    self.shape = shape
+    self.dataType = dataType
+    self.count = shape.reduce(1, *)
+    
+    let bufferSize = count * dataType.size
+    let device = MetalContext.global.device
+    self.buffer = device.makeBuffer(length: bufferSize)!
+    
+    let nsShape = shape.map(NSNumber.init)
+    self.tensorData = MPSGraphTensorData(
+      buffer, shape: nsShape, dataType: dataType.mps)
   }
 }
 
