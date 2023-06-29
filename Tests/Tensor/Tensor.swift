@@ -21,7 +21,7 @@ struct Tensor<Element: TensorElement> {
   init(
     shape: [Int],
     randomUniform distribution: Range<Float>,
-    backend: TensorBackend
+    backend: TensorBackend = .default
   ) {
     self.init(unsafeUninitializedShape: shape, backend: backend)
     RandomNumberGenerator.global.fillBuffer(
@@ -29,12 +29,12 @@ struct Tensor<Element: TensorElement> {
       dataType: Element.mtlDataType)
   }
   
-  init(zerosLike shape: [Int], backend: TensorBackend) {
+  init(zerosLike shape: [Int], backend: TensorBackend = .default) {
     self.init(unsafeUninitializedShape: shape, backend: backend)
     memset(buffer.pointer, 0, buffer.allocatedSize)
   }
   
-  init(copying other: Tensor, backend: TensorBackend) {
+  init(copying other: Tensor, backend: TensorBackend = .default) {
     self.init(unsafeUninitializedShape: other.shape, backend: backend)
     memcpy(buffer.pointer, other.buffer.pointer, buffer.allocatedSize)
   }
@@ -43,7 +43,7 @@ struct Tensor<Element: TensorElement> {
 extension Tensor {
   // NOTE: Look for all the heavily-hit codepaths in the calling code; make them
   // `assert` for release mode. Anything called once remains as `precondition`.
-  func backendCompatible(_ other: Tensor<Element>) -> Bool {
+  private func backendCompatible(_ other: Tensor<Element>) -> Bool {
     return self.buffer.backend == other.buffer.backend
   }
   
@@ -87,7 +87,7 @@ extension Tensor {
     assert(transposeA == false)
     assert(transposeB == false)
     assert(alpha == 1.0)
-    assert(beta == 1.0)
+    assert(beta == 0.0)
     
     let aShape = a.shape
     let bShape = b.shape

@@ -33,16 +33,30 @@ protocol _TensorBackend: AnyObject {
 }
 
 struct _ExecutionContext {
+  static let logTensorCreation: Bool = false
+  
   // Code besides the backend will modify these properties.
   var ghost: Bool = false
   var executionWillStart: Bool = false
   var executionWillEnd: Bool = false
+  
+  static var defaultBackend: TensorBackend = .numpy
+  
+  // First makes a ghost pass through the expression, then actually executes it.
+  static func executeExpression<R>(_ closure: () throws -> R) rethrows -> R {
+    _ = try defaultBackend.withGhostExecution(closure)
+    return try closure()
+  }
 }
 
 enum TensorBackend {
   case mfa
   case mps
   case numpy
+  
+  static var `default`: TensorBackend {
+    _ExecutionContext.defaultBackend
+  }
   
   var backendObject: any _TensorBackend {
     switch self {
@@ -140,7 +154,7 @@ enum TensorBackend {
   func markLastCommand() {
     withContextParameter(
       setOnCall: true, unsetOnReturn: false,
-      \.executionWillStart
+      \.executionWillEnd
     ) {
       $0.markLastCommand()
     }

@@ -52,6 +52,7 @@ constant ushort B_block_leading_dim = (B_trans ? K_group : N_group);
 
 // There is no padding for M reads/writes.
 // There is no padding for N reads/writes.
+constant ushort K_group_unpadded = (K % K_group == 0) ? K_group : (K % K_group);
 constant ushort K_group_padded = (K % K_group == 0) ? K_group : ~(K_group - 1) & (K % K_group + K_group - 1);
 constant ushort K_simd_padded = (K % K_simd == 0) ? K_simd : ~7 & (K % K_simd + 7);
 
@@ -70,19 +71,19 @@ constant ushort B_block_offset = A_block_offset + A_block_length;
 template <typename T>
 METAL_FUNC thread simdgroup_matrix_storage<T>* A_sram(thread simdgroup_matrix_storage<T> *sram, ushort2 matrix_origin) {
   // A_sram[M_simd][8]
-  return sram + A_sram_offset + matrix_origin.y * (8 / 8) + matrix_origin.x;
+  return sram + A_sram_offset + (matrix_origin.y / 8) * (8 / 8) + (matrix_origin.x / 8);
 }
 
 template <typename T>
 METAL_FUNC thread simdgroup_matrix_storage<T>* B_sram(thread simdgroup_matrix_storage<T> *sram, ushort2 matrix_origin) {
   // A_sram[8][N_simd]
-  return sram + B_sram_offset + matrix_origin.y * (N_simd / 8) + matrix_origin.x;
+  return sram + B_sram_offset + (matrix_origin.y / 8) * (N_simd / 8) + (matrix_origin.x / 8);
 }
 
 template <typename T>
 METAL_FUNC thread simdgroup_matrix_storage<T>* C_sram(thread simdgroup_matrix_storage<T> *sram, ushort2 matrix_origin) {
   // C_sram[M_simd][N_simd]
-  return sram + C_sram_offset + matrix_origin.y * (N_simd / 8) + matrix_origin.x;
+  return sram + C_sram_offset + (matrix_origin.y / 8) * (N_simd / 8) + (matrix_origin.x / 8);
 }
 
 template <typename T>
@@ -96,7 +97,8 @@ METAL_FUNC void prefetch(threadgroup T *A_block, device T *A,
   auto A_src = simdgroup_matrix_storage<T>::apply_offset(A, A_leading_dim, A_offset, A_trans);
   auto B_src = simdgroup_matrix_storage<T>::apply_offset(B, B_leading_dim, B_offset, B_trans);
   
-  const uint K_edge_floor = K - K_group_padded;
+  // Rounded-up ceiling for the threadgroup block.
+  const uint K_edge_floor = K - K_group_unpadded;
   const uint K_edge_ceil = K_edge_floor + K_group_padded;
   ushort K_padded;
   if (K_edge_floor == K_group) {
@@ -296,17 +298,17 @@ void _gemm_impl(device T *A [[buffer(0)]],
   
   if (K > K_simd) {
 #pragma clang loop unroll(full)
-    for (int m = 0; m < M_padded; m += K_simd) {
+    for (int m = 0; m < M_padded; m += 8) {
 #pragma clang loop unroll(full)
-      for (int n = 0; n < N_padded; n += K_simd) {
+      for (int n = 0; n < N_padded; n += 8) {
         *C_sram(sram, ushort2(n, m)) = simdgroup_matrix_storage<T>(0);
       }
     }
   }
   
   for (uint K_floor = 0; K_floor < K; K_floor += K_group) {
-    ushort2 A_block_offset(offset_in_group.z, offset_in_group.y);
-    ushort2 B_block_offset(offset_in_group.x, offset_in_group.z);
+    ushort2 A_block_offset(offset_in_simd.x + offset_in_group.z, offset_in_group.y);
+    ushort2 B_block_offset(offset_in_group.x, offset_in_simd.y + offset_in_group.z);
     auto A_block_src = simdgroup_matrix_storage<T>::apply_offset(A_block, A_block_leading_dim, A_block_offset, A_trans);
     auto B_block_src = simdgroup_matrix_storage<T>::apply_offset(B_block, B_block_leading_dim, B_block_offset, B_trans);
     threadgroup_barrier(mem_flags::mem_threadgroup);
@@ -333,6 +335,8 @@ void _gemm_impl(device T *A [[buffer(0)]],
       
       if (sidx == 0) {
         uint K_next = K_floor + K_group;
+        A_offset.x = K_next;
+        B_offset.y = K_next;
         prefetch(A_block, A, A_tile_src, A_offset, B_block, B, B_tile_src, B_offset, K_next);
       }
     }
@@ -373,11 +377,11 @@ void _gemm_impl(device T *A [[buffer(0)]],
     }
   }
   
-  if (abs(alpha) != 0) {
+  if (abs(alpha) != 1) {
 #pragma clang loop unroll(full)
-    for (int m = 0; m < M_padded; m += K_simd) {
+    for (int m = 0; m < M_padded; m += 8) {
 #pragma clang loop unroll(full)
-      for (int n = 0; n < N_padded; n += K_simd) {
+      for (int n = 0; n < N_padded; n += 8) {
         C_sram(sram, ushort2(n, m))->thread_elements()[0] *= alpha;
       }
     }

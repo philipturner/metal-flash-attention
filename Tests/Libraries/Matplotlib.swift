@@ -130,7 +130,7 @@ fileprivate func MPL_showGraphs(
   var norm1: PythonObject
   var norm2: PythonObject?
   
-  let padding: Double = 0.10
+  let padding: Double = 0.00
   let vmin1 = Double(parameters.averageMagnitude) * (0.00 - padding)
   let vmax1 = Double(parameters.averageMagnitude) * (1.00 + padding)
   norm1 = mpl.colors.Normalize(vmin: vmin1, vmax: vmax1)
@@ -210,11 +210,11 @@ fileprivate func MPL_showGraphs(
       fatalError("Number too large: \(dimension)")
     }
     
-    let ndim = matrix.ndim
-    let N = Int(matrix.shape[ndim - 1])!
-    let M = Int(matrix.shape[ndim - 2])!
-    ax.set_yticks(np.arange(0, M, tickStep(dimension: M)))
-    ax.set_xticks(np.arange(0, N, tickStep(dimension: N)))
+//    let ndim = matrix.ndim
+//    let N = Int(matrix.shape[ndim - 1])!
+//    let M = Int(matrix.shape[ndim - 2])!
+//    ax.set_yticks(np.arange(0, M, tickStep(dimension: M)))
+//    ax.set_xticks(np.arange(0, N, tickStep(dimension: N)))
     ax.xaxis.set_ticks_position("top")
   }
   plt.show()

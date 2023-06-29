@@ -9,7 +9,9 @@ import Accelerate
 import Metal
 
 struct EuclideanDistanceParameters {
-  // `averageMagnitude` is 0.5 for uniformly distributed random numbers.
+  // `averageMagnitude` should be 1.0 for uniformly distributed random numbers.
+  // `averageMagnitude` should be 0.5 * K for squares of them.
+  // This is actually double the expected magnitude.
   var averageMagnitude: Float
   
   // `averageDeviation` is sqrt(K) during a matrix multiplication.
@@ -22,7 +24,7 @@ struct EuclideanDistanceParameters {
   
   init(matrixK: Int) {
     self.averageMagnitude = 0.5 * Float(matrixK)
-    self.averageDeviation = sqrt(averageMagnitude)
+    self.averageDeviation = sqrt(Float(matrixK))
   }
 }
 

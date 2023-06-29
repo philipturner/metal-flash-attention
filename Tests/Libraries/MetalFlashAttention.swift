@@ -114,6 +114,9 @@ final class MFA_TensorBuffer: TensorBuffer {
   private(set) var count: Int
   
   init(unsafeUninitializedShape shape: [Int], dataType: MTLDataType) {
+    if _ExecutionContext.logTensorCreation {
+      print("MFA tensor created: \(shape)")
+    }
     self.shape = shape
     self.dataType = dataType
     self.count = shape.reduce(1, *)

@@ -158,7 +158,7 @@ struct MFA_GEMM: GEMM, MFA_Operation {
     var gridSize = resource.gridSize
     gridSize.depth = batchSize
     encoder.dispatchThreadgroups(
-      gridSize, threadsPerThreadgroup: resource.gridSize)
+      gridSize, threadsPerThreadgroup: resource.groupSize)
   }
 }
 
