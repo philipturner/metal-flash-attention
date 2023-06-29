@@ -251,20 +251,28 @@ struct MPS_GEMM: GEMM, MPS_Operation {
   // between MFA and MPS. This has **much** less latency than NNC's original
   // implementation. It underestimates the benefit of switching to MFA.
   func encode(
-    encoder: MPSCommandBuffer,
+    encoder: MTLCommandQueue,
     tensors: GEMM_Tensors,
     resource: AsyncGraph
   ) {
+    if let uncommittedCommand = MPS_Backend.global.uncommittedCommand {
+      uncommittedCommand.encode(sync: false)
+      MPS_Backend.global.uncommittedCommand = nil
+    }
+    
     let tensorA = tensors.a as! MPS_TensorBuffer
     let tensorB = tensors.b as! MPS_TensorBuffer
     let tensorC = tensors.c as! MPS_TensorBuffer
     let inputs = [tensorA.tensorData, tensorB.tensorData]
     let results = [tensorC.tensorData]
-    resource.resource.encode(
-      to: encoder,
-      inputs: inputs,
-      results: results,
-      executionDescriptor: nil)
+//    resource.resource.encode(
+//      to: encoder,
+//      inputs: inputs,
+//      results: results,
+//      executionDescriptor: nil)
+    
+    MPS_Backend.global.uncommittedCommand = .init(
+      executable: resource.resource, inputs: inputs, results: results)
   }
 }
 

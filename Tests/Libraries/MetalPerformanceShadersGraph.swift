@@ -16,37 +16,62 @@ final class MPS_Backend: MetalBackend {
   
   var context: _ExecutionContext = _ExecutionContext()
   var usesCustomProfiler: Bool { false }
-  var encoder: MPSCommandBuffer { commandBuffer! }
+//  var encoder: MPSCommandBuffer { commandBuffer! }
+  var encoder: MTLCommandQueue { MetalContext.global.commandQueue }
   
   var cache: OperationCache<MPS_Backend> = .init()
-  var commandBuffer: MPSCommandBuffer?
+//  var commandBuffer: MPSCommandBuffer?
   var timerStart: Double = -1
   var timerEnd: Double = -1
   
+  struct Command {
+    var executable: MPSGraphExecutable
+    var inputs: [MPSGraphTensorData]
+    var results: [MPSGraphTensorData]
+    
+    func encode(sync: Bool) {
+      let queue = MetalContext.global.commandQueue
+      if sync {
+        executable.run(with: queue, inputs: inputs, results: results, executionDescriptor: nil)
+      } else {
+        executable.runAsync(with: queue, inputs: inputs, results: results, executionDescriptor: nil)
+      }
+    }
+  }
+  
+  var uncommittedCommand: Command?
+  
   func markFirstCommand() {
-    precondition(commandBuffer == nil)
+//    precondition(commandBuffer == nil)
+    precondition(uncommittedCommand == nil)
     if !context.ghost {
       let ctx = MetalContext.global
-      commandBuffer = MPSCommandBuffer(from: ctx.commandQueue)
+//      commandBuffer = MPSCommandBuffer(from: ctx.commandQueue)
       timerStart = CACurrentMediaTime()
     }
   }
   
   func markLastCommand() {
     if !context.ghost {
-      commandBuffer!.commit()
+//      commandBuffer!.commit()
+      if let uncommittedCommand {
+        uncommittedCommand.encode(sync: true)
+        timerEnd = CACurrentMediaTime()
+        self.uncommittedCommand = nil
+      }
     }
   }
   
   func synchronize() -> Double {
+    precondition(uncommittedCommand == nil)
     if context.ghost {
       return 0
     } else {
-      // MPS has to end the timer here (instead of during `markLastCommand()`)
-      // because it must synchronize beforehand.
-      commandBuffer!.waitUntilCompleted()
-      commandBuffer = nil
-      timerEnd = CACurrentMediaTime()
+//      // MPS has to end the timer here (instead of during `markLastCommand()`)
+//      // because it must synchronize beforehand.
+//      commandBuffer!.waitUntilCompleted()
+//      commandBuffer = nil
+//      timerEnd = CACurrentMediaTime()
       return timerEnd - timerStart
     }
   }
@@ -65,7 +90,7 @@ class AsyncGraph: AsyncResource {
     self._semaphore = DispatchSemaphore(value: 0)
     
     let compileDesc = MPSGraphCompilationDescriptor()
-    compileDesc.optimizationLevel = .level1
+    compileDesc.optimizationLevel = .level0
     compileDesc.waitForCompilationCompletion = false
     compileDesc.compilationCompletionHandler = { executable, error in
       if let error {

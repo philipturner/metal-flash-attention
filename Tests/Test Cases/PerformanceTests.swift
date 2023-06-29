@@ -67,7 +67,7 @@ class PerformanceTests: MFATestCase {
           MFA_Backend.global.cache.clear()
           MFA_GEMM.functionConstants["M_simd"] = UInt16(16)
           MFA_GEMM.functionConstants["N_simd"] = UInt16(16)
-          MFA_GEMM.functionConstants["K_simd"] = UInt16(16)
+          MFA_GEMM.functionConstants["K_simd"] = UInt16(32)
         }
       }
     }
@@ -81,6 +81,9 @@ class PerformanceTests: MFATestCase {
       init(sizes: Range<Int>, iterations: Int) {
         self.sizes = sizes
         self.iterations = iterations
+        flops[.mfa48x48] = []
+        flops[.mfa32x32] = []
+        flops[.mps] = []
       }
       
       mutating func prepare(config: Config) {
@@ -94,14 +97,24 @@ class PerformanceTests: MFATestCase {
       }
       
       // If initial, this will run a ghost pass.
-      mutating func _profile(granularity: Int, isInitial: Bool) {
-        func innerLoop(size: Int, reportResults: Bool) {
+      // Granularity currently ignored. Anything from 1 - 8 will be supported.
+      mutating func _profile(sizes: Range<Int>, granularity: Int, isInitial: Bool, __logProgress: Bool) {
+        func innerLoop(size: Int, reportResults: Bool, __logProgress: Bool) {
           var iterations = self.iterations
           var trials = 0
           SquareMatrixBenchmark_configure(&iterations, &trials)
           if isInitial {
             iterations = 1
             trials = 1
+          } else {
+            if currentConfig == .mps {
+              #if DEBUG
+              iterations = max(8, iterations / 8)
+              #else
+              iterations = max(16, iterations / 8)
+              #endif
+//              iterations = 1
+            }
           }
           
           let M = size
@@ -134,6 +147,23 @@ class PerformanceTests: MFATestCase {
               backend.markLastCommand()
               minTime = min(minTime, backend.synchronize())
             }
+            
+            if reportResults {
+              let floatOps = 2 * M * N * K * iterations
+              let flops = Double(floatOps) / minTime
+              self.flops[currentConfig!]!.append(flops)
+              
+//              if __logProgress {
+//                var output: String = "\(M)x\(N)x\(K)"
+//                if Real.self == Float.self {
+//                  output += "xf32 - "
+//                } else {
+//                  output += "xf16 - "
+//                }
+//                output += "\(currentConfig!.name) \(flops / 1e9)"
+//                print(output)
+//              }
+            }
           }
           
           // If `isInitial`, validate that the result matches a tensor generated
@@ -157,45 +187,96 @@ class PerformanceTests: MFATestCase {
         
         // Run the last matrix in the batch once to warm up, then actually start
         // benchmarking.
-        innerLoop(size: sizes.upperBound - 1, reportResults: false)
+        innerLoop(size: sizes.upperBound - 1, reportResults: false, __logProgress: __logProgress)
         for size in sizes {
-          innerLoop(size: size, reportResults: true)
+          innerLoop(size: size, reportResults: true, __logProgress: __logProgress)
         }
       }
       
       mutating func profile(granularity: Int, logProgress: Bool) {
-        for config in Config.allCases {
-          prepare(config: config)
-          _profile(granularity: granularity, isInitial: true)
-          _profile(granularity: granularity, isInitial: false)
-          cleanup(config: config)
+        var start = self.sizes.lowerBound
+        while start < self.sizes.upperBound {
+          var end: Int
+          if start + 10 >= self.sizes.upperBound {
+            end = self.sizes.upperBound
+          } else {
+            end = start + 8
+          }
+          
+          let sectionSizes = start..<end
+          for config in Config.allCases {
+            prepare(config: config)
+            _profile(sizes: sectionSizes, granularity: granularity, isInitial: true, __logProgress: logProgress)
+            _profile(sizes: sectionSizes, granularity: granularity, isInitial: false, __logProgress: logProgress)
+            cleanup(config: config)
+          }
+          
+          // Ensure each config has the number of data points you expect.
+          for key in flops.keys {
+            let value = flops[key]!
+            let expectedPoints = end - sizes.lowerBound
+            precondition(value.count == expectedPoints)
+          }
+          
+          if logProgress {
+            for size in sectionSizes {
+              var message = "\(size)x\(size)x\(size)"
+              if Real.self == Float.self {
+                message += "xf32"
+              } else {
+                message += "xf16"
+              }
+              for config in Config.allCases {
+                let index = size - sizes.lowerBound
+                let gflops = Int(flops[config]![index] / 1e9)
+                message += " - \(config.name)"
+                message += " \(gflops)"
+              }
+              print(message)
+            }
+          }
+          
+          if start + 10 >= self.sizes.upperBound {
+            break
+          } else {
+            start += 8
+          }
         }
         
-        if logProgress {
-          print("Profiling from \(sizes.lowerBound) to \(sizes.upperBound)")
-          
-          // TODO: While logging, simply print the backend and GFLOPS.
-          // TODO: Then, erase the statement above.
-        }
+            
+        
       }
     }
     
     // TODO: Generate a matplotlib line chart from this data.
+    #if DEBUG
     var segments: [Segment] = [
-      Segment(sizes: 1..<64, iterations: 1024),
-      Segment(sizes: 64..<128, iterations: 512),
-      Segment(sizes: 128..<192, iterations: 256),
-      Segment(sizes: 192..<256, iterations: 128),
-      Segment(sizes: 256..<384, iterations: 64),
-      Segment(sizes: 384..<512, iterations: 32),
-      Segment(sizes: 512..<768, iterations: 16),
-      Segment(sizes: 768..<1024, iterations: 8),
+      Segment(sizes: 1..<64, iterations: 32),
+      Segment(sizes: 64..<128, iterations: 32),
+      Segment(sizes: 128..<192, iterations: 32),
+      Segment(sizes: 192..<256, iterations: 32),
+      Segment(sizes: 256..<384, iterations: 32),
+      Segment(sizes: 384..<512, iterations: 16),
+      Segment(sizes: 512..<768, iterations: 8),
+      Segment(sizes: 768..<1024, iterations: 4),
     ]
+    #else
+    var segments: [Segment] = [
+      Segment(sizes: 1..<64, iterations: 128),
+      Segment(sizes: 64..<128, iterations: 128),
+      Segment(sizes: 128..<192, iterations: 128),
+      Segment(sizes: 192..<256, iterations: 64),
+      Segment(sizes: 256..<384, iterations: 32),
+      Segment(sizes: 384..<512, iterations: 16),
+      Segment(sizes: 512..<768, iterations: 8),
+      Segment(sizes: 768..<1024, iterations: 4),
+    ]
+    #endif
     if Real.self == Float.self {
-      segments.append(Segment(sizes: 1024..<1537, iterations: 4))
+      segments.append(Segment(sizes: 1024..<1537, iterations: 2))
     } else {
-      segments.append(Segment(sizes: 1024..<1536, iterations: 4))
-      segments.append(Segment(sizes: 1536..<2049, iterations: 2))
+      segments.append(Segment(sizes: 1024..<1536, iterations: 2))
+      segments.append(Segment(sizes: 1536..<2049, iterations: 1))
     }
     for i in 0..<segments.count {
       segments[i].profile(granularity: granularity, logProgress: logProgress)
