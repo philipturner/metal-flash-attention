@@ -51,6 +51,7 @@
 /* End PBXCopyFilesBuildPhase section */
 
 /* Begin PBXFileReference section */
+		980EDCFA2A4E083100BC9BF0 /* float32-latest.png */ = {isa = PBXFileReference; lastKnownFileType = image.png; path = "float32-latest.png"; sourceTree = "<group>"; };
 		9835F4592A4A3BA40095D0D0 /* Attention.metal */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.metal; path = Attention.metal; sourceTree = "<group>"; };
 		9835F45B2A4A3BAD0095D0D0 /* Convolution.metal */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.metal; path = Convolution.metal; sourceTree = "<group>"; };
 		9835F45D2A4A81150095D0D0 /* Normalization.metal */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.metal; path = Normalization.metal; sourceTree = "<group>"; };
@@ -107,6 +108,14 @@
 /* End PBXFrameworksBuildPhase section */
 
 /* Begin PBXGroup section */
+		980EDCF92A4E081900BC9BF0 /* CI */ = {
+			isa = PBXGroup;
+			children = (
+				980EDCFA2A4E083100BC9BF0 /* float32-latest.png */,
+			);
+			path = CI;
+			sourceTree = "<group>";
+		};
 		9835F4792A4B4F1D0095D0D0 /* build */ = {
 			isa = PBXGroup;
 			children = (
@@ -134,6 +143,7 @@
 				9835F4792A4B4F1D0095D0D0 /* build */,
 				9835F4642A4B15300095D0D0 /* MetalFlashAttention.entitlements */,
 				98F7440E2A4A008C00B5E60A /* build.swift */,
+				980EDCF92A4E081900BC9BF0 /* CI */,
 				987E36032A45E5D200ACACE3 /* Documentation */,
 				987E36022A45E5CC00ACACE3 /* README.md */,
 				987E36012A45E5C600ACACE3 /* LICENSE */,

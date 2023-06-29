@@ -16,7 +16,7 @@ class PerformanceTests: MFATestCase {
   override func runVeryLongTests() {
     // Tests the precision you set as the global testing precision. For a quick
     // smoke test, you can set a larger granularity.
-    testGEMMSpeed(granularity: 4, logProgress: true)
+    testGEMMSpeed(granularity: 2, logProgress: true)
   }
   
   // Covers the entire range of square matrix sizes, as well as differences
@@ -39,8 +39,8 @@ class PerformanceTests: MFATestCase {
       
       var name: String {
         switch self {
-        case .mfa48x48: return "MFA_48x48"
-        case .mfa32x32: return "MFA_32x32"
+        case .mfa48x48: return "MFA 48x48"
+        case .mfa32x32: return "MFA 32x32"
         case .mps: return "MPS"
         }
       }
@@ -239,23 +239,84 @@ class PerformanceTests: MFATestCase {
     
     // TODO: Generate a matplotlib line chart from this data.
     var segments: [Segment] = [
-      Segment(sizes: 1..<64, iterations: 128),
-      Segment(sizes: 64..<128, iterations: 128),
-      Segment(sizes: 128..<192, iterations: 128),
-      Segment(sizes: 192..<256, iterations: 64),
-      Segment(sizes: 256..<384, iterations: 32),
-      Segment(sizes: 384..<512, iterations: 16),
-      Segment(sizes: 512..<768, iterations: 8),
-      Segment(sizes: 768..<1024, iterations: 4),
+      Segment(sizes: 1..<64, iterations: 256),
+      Segment(sizes: 64..<128, iterations: 256),
+      Segment(sizes: 128..<192, iterations: 256),
+      Segment(sizes: 192..<256, iterations: 128),
+      Segment(sizes: 256..<384, iterations: 64),
+      Segment(sizes: 384..<512, iterations: 32),
+      Segment(sizes: 512..<768, iterations: 16),
+      Segment(sizes: 768..<1024, iterations: 8),
     ]
-//    if Real.self == Float.self {
-//      segments.append(Segment(sizes: 1024..<1537, iterations: 2))
-//    } else {
-//      segments.append(Segment(sizes: 1024..<1536, iterations: 2))
-//      segments.append(Segment(sizes: 1536..<2049, iterations: 1))
-//    }
+    if Real.self == Float.self {
+      segments.append(Segment(sizes: 1024..<1537, iterations: 4))
+    } else {
+      segments.append(Segment(sizes: 1024..<1536, iterations: 4))
+      segments.append(Segment(sizes: 1536..<2049, iterations: 2))
+    }
     for i in 0..<segments.count {
       segments[i].profile(granularity: granularity, logProgress: logProgress)
     }
+    
+    func extract(config: Config) -> (size: [Int], gflops: [Double]) {
+      var sizes: [Int] = []
+      var speeds: [Double] = []
+      for segment in segments {
+        let flopsArray = segment.flops[config]!
+        var sizeIndex = 0
+        for size in segment.sizes {
+          defer { sizeIndex += 1 }
+          if size % granularity == 0 {
+            sizes.append(size)
+            speeds.append(flopsArray[sizeIndex])
+          }
+        }
+      }
+      return (sizes, speeds.map { $0 / 1e9 })
+    }
+    
+    struct Extraction {
+      var sizeArray: [Int]
+      var gflopsArray: [Double]
+      var title: String
+      var style: String
+      
+      init(
+        _ tuple: (size: [Int], gflops: [Double]),
+        _ config: Config,
+        style: String
+      ) {
+        self.sizeArray = tuple.size
+        self.gflopsArray = tuple.gflops
+        self.title = config.name
+        self.style = style
+      }
+    }
+    
+    // green - MFA 48x48
+    // blue - MFA 32x32
+    // red - MPS
+    let extractions: [Extraction] = [
+      Extraction(extract(config: .mps), Config.mps, style: "-r"),
+      Extraction(extract(config: .mfa32x32), Config.mfa32x32, style: "-b"),
+      Extraction(extract(config: .mfa48x48), Config.mfa48x48, style: "-g"),
+    ]
+    let plt = PythonContext.global.plt
+    for extraction in extractions {
+      plt.plot(
+        extraction.sizeArray, extraction.gflopsArray,
+        extraction.style, label: extraction.title)
+    }
+    plt.legend(loc: "upper left")
+    plt.xlim(0, extractions[0].sizeArray.last!)
+    plt.ylim(0, MetalContext.global.infoDevice.flops / 1e9)
+    plt.xlabel("Square Matrix Size")
+    plt.ylabel("GFLOPS")
+    if Real.self == Float.self {
+      plt.title("Float32 Utilization")
+    } else {
+      plt.title("Float16 Utilization")
+    }
+    plt.show()
   }
 }

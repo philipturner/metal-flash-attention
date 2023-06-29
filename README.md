@@ -71,3 +71,38 @@ GFLOPS during general matrix multiplication:
 | MFA F32            |  8992 |  9236 |  9247 |  9257 |
 | MPS F16            |  7729 |  7824 |  7771 | Error |
 | MFA F16            |  9618 |  9788 |  9778 |  9905 |
+
+## Continuous Integration
+
+Setup:
+- Every square matrix size divisible by 2
+- 32-core Apple 7 GPU
+- NN multiplication (no transposes)
+- 128 threads/threadgroup (no K splits)
+
+### Float32
+
+| Size Start | Size End | Duplicate Commands/Encoder | Trials |
+| ---------- | -------- | ---------- | ------ |
+| 1 | 191 | 256 | 8 |
+| 192 | 255 | 128 | 8 |
+| 256 | 383 | 64 | 8 |
+| 384 | 511 | 32 | 8 |
+| 512 | 767 | 16 | 8 |
+| 768 | 1023 | 8 | 8 |
+| 1024 | 1536 | 4 | 8 |
+ 
+![Float32 Utilization](./CI/float32-latest.png)
+
+### Float16
+
+| Size Start | Size End | Duplicate Commands/Encoder | Trials |
+| ---------- | -------- | ---------- | ------ |
+| 1 | 191 | 256 | 8 |
+| 192 | 255 | 128 | 8 |
+| 256 | 383 | 64 | 8 |
+| 384 | 511 | 32 | 8 |
+| 512 | 767 | 16 | 8 |
+| 768 | 1023 | 8 | 8 |
+| 1024 | 1535 | 4 | 8 |
+| 1536 | 2048 | 2 | 8 |
