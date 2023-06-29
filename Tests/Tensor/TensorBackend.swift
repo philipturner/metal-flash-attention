@@ -47,6 +47,26 @@ struct _ExecutionContext {
     _ = try defaultBackend.withGhostExecution(closure)
     return try closure()
   }
+  
+  static func profileCommands(_ closure: () throws -> Void) rethrows -> Double {
+    return try executeExpression {
+      defaultBackend.markFirstCommand()
+      try closure()
+      defaultBackend.markLastCommand()
+      return defaultBackend.synchronize()
+    }
+  }
+  
+  static func withDefaultBackend<R>(
+    _ backend: TensorBackend,
+    _ closure: () throws -> R
+  ) rethrows -> R {
+    let previous = _ExecutionContext.defaultBackend
+    _ExecutionContext.defaultBackend = backend
+    let output = try closure()
+    _ExecutionContext.defaultBackend = previous
+    return output
+  }
 }
 
 enum TensorBackend {

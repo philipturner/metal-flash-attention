@@ -8,34 +8,9 @@
 import Foundation
 import PythonKit
 
-// Example Python tensors to ensure the graph works correctly.
-func MPL_showExamples(
-  withGEMM: Bool
-) {
-  let M = 100
-  let N = 100
-  let K = 100
-  let matrices: [PythonObject] = (0..<3).map { _ in
-    // Configured with Accelerate and using AMX-accelerated FP32.
-    let np = PythonContext.global.np
-    let rng = np.random.default_rng()
-    if withGEMM {
-      return np.matmul(
-        rng.random(PythonObject(tupleOf: M, K), dtype: np.float32),
-        rng.random(PythonObject(tupleOf: K, N), dtype: np.float32))
-    } else {
-      return rng.random(PythonObject(tupleOf: M, K), dtype: np.float32)
-    }
-  }
-  
-  let parameters = EuclideanDistanceParameters(matrixK: K)
-  MPL_showGraphs(
-    primary: matrices[0],
-    secondary: matrices[1],
-    ternary: matrices[2],
-    parameters: parameters,
-    isComparison: false)
-}
+
+
+// MARK: - Matplotlib Utilities
 
 func MPL_showBackends<T: TensorElement>(
   mfa: Tensor<T>,
@@ -218,4 +193,78 @@ fileprivate func MPL_showGraphs(
     ax.xaxis.set_ticks_position("top")
   }
   plt.show()
+}
+
+// MARK: - Matplotlib Examples
+
+// Example Python tensors to ensure the graph works correctly.
+func MPL_showExamples(
+  withGEMM: Bool
+) {
+  let M = 100
+  let N = 100
+  let K = 100
+  let matrices: [PythonObject] = (0..<3).map { _ in
+    // Configured with Accelerate and using AMX-accelerated FP32.
+    let np = PythonContext.global.np
+    let rng = np.random.default_rng()
+    if withGEMM {
+      return np.matmul(
+        rng.random(PythonObject(tupleOf: M, K), dtype: np.float32),
+        rng.random(PythonObject(tupleOf: K, N), dtype: np.float32))
+    } else {
+      return rng.random(PythonObject(tupleOf: M, K), dtype: np.float32)
+    }
+  }
+  
+  let parameters = EuclideanDistanceParameters(matrixK: K)
+  MPL_showGraphs(
+    primary: matrices[0],
+    secondary: matrices[1],
+    ternary: matrices[2],
+    parameters: parameters,
+    isComparison: false)
+}
+
+// Examples on each backend.
+func MPL_showBackendsExample() {
+  typealias Real = MFATestCase.Real
+
+  let M = 47
+  let N = 47
+  let K = 51
+  let parameters = EuclideanDistanceParameters(matrixK: K)
+
+  let py_A = Tensor<Real>(
+    shape: [M, K], randomUniform: 0..<1, backend: .numpy)
+  let py_B = Tensor<Real>(
+    shape: [K, N], randomUniform: 0..<1, backend: .numpy)
+
+  func _makeTensor(on backend: TensorBackend) -> Tensor<Real> {
+    backend.markFirstCommand()
+    let A = Tensor<Real>(copying: py_A)
+    let B = Tensor<Real>(copying: py_B)
+    var C = Tensor<Real>(zerosLike: [M, N])
+    C.matmul(A, B)
+    backend.markLastCommand()
+    _ = backend.synchronize()
+    return C
+  }
+
+  func makeTensor(on backend: TensorBackend) -> Tensor<Real> {
+    let output = _ExecutionContext.withDefaultBackend(backend) {
+      _ExecutionContext.executeExpression {
+        _makeTensor(on: backend)
+      }
+    }
+    return output
+  }
+
+  let numpy = makeTensor(on: .numpy)
+  let mps = makeTensor(on: .mps)
+  let mfa = makeTensor(on: .mfa)
+
+  MPL_showBackends(mfa: mfa, mps: mps, numpy: numpy, parameters: parameters)
+  //MPL_showComparison(actual: mfa, expected: mps, parameters: parameters)
+  precondition(mfa.isApproximatelyEqual(to: mps, parameters: parameters))
 }

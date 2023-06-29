@@ -8,6 +8,9 @@
 import Foundation
 
 class MFATestCase {
+  // Global setting for the precision used in tests.
+  typealias Real = Float16
+  
   class func typeDescription() -> String {
     fatalError("Not implemented.")
   }
