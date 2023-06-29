@@ -313,7 +313,7 @@ let queue = DispatchQueue(
 var compiledFiles: Int = numThreads
 var airPaths: [String] = []
 
-// MARK: - Compile AIR Files (Multiple cores)
+// MARK: - Compile AIR Files (Multiple Cores)
 
 let skipCompilation = (settings.externalMetallibPath != nil)
 let compileAIRStart = CACurrentMediaTime()
