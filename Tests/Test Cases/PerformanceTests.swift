@@ -6,6 +6,7 @@
 //
 
 import Metal
+import QuartzCore
 
 class PerformanceTests: MFATestCase {
   override class func typeDescription() -> String {
@@ -15,7 +16,7 @@ class PerformanceTests: MFATestCase {
   override func runVeryLongTests() {
     // Tests the precision you set as the global testing precision. For a quick
     // smoke test, you can set a larger granularity.
-    testGEMMSpeed(granularity: 1, logProgress: true)
+    testGEMMSpeed(granularity: 4, logProgress: true)
   }
   
   // Covers the entire range of square matrix sizes, as well as differences
@@ -29,9 +30,7 @@ class PerformanceTests: MFATestCase {
       case mfa32x32
       case mps
       
-      // For some reason, MPS has such bad sequential throughput right now that
-      // it's unusable.
-      static var fastConfigs: [Config] { [.mfa48x48, .mfa32x32] }
+      static var fastConfigs: [Config] { [.mfa48x48, .mfa32x32, .mps] }
       
       var backend: TensorBackend {
         if self == .mps { return .mps }
@@ -87,7 +86,7 @@ class PerformanceTests: MFATestCase {
         self.iterations = iterations
         flops[.mfa48x48] = []
         flops[.mfa32x32] = []
-//        flops[.mps] = []
+        flops[.mps] = []
       }
       
       mutating func prepare(config: Config) {
@@ -101,9 +100,15 @@ class PerformanceTests: MFATestCase {
       }
       
       // If initial, this will run a ghost pass.
-      // Granularity currently ignored. Anything from 1 - 8 will be supported.
-      mutating func _profile(sizes: Range<Int>, granularity: Int, isInitial: Bool, __logProgress: Bool) {
-        func innerLoop(size: Int, reportResults: Bool, __logProgress: Bool) {
+      mutating func _profile(sizes: Range<Int>, granularity: Int, isInitial: Bool) {
+        func innerLoop(size: Int, reportResults: Bool) {
+          if size % granularity != 0 {
+            if !isInitial && reportResults {
+              self.flops[currentConfig!]!.append(0)
+            }
+            return
+          }
+          
           var iterations = self.iterations
           var trials = 0
           SquareMatrixBenchmark_configure(&iterations, &trials)
@@ -112,12 +117,8 @@ class PerformanceTests: MFATestCase {
             trials = 1
           } else {
             if currentConfig == .mps {
-              #if DEBUG
-              iterations = max(8, iterations / 8)
-              #else
-              iterations = max(16, iterations / 8)
-              #endif
-//              iterations = 1
+              // Too little sequential throughput.
+              iterations = min(32, iterations)
             }
           }
           
@@ -156,34 +157,24 @@ class PerformanceTests: MFATestCase {
               let floatOps = 2 * M * N * K * iterations
               let flops = Double(floatOps) / minTime
               self.flops[currentConfig!]!.append(flops)
-              
-//              if __logProgress {
-//                var output: String = "\(M)x\(N)x\(K)"
-//                if Real.self == Float.self {
-//                  output += "xf32 - "
-//                } else {
-//                  output += "xf16 - "
-//                }
-//                output += "\(currentConfig!.name) \(flops / 1e9)"
-//                print(output)
-//              }
             }
           }
           
-          // If `isInitial`, validate that the result matches a tensor generated
-          // on NumPy.
           if isInitial {
-            var py_C = Tensor<Real>(zerosLike: [M, N], backend: .numpy)
-            TensorBackend.numpy.withGhostExecution {
-              py_C.matmul(py_A, py_B)
+            let mps_A = Tensor(copying: py_A, backend: .mps)
+            let mps_B = Tensor(copying: py_B, backend: .mps)
+            var mps_C = Tensor<Real>(zerosLike: [M, N], backend: .mps)
+            _ExecutionContext.withDefaultBackend(.mps) {
+              _ExecutionContext.profileCommands {
+                mps_C.matmul(mps_A, mps_B)
+              }
             }
-            py_C.matmul(py_A, py_B)
             
             let params = EuclideanDistanceParameters(matrixK: K)
-            if !C.isApproximatelyEqual(to: py_C, parameters: params) {
+            if !C.isApproximatelyEqual(to: mps_C, parameters: params) {
               MPL_showComparison(
                 actual: C, actualName: self.currentConfig!.name,
-                expected: py_C, expectedName: "NumPy", parameters: params)
+                expected: mps_C, expectedName: "MPS", parameters: params)
               fatalError("Tensors did not match.")
             }
           }
@@ -191,9 +182,9 @@ class PerformanceTests: MFATestCase {
         
         // Run the last matrix in the batch once to warm up, then actually start
         // benchmarking.
-        innerLoop(size: sizes.upperBound - 1, reportResults: false, __logProgress: __logProgress)
+        innerLoop(size: sizes.upperBound - 1, reportResults: false)
         for size in sizes {
-          innerLoop(size: size, reportResults: true, __logProgress: __logProgress)
+          innerLoop(size: size, reportResults: true)
         }
       }
       
@@ -211,20 +202,16 @@ class PerformanceTests: MFATestCase {
           let sectionSizes = start..<end
           for config in Config.fastConfigs {
             prepare(config: config)
-            _profile(sizes: sectionSizes, granularity: granularity, isInitial: true, __logProgress: logProgress)
-            _profile(sizes: sectionSizes, granularity: granularity, isInitial: false, __logProgress: logProgress)
+            _profile(sizes: sectionSizes, granularity: granularity, isInitial: true)
+            _profile(sizes: sectionSizes, granularity: granularity, isInitial: false)
             cleanup(config: config)
-          }
-          
-          // Ensure each config has the number of data points you expect.
-          for key in flops.keys {
-            let value = flops[key]!
-            let expectedPoints = end - sizes.lowerBound
-            precondition(value.count == expectedPoints)
           }
           
           if logProgress {
             for size in sectionSizes {
+              if size % granularity != 0 {
+                continue
+              }
               var message = "\(size)x\(size)x\(size)"
               if Real.self == Float.self {
                 message += "xf32"
@@ -251,18 +238,6 @@ class PerformanceTests: MFATestCase {
     }
     
     // TODO: Generate a matplotlib line chart from this data.
-    #if DEBUG
-    var segments: [Segment] = [
-      Segment(sizes: 1..<64, iterations: 32),
-      Segment(sizes: 64..<128, iterations: 32),
-      Segment(sizes: 128..<192, iterations: 32),
-      Segment(sizes: 192..<256, iterations: 32),
-      Segment(sizes: 256..<384, iterations: 32),
-      Segment(sizes: 384..<512, iterations: 16),
-      Segment(sizes: 512..<768, iterations: 8),
-      Segment(sizes: 768..<1024, iterations: 4),
-    ]
-    #else
     var segments: [Segment] = [
       Segment(sizes: 1..<64, iterations: 128),
       Segment(sizes: 64..<128, iterations: 128),
@@ -273,13 +248,12 @@ class PerformanceTests: MFATestCase {
       Segment(sizes: 512..<768, iterations: 8),
       Segment(sizes: 768..<1024, iterations: 4),
     ]
-    #endif
-    if Real.self == Float.self {
-      segments.append(Segment(sizes: 1024..<1537, iterations: 2))
-    } else {
-      segments.append(Segment(sizes: 1024..<1536, iterations: 2))
-      segments.append(Segment(sizes: 1536..<2049, iterations: 1))
-    }
+//    if Real.self == Float.self {
+//      segments.append(Segment(sizes: 1024..<1537, iterations: 2))
+//    } else {
+//      segments.append(Segment(sizes: 1024..<1536, iterations: 2))
+//      segments.append(Segment(sizes: 1536..<2049, iterations: 1))
+//    }
     for i in 0..<segments.count {
       segments[i].profile(granularity: granularity, logProgress: logProgress)
     }

@@ -48,6 +48,7 @@ struct _ExecutionContext {
     return try closure()
   }
   
+  @discardableResult
   static func profileCommands(_ closure: () throws -> Void) rethrows -> Double {
     return try executeExpression {
       defaultBackend.markFirstCommand()
@@ -57,6 +58,7 @@ struct _ExecutionContext {
     }
   }
   
+  @discardableResult
   static func withDefaultBackend<R>(
     _ backend: TensorBackend,
     _ closure: () throws -> R
