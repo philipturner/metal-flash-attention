@@ -79,6 +79,10 @@ protocol MetalOperation {
 class OperationCache<Backend: MetalBackend> {
   var gemm: [GEMM_Parameters: Backend.Resource] = [:]
   
+  func clear() {
+    gemm.removeAll()
+  }
+  
   func cache(operation: Backend._GEMM) {
     guard gemm[operation.parameters] == nil else {
       return

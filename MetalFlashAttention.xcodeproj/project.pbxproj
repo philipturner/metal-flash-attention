@@ -34,6 +34,7 @@
 		98C7952A2A4B962B00DB688D /* MFATestCase.swift in Sources */ = {isa = PBXBuildFile; fileRef = 98C795292A4B962B00DB688D /* MFATestCase.swift */; };
 		98C7952C2A4C714400DB688D /* Random.swift in Sources */ = {isa = PBXBuildFile; fileRef = 98C7952B2A4C714400DB688D /* Random.swift */; };
 		98C795302A4C71A400DB688D /* Atomics in Frameworks */ = {isa = PBXBuildFile; productRef = 98C7952F2A4C71A400DB688D /* Atomics */; };
+		98C795322A4DC1F200DB688D /* SquareMatrixBenchmark.swift in Sources */ = {isa = PBXBuildFile; fileRef = 98C795312A4DC1F200DB688D /* SquareMatrixBenchmark.swift */; };
 /* End PBXBuildFile section */
 
 /* Begin PBXCopyFilesBuildPhase section */
@@ -87,6 +88,7 @@
 		98C795272A4B95EC00DB688D /* PerformanceTests.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = PerformanceTests.swift; sourceTree = "<group>"; };
 		98C795292A4B962B00DB688D /* MFATestCase.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = MFATestCase.swift; sourceTree = "<group>"; };
 		98C7952B2A4C714400DB688D /* Random.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = Random.swift; sourceTree = "<group>"; };
+		98C795312A4DC1F200DB688D /* SquareMatrixBenchmark.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = SquareMatrixBenchmark.swift; sourceTree = "<group>"; };
 		98F7440E2A4A008C00B5E60A /* build.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = build.swift; sourceTree = "<group>"; };
 		98F7440F2A4A0CB200B5E60A /* API.md */ = {isa = PBXFileReference; lastKnownFileType = net.daringfireball.markdown; path = API.md; sourceTree = "<group>"; };
 /* End PBXFileReference section */
@@ -218,6 +220,7 @@
 			children = (
 				98C795292A4B962B00DB688D /* MFATestCase.swift */,
 				98C795272A4B95EC00DB688D /* PerformanceTests.swift */,
+				98C795312A4DC1F200DB688D /* SquareMatrixBenchmark.swift */,
 			);
 			path = "Test Cases";
 			sourceTree = "<group>";
@@ -327,6 +330,7 @@
 				98C795242A4B8D1600DB688D /* Convolution.swift in Sources */,
 				9835F47F2A4B55580095D0D0 /* TensorBuffer.swift in Sources */,
 				98C795282A4B95EC00DB688D /* PerformanceTests.swift in Sources */,
+				98C795322A4DC1F200DB688D /* SquareMatrixBenchmark.swift in Sources */,
 				9835F4692A4B36DB0095D0D0 /* MetalFlashAttention.swift in Sources */,
 				9835F46F2A4B37110095D0D0 /* Matplotlib.swift in Sources */,
 				9835F45E2A4A81150095D0D0 /* Normalization.metal in Sources */,

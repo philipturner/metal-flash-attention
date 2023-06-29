@@ -34,8 +34,8 @@ func MPL_showBackends<T: TensorElement>(
 }
 
 func MPL_showComparison<T: TensorElement>(
-  actual: Tensor<T>,
-  expected: Tensor<T>,
+  actual: Tensor<T>, actualName: String? = nil,
+  expected: Tensor<T>, expectedName: String? = nil,
   parameters: EuclideanDistanceParameters
 ) {
   let actualBackend = actual.buffer.backend
@@ -50,7 +50,9 @@ func MPL_showComparison<T: TensorElement>(
     secondary: secondary,
     ternary: ternary,
     parameters: parameters,
-    isComparison: true)
+    isComparison: true,
+    actualName: actualName,
+    expectedName: expectedName)
 }
 
 fileprivate func MPL_showGraphs(
@@ -58,7 +60,9 @@ fileprivate func MPL_showGraphs(
   secondary: PythonObject,
   ternary: PythonObject,
   parameters: EuclideanDistanceParameters,
-  isComparison: Bool
+  isComparison: Bool,
+  actualName: String? = nil,
+  expectedName: String? = nil
 ) {
   let np = PythonContext.global.np
   let plt = PythonContext.global.plt
@@ -152,6 +156,12 @@ fileprivate func MPL_showGraphs(
       Plot(secondary, axis: ax4, norm: norm1, title: "Expected"),
       Plot(ternary, axis: ax5, norm: norm2!, title: "Difference"),
     ]
+    if let actualName {
+      plots[0].title = actualName
+    }
+    if let expectedName {
+      plots[1].title = expectedName
+    }
   } else {
     plots = [
       Plot(primary, axis: ax3, norm: norm1, title: "MFA"),

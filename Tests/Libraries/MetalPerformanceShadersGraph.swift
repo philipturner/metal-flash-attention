@@ -45,6 +45,7 @@ final class MPS_Backend: MetalBackend {
       // MPS has to end the timer here (instead of during `markLastCommand()`)
       // because it must synchronize beforehand.
       commandBuffer!.waitUntilCompleted()
+      commandBuffer = nil
       timerEnd = CACurrentMediaTime()
       return timerEnd - timerStart
     }
