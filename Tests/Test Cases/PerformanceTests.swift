@@ -29,6 +29,10 @@ class PerformanceTests: MFATestCase {
       case mfa32x32
       case mps
       
+      // For some reason, MPS has such bad sequential throughput right now that
+      // it's unusable.
+      static var fastConfigs: [Config] { [.mfa48x48, .mfa32x32] }
+      
       var backend: TensorBackend {
         if self == .mps { return .mps }
         else { return .mfa }
@@ -83,7 +87,7 @@ class PerformanceTests: MFATestCase {
         self.iterations = iterations
         flops[.mfa48x48] = []
         flops[.mfa32x32] = []
-        flops[.mps] = []
+//        flops[.mps] = []
       }
       
       mutating func prepare(config: Config) {
@@ -194,17 +198,18 @@ class PerformanceTests: MFATestCase {
       }
       
       mutating func profile(granularity: Int, logProgress: Bool) {
+        let reportGranularity = 16
         var start = self.sizes.lowerBound
         while start < self.sizes.upperBound {
           var end: Int
-          if start + 10 >= self.sizes.upperBound {
+          if start + reportGranularity + 2 >= self.sizes.upperBound {
             end = self.sizes.upperBound
           } else {
-            end = start + 8
+            end = start + reportGranularity
           }
           
           let sectionSizes = start..<end
-          for config in Config.allCases {
+          for config in Config.fastConfigs {
             prepare(config: config)
             _profile(sizes: sectionSizes, granularity: granularity, isInitial: true, __logProgress: logProgress)
             _profile(sizes: sectionSizes, granularity: granularity, isInitial: false, __logProgress: logProgress)
@@ -226,7 +231,7 @@ class PerformanceTests: MFATestCase {
               } else {
                 message += "xf16"
               }
-              for config in Config.allCases {
+              for config in Config.fastConfigs {
                 let index = size - sizes.lowerBound
                 let gflops = Int(flops[config]![index] / 1e9)
                 message += " - \(config.name)"
@@ -236,15 +241,12 @@ class PerformanceTests: MFATestCase {
             }
           }
           
-          if start + 10 >= self.sizes.upperBound {
+          if start + reportGranularity + 2 >= self.sizes.upperBound {
             break
           } else {
-            start += 8
+            start += reportGranularity
           }
         }
-        
-            
-        
       }
     }
     

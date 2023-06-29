@@ -20,6 +20,7 @@ struct MetalContext {
   
   init() {
     self.device = MTLCopyAllDevices().first!
+    device.shouldMaximizeConcurrentCompilation = true
     self.infoDevice = try! GPUInfoDevice()
     self.graphDevice = MPSGraphDevice(mtlDevice: device)
     
