@@ -10,7 +10,7 @@ import Foundation
 class MFATestCase {
   // Global setting for the precision used in tests.
   #if arch(arm64)
-  typealias Real = Float16
+  typealias Real = Float32
   #else
   typealias Real = Float
   #endif
@@ -32,7 +32,8 @@ class MFATestCase {
   
   static func runTests(speed: TestSpeed) {
     let testCases: [MFATestCase] = [
-      PerformanceTests()
+      CorrectnessTests(),
+      PerformanceTests(),
     ]
     
     for testCase in testCases {

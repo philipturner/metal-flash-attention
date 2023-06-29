@@ -7,6 +7,7 @@
 	objects = {
 
 /* Begin PBXBuildFile section */
+		980EDCFD2A4E10A100BC9BF0 /* CorrectnessTests.swift in Sources */ = {isa = PBXBuildFile; fileRef = 980EDCFC2A4E10A100BC9BF0 /* CorrectnessTests.swift */; };
 		9835F45A2A4A3BA40095D0D0 /* Attention.metal in Sources */ = {isa = PBXBuildFile; fileRef = 9835F4592A4A3BA40095D0D0 /* Attention.metal */; };
 		9835F45C2A4A3BAD0095D0D0 /* Convolution.metal in Sources */ = {isa = PBXBuildFile; fileRef = 9835F45B2A4A3BAD0095D0D0 /* Convolution.metal */; };
 		9835F45E2A4A81150095D0D0 /* Normalization.metal in Sources */ = {isa = PBXBuildFile; fileRef = 9835F45D2A4A81150095D0D0 /* Normalization.metal */; };
@@ -53,6 +54,7 @@
 /* Begin PBXFileReference section */
 		980EDCFA2A4E083100BC9BF0 /* float32-latest.png */ = {isa = PBXFileReference; lastKnownFileType = image.png; path = "float32-latest.png"; sourceTree = "<group>"; };
 		980EDCFB2A4E0C2000BC9BF0 /* float16-latest.png */ = {isa = PBXFileReference; lastKnownFileType = image.png; path = "float16-latest.png"; sourceTree = "<group>"; };
+		980EDCFC2A4E10A100BC9BF0 /* CorrectnessTests.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = CorrectnessTests.swift; sourceTree = "<group>"; };
 		9835F4592A4A3BA40095D0D0 /* Attention.metal */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.metal; path = Attention.metal; sourceTree = "<group>"; };
 		9835F45B2A4A3BAD0095D0D0 /* Convolution.metal */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.metal; path = Convolution.metal; sourceTree = "<group>"; };
 		9835F45D2A4A81150095D0D0 /* Normalization.metal */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.metal; path = Normalization.metal; sourceTree = "<group>"; };
@@ -230,6 +232,7 @@
 		98C7952D2A4C714700DB688D /* Test Cases */ = {
 			isa = PBXGroup;
 			children = (
+				980EDCFC2A4E10A100BC9BF0 /* CorrectnessTests.swift */,
 				98C795292A4B962B00DB688D /* MFATestCase.swift */,
 				98C795272A4B95EC00DB688D /* PerformanceTests.swift */,
 				98C795312A4DC1F200DB688D /* SquareMatrixBenchmark.swift */,
@@ -331,6 +334,7 @@
 				98C7951D2A4B8AFF00DB688D /* TensorBackend.swift in Sources */,
 				9835F4822A4B58530095D0D0 /* DataType.swift in Sources */,
 				9835F47D2A4B53F40095D0D0 /* Operation.swift in Sources */,
+				980EDCFD2A4E10A100BC9BF0 /* CorrectnessTests.swift in Sources */,
 				987E35DF2A45E4F400ACACE3 /* main.swift in Sources */,
 				9835F45A2A4A3BA40095D0D0 /* Attention.metal in Sources */,
 				9835F4732A4B39C80095D0D0 /* NumPy.swift in Sources */,
