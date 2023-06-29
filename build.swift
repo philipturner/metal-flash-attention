@@ -294,7 +294,7 @@ do {
   try! FileManager.default.copyItem(at: srcDir, to: dstDir)
 }
 
-// Allocate the temporary directoru.
+// Allocate the temporary directory.
 let tmpDir = buildDir.appending(component: "tmp")
 try? FileManager.default.removeItem(at: tmpDir)
 try! FileManager.default.createDirectory(
