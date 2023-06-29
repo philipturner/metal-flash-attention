@@ -237,7 +237,6 @@ class PerformanceTests: MFATestCase {
       }
     }
     
-    // TODO: Generate a matplotlib line chart from this data.
     var segments: [Segment] = [
       Segment(sizes: 1..<64, iterations: 256),
       Segment(sizes: 64..<128, iterations: 256),

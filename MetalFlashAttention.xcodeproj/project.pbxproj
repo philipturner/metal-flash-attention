@@ -52,6 +52,7 @@
 
 /* Begin PBXFileReference section */
 		980EDCFA2A4E083100BC9BF0 /* float32-latest.png */ = {isa = PBXFileReference; lastKnownFileType = image.png; path = "float32-latest.png"; sourceTree = "<group>"; };
+		980EDCFB2A4E0C2000BC9BF0 /* float16-latest.png */ = {isa = PBXFileReference; lastKnownFileType = image.png; path = "float16-latest.png"; sourceTree = "<group>"; };
 		9835F4592A4A3BA40095D0D0 /* Attention.metal */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.metal; path = Attention.metal; sourceTree = "<group>"; };
 		9835F45B2A4A3BAD0095D0D0 /* Convolution.metal */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.metal; path = Convolution.metal; sourceTree = "<group>"; };
 		9835F45D2A4A81150095D0D0 /* Normalization.metal */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.metal; path = Normalization.metal; sourceTree = "<group>"; };
@@ -111,6 +112,7 @@
 		980EDCF92A4E081900BC9BF0 /* CI */ = {
 			isa = PBXGroup;
 			children = (
+				980EDCFB2A4E0C2000BC9BF0 /* float16-latest.png */,
 				980EDCFA2A4E083100BC9BF0 /* float32-latest.png */,
 			);
 			path = CI;

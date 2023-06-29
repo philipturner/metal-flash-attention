@@ -78,7 +78,7 @@ Setup:
 - Every square matrix size divisible by 2
 - 32-core Apple 7 GPU
 - NN multiplication (no transposes)
-- 128 threads/threadgroup (no K splits)
+- 128 threads/threadgroup (no K-splits)
 
 ### Float32
 
@@ -106,3 +106,9 @@ Setup:
 | 768 | 1023 | 8 | 8 |
 | 1024 | 1535 | 4 | 8 |
 | 1536 | 2048 | 2 | 8 |
+
+![Float16 Utilization](./CI/float16-latest.png)
+
+### Regressions
+
+There are likely either random register spills or unneeded zero-initialization during the SIMD async copy instructions. MPS is noticeably slower than in previous tests, likely due to a sequential throughput bottleneck. 48x48 has consistently faster performance than 32x32, but is randomly drastically slower.
