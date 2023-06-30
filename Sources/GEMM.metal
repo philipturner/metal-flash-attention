@@ -53,8 +53,7 @@ constant ushort B_block_leading_dim = (B_trans ? K_group : N_group);
 // There is no padding for M reads/writes.
 // There is no padding for N reads/writes.
 constant ushort K_group_unpadded = (K % K_group == 0) ? K_group : (K % K_group);
-constant ushort K_group_padded = (K % K_group == 0) ? K_group : ~(K_group - 1) & (K % K_group + K_group - 1);
-constant ushort K_simd_padded = (K % K_simd == 0) ? K_simd : ~7 & (K % K_simd + 7);
+constant ushort K_simd_padded = (K_group_unpadded + 7) / 8 * 8;
 
 constant ushort A_sram_length = (M_simd / 8) * 1;
 constant ushort B_sram_length = 1 * (N_simd / 8);
@@ -99,7 +98,7 @@ METAL_FUNC void prefetch(threadgroup T *A_block, device T *A,
   
   // Rounded-up ceiling for the threadgroup block.
   const uint K_edge_floor = K - K_group_unpadded;
-  const uint K_edge_ceil = K_edge_floor + K_group_padded;
+  const uint K_edge_ceil = K_edge_floor + K_simd_padded;
   ushort K_padded;
   if (K_edge_floor == K_group) {
     K_padded = K_group;

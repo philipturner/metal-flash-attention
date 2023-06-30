@@ -84,13 +84,13 @@ Setup:
 
 | Size Start | Size End | Duplicate Commands/Encoder | Trials |
 | ---------- | -------- | ---------- | ------ |
-| 1 | 191 | 256 | 8 |
-| 192 | 255 | 128 | 8 |
-| 256 | 383 | 64 | 8 |
-| 384 | 511 | 32 | 8 |
-| 512 | 767 | 16 | 8 |
-| 768 | 1023 | 8 | 8 |
-| 1024 | 1536 | 4 | 8 |
+| 1 | 190 | 256 | 16 |
+| 192 | 254 | 128 | 16 |
+| 256 | 382 | 64 | 16 |
+| 384 | 510 | 32 | 16 |
+| 512 | 766 | 16 | 16 |
+| 768 | 1022 | 8 | 16 |
+| 1024 | 1536 | 4 | 16 |
  
 ![Float32 Utilization](./CI/float32-latest.png)
 
@@ -98,17 +98,13 @@ Setup:
 
 | Size Start | Size End | Duplicate Commands/Encoder | Trials |
 | ---------- | -------- | ---------- | ------ |
-| 1 | 191 | 256 | 8 |
-| 192 | 255 | 128 | 8 |
-| 256 | 383 | 64 | 8 |
-| 384 | 511 | 32 | 8 |
-| 512 | 767 | 16 | 8 |
-| 768 | 1023 | 8 | 8 |
-| 1024 | 1535 | 4 | 8 |
-| 1536 | 2048 | 2 | 8 |
+| 1 | 190 | 256 | 16 |
+| 192 | 254 | 128 | 16 |
+| 256 | 382 | 64 | 16 |
+| 384 | 510 | 32 | 16 |
+| 512 | 766 | 16 | 16 |
+| 768 | 1022 | 8 | 16 |
+| 1024 | 1534 | 4 | 16 |
+| 1536 | 2048 | 2 | 16 |
 
 ![Float16 Utilization](./CI/float16-latest.png)
-
-### Regressions
-
-There are likely either random register spills or unneeded zero-initialization during the SIMD async copy instructions. MPS is noticeably slower than in previous tests, likely due to a sequential throughput bottleneck. 48x48 has consistently faster performance than 32x32, but is randomly drastically slower.

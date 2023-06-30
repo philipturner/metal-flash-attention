@@ -16,13 +16,14 @@ class PerformanceTests: MFATestCase {
   override func runVeryLongTests() {
     // Tests the precision you set as the global testing precision. For a quick
     // smoke test, you can set a larger granularity.
-    testGEMMSpeed(granularity: 2, logProgress: true)
+    testGEMMSpeed(granularity: 2, trialsExtension: 2)
   }
   
   // Covers the entire range of square matrix sizes, as well as differences
   // between MFA 32x32, MFA 48x48, and MPS.
-  func testGEMMSpeed(granularity: Int, logProgress: Bool) {
+  func testGEMMSpeed(granularity: Int, trialsExtension: Int) {
     precondition(granularity.nonzeroBitCount == 1)
+    let logProgress = true
     
     enum Config: CaseIterable {
       // Ordered from fastest to slowest at large matrix sizes.
@@ -100,7 +101,7 @@ class PerformanceTests: MFATestCase {
       }
       
       // If initial, this will run a ghost pass.
-      mutating func _profile(sizes: Range<Int>, granularity: Int, isInitial: Bool) {
+      mutating func _profile(sizes: Range<Int>, granularity: Int, trialsExtension: Int, isInitial: Bool) {
         func innerLoop(size: Int, reportResults: Bool) {
           if size % granularity != 0 {
             if !isInitial && reportResults {
@@ -119,6 +120,8 @@ class PerformanceTests: MFATestCase {
             if currentConfig == .mps {
               // Too little sequential throughput.
               iterations = min(32, iterations)
+            } else {
+              trials *= trialsExtension
             }
           }
           
@@ -188,7 +191,7 @@ class PerformanceTests: MFATestCase {
         }
       }
       
-      mutating func profile(granularity: Int, logProgress: Bool) {
+      mutating func profile(granularity: Int, trialsExtension: Int, logProgress: Bool) {
         let reportGranularity = 16
         var start = self.sizes.lowerBound
         while start < self.sizes.upperBound {
@@ -202,8 +205,8 @@ class PerformanceTests: MFATestCase {
           let sectionSizes = start..<end
           for config in Config.fastConfigs {
             prepare(config: config)
-            _profile(sizes: sectionSizes, granularity: granularity, isInitial: true)
-            _profile(sizes: sectionSizes, granularity: granularity, isInitial: false)
+            _profile(sizes: sectionSizes, granularity: granularity, trialsExtension: trialsExtension, isInitial: true)
+            _profile(sizes: sectionSizes, granularity: granularity, trialsExtension: trialsExtension, isInitial: false)
             cleanup(config: config)
           }
           
@@ -254,7 +257,7 @@ class PerformanceTests: MFATestCase {
       segments.append(Segment(sizes: 1536..<2049, iterations: 2))
     }
     for i in 0..<segments.count {
-      segments[i].profile(granularity: granularity, logProgress: logProgress)
+      segments[i].profile(granularity: granularity, trialsExtension: trialsExtension, logProgress: logProgress)
     }
     
     func extract(config: Config) -> (size: [Int], gflops: [Double]) {

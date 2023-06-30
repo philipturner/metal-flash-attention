@@ -13,7 +13,7 @@ import PythonKit
 _ = MetalContext.global
 _ = PythonContext.global
 
-MFATestCase.runTests(speed: .quick)
+MFATestCase.runTests(speed: .veryLong)
 
 // Currently, the tests only cover:
 // M = 1 - 1536/2048

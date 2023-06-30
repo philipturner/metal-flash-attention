@@ -53,7 +53,6 @@
 
 /* Begin PBXFileReference section */
 		980EDCFA2A4E083100BC9BF0 /* float32-latest.png */ = {isa = PBXFileReference; lastKnownFileType = image.png; path = "float32-latest.png"; sourceTree = "<group>"; };
-		980EDCFB2A4E0C2000BC9BF0 /* float16-latest.png */ = {isa = PBXFileReference; lastKnownFileType = image.png; path = "float16-latest.png"; sourceTree = "<group>"; };
 		980EDCFC2A4E10A100BC9BF0 /* CorrectnessTests.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = CorrectnessTests.swift; sourceTree = "<group>"; };
 		9835F4592A4A3BA40095D0D0 /* Attention.metal */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.metal; path = Attention.metal; sourceTree = "<group>"; };
 		9835F45B2A4A3BAD0095D0D0 /* Convolution.metal */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.metal; path = Convolution.metal; sourceTree = "<group>"; };
@@ -70,6 +69,7 @@
 		9835F47C2A4B53F40095D0D0 /* Operation.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = Operation.swift; sourceTree = "<group>"; };
 		9835F47E2A4B55580095D0D0 /* TensorBuffer.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = TensorBuffer.swift; sourceTree = "<group>"; };
 		9835F4812A4B58530095D0D0 /* DataType.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = DataType.swift; sourceTree = "<group>"; };
+		9842C3E52A4E7EAB0013BAC7 /* float16-latest.png */ = {isa = PBXFileReference; lastKnownFileType = image.png; path = "float16-latest.png"; sourceTree = "<group>"; };
 		987E35DB2A45E4F400ACACE3 /* MetalFlashAttention */ = {isa = PBXFileReference; explicitFileType = "compiled.mach-o.executable"; includeInIndex = 0; path = MetalFlashAttention; sourceTree = BUILT_PRODUCTS_DIR; };
 		987E35DE2A45E4F400ACACE3 /* main.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = main.swift; sourceTree = "<group>"; };
 		987E36012A45E5C600ACACE3 /* LICENSE */ = {isa = PBXFileReference; fileEncoding = 4; lastKnownFileType = text; path = LICENSE; sourceTree = "<group>"; };
@@ -114,7 +114,7 @@
 		980EDCF92A4E081900BC9BF0 /* CI */ = {
 			isa = PBXGroup;
 			children = (
-				980EDCFB2A4E0C2000BC9BF0 /* float16-latest.png */,
+				9842C3E52A4E7EAB0013BAC7 /* float16-latest.png */,
 				980EDCFA2A4E083100BC9BF0 /* float32-latest.png */,
 			);
 			path = CI;
