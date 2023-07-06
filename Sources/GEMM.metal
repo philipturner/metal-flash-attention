@@ -376,7 +376,7 @@ void _gemm_impl(device T *A [[buffer(0)]],
     }
   }
   
-  if (abs(alpha) != 1) {
+  if (alpha != 1) {
 #pragma clang loop unroll(full)
     for (int m = 0; m < M_padded; m += 8) {
 #pragma clang loop unroll(full)
