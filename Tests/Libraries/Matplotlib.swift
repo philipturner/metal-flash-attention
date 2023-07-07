@@ -17,7 +17,7 @@ func MPL_showBackends<T: TensorElement>(
   mps: Tensor<T>,
   numpy: Tensor<T>,
   parameters: EuclideanDistanceParameters,
-  slice: Int? = nil
+  slice: PythonObject? = nil
 ) {
   precondition(mfa.buffer.backend == .mfa)
   precondition(mps.buffer.backend == .mps)
@@ -63,7 +63,7 @@ fileprivate func MPL_showGraphs(
   secondary _secondary: PythonObject,
   ternary _ternary: PythonObject,
   parameters: EuclideanDistanceParameters,
-  slice: Int?,
+  slice: PythonObject?,
   isComparison: Bool,
   actualName: String? = nil,
   expectedName: String? = nil

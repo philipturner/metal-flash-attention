@@ -25,6 +25,7 @@ class CorrectnessTests: MFATestCase {
     // 75 - 150: batch 2-16 for A/C
     let numNonTransposedTrials = 25
     let numNonBatchedTrials = 75
+    let nonBroadcastedCutoff = 100
     let numTrials = numNonBatchedTrials + 75
     
     // Create a biased random distribution that favors smaller numbers. Take the
@@ -40,7 +41,7 @@ class CorrectnessTests: MFATestCase {
     }
     
     let allRandomTransposes: [(Bool, Bool)] = (0..<numTrials).map { i in
-      if i < 25 {
+      if i < numNonTransposedTrials {
         return (false, false)
       } else {
         return (Bool.random(), Bool.random())
@@ -73,8 +74,12 @@ class CorrectnessTests: MFATestCase {
       var shapeC = [M, N]
       if let batchSize {
         shapeA = [batchSize] + shapeA
-        if index % 2 == 0 {
-          shapeB = [1] + shapeB
+        if index < nonBroadcastedCutoff {
+          if index % 2 == 0 {
+            shapeB = [1] + shapeB
+          }
+        } else {
+          shapeB = [batchSize] + shapeB
         }
         shapeC = [batchSize] + shapeC
       }

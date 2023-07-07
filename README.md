@@ -112,7 +112,8 @@ Releases:
 - v0.1.0-alpha
   - Initial release, only non-batched GEMM without fused transposes
 - v0.2.0-alpha
-  - Fused transposes for A and B, broadcasted batching along A
+  - Fused transposes for A and B
+  - Support for batched GEMM in some cases
 - v0.3.0-alpha
   - Benchmarks for larger matrices and 64x64 block sizes
   - Batching along B and multidimensional broadcasting

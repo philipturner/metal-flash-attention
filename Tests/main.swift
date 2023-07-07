@@ -15,7 +15,7 @@ _ = PythonContext.global
 
 //customTest()
 
-MFATestCase.runTests(speed: .veryLong)
+MFATestCase.runTests(speed: .quick)
 
 // Currently, the tests only cover:
 // M = 1 - 1536/2048
@@ -42,9 +42,9 @@ func customTest() {
   var shapeB: [Int]
   var shapeC: [Int]
   if let batchSize {
-    shapeA = [batchSize, K, M]
-    shapeB = [K, N]
-    shapeC = [batchSize, M, N]
+    shapeA = [3, batchSize, K, M]
+    shapeB = [3, batchSize, K, N]
+    shapeC = [3, batchSize, M, N]
   } else {
     shapeA = [K, M]
     shapeB = [K, N]
@@ -83,9 +83,13 @@ func customTest() {
   MPL_showBackends(
     mfa: mfa_C, mps: mps_C, numpy: py_C,
     parameters: .init(matrixK: K, batchSize: batchSize),
-    slice: 0)
+    slice: PythonObject(tupleOf: 0, 0))
   MPL_showBackends(
     mfa: mfa_C, mps: mps_C, numpy: py_C,
     parameters: .init(matrixK: K, batchSize: batchSize),
-    slice: 1)
+    slice: PythonObject(tupleOf: 0, 1))
+  MPL_showBackends(
+    mfa: mfa_C, mps: mps_C, numpy: py_C,
+    parameters: .init(matrixK: K, batchSize: batchSize),
+    slice: PythonObject(tupleOf: 1, 0))
 }

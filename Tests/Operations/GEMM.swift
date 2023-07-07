@@ -153,7 +153,9 @@ struct MFA_GEMM: GEMM, MFA_Operation {
       let batchDimensionsB = tensors.b.shape.dropLast(2)
       let batchDimensionsC = tensors.c.shape.dropLast(2)
       assert(batchDimensionsA.reduce(1, *) > 0)
-      assert(batchDimensionsB.reduce(1, *) == 1)
+      assert(
+        batchDimensionsB.reduce(1, *) == 1 ||
+        batchDimensionsB == batchDimensionsA)
       assert(batchDimensionsA == batchDimensionsC)
       gridZ = batchDimensionsA.reduce(1, *)
       
@@ -161,9 +163,14 @@ struct MFA_GEMM: GEMM, MFA_Operation {
       let elementSize = tensors.a.dataType.size
       func byteStride(shape: [Int]) -> Int {
         let rank = shape.count
-        return elementSize * shape[rank - 2] * shape[rank - 1]
+        var output = elementSize * shape[rank - 2] * shape[rank - 1]
+        if shape.dropLast(2).reduce(1, *) == 1 {
+          output = 0
+        }
+        return output
       }
       let byteStrideA = byteStride(shape: tensors.a.shape)
+      let byteStrideB = byteStride(shape: tensors.b.shape)
       let byteStrideC = byteStride(shape: tensors.c.shape)
       withUnsafeTemporaryAllocation(
         of: SIMD3<UInt64>.self, capacity: gridZ
@@ -171,7 +178,7 @@ struct MFA_GEMM: GEMM, MFA_Operation {
         for i in 0..<buffer.count {
           buffer[i] = SIMD3(
             UInt64(truncatingIfNeeded: i * byteStrideA),
-            0,
+            UInt64(truncatingIfNeeded: i * byteStrideB),
             UInt64(truncatingIfNeeded: i * byteStrideC))
         }
         
@@ -210,7 +217,9 @@ struct MPS_GEMM: GEMM, MPS_Operation {
       precondition(parameters.batchDimensionsA!.count > 0)
       precondition(parameters.batchDimensionsA!.reduce(1, *) > 0)
       if let batchDimensionsB = parameters.batchDimensionsB {
-        precondition(batchDimensionsB.reduce(1, *) == 1)
+        precondition(
+          batchDimensionsB.reduce(1, *) == 1 ||
+          batchDimensionsB == parameters.batchDimensionsA!)
       }
     } else {
       precondition(parameters.batchDimensionsA! == [])
@@ -328,13 +337,35 @@ struct Py_GEMM: GEMM, Py_Operation {
       var repr: String?
       if parameters.batched {
         assert(parameters.batchDimensionsA!.reduce(1, *) > 0)
-        assert(parameters.batchDimensionsB!.reduce(1, *) == 1)
+        assert(
+          parameters.batchDimensionsB!.reduce(1, *) == 1 ||
+          parameters.batchDimensionsB! == parameters.batchDimensionsA!)
+        
+        
+        var extraDimsRepr: String = ""
+        if parameters.batchDimensionsA!.count >= 2 {
+          if parameters.batchDimensionsA!.count >= 3 {
+            fatalError("Case not supported yet.")
+          }
+          extraDimsRepr = "g"
+        }
+        
+        var bInsert: String = ""
+        if parameters.batchDimensionsB!.count > 0 {
+          if parameters.batchDimensionsB!.reduce(1, *) == 1 {
+            fatalError("Case not supported yet.")
+          }
+          precondition(
+            parameters.batchDimensionsB! == parameters.batchDimensionsA!)
+          bInsert = "\(extraDimsRepr)h"
+        }
+        extraDimsRepr += "h"
         if parameters.A_trans && parameters.B_trans {
-          repr = "hji,kj->hik"
+          repr = "\(extraDimsRepr)ji,\(bInsert)kj->\(extraDimsRepr)ik"
         } else if parameters.A_trans {
-          repr = "hji,jk->hik"
+          repr = "\(extraDimsRepr)ji,\(bInsert)jk->\(extraDimsRepr)ik"
         } else if parameters.B_trans {
-          repr = "hij,kj->hik"
+          repr = "\(extraDimsRepr)ij,\(bInsert)kj->\(extraDimsRepr)ik"
         }
       } else {
         if parameters.A_trans && parameters.B_trans {
