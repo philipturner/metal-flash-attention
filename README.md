@@ -77,24 +77,7 @@ GFLOPS during general matrix multiplication:
 Setup:
 - Every square matrix size divisible by 2
 - 32-core Apple 7 GPU
-- NN multiplication (no transposes)
 - 128 threads/threadgroup (no K-splits)
-
-### Float32
-
-| Size Start | Size End | Duplicate Commands/Encoder | Trials |
-| ---------- | -------- | ---------- | ------ |
-| 1 | 190 | 256 | 16 |
-| 192 | 254 | 128 | 16 |
-| 256 | 382 | 64 | 16 |
-| 384 | 510 | 32 | 16 |
-| 512 | 766 | 16 | 16 |
-| 768 | 1022 | 8 | 16 |
-| 1024 | 1536 | 4 | 16 |
- 
-![Float32 Utilization](./CI/float32-latest.png)
-
-### Float16
 
 | Size Start | Size End | Duplicate Commands/Encoder | Trials |
 | ---------- | -------- | ---------- | ------ |
@@ -107,4 +90,31 @@ Setup:
 | 1024 | 1534 | 4 | 16 |
 | 1536 | 2048 | 2 | 16 |
 
-![Float16 Utilization](./CI/float16-latest.png)
+### Float32 Utilization (NN)
+ 
+![Float32 Utilization (NN)](./CI/float32-nn-latest.png)
+
+### Float32 Utilization (NT)
+
+![Float32 Utilization (NT)](./CI/float32-nt-latest.png)
+
+### Float16 Utilization (NN)
+
+![Float16 Utilization (NN)](./CI/float16-nn-latest.png)
+
+<!-- ### Float16 Utilization (NT, batched, 2xA)
+
+ Float16 Utilization (NT, batched, 2xA) -->
+
+## Roadmap
+
+Releases:
+- v0.1.0-alpha
+  - Initial release, only non-batched GEMM without fused transposes
+- v0.2.0-alpha
+  - Fused transposes for A and B, broadcasted batching along A
+- v0.3.0-alpha
+  - Benchmarks for larger matrices and 64x64 block sizes
+  - Batching along B and multidimensional broadcasting
+  - Alpha and beta constants from BLAS
+  - Heuristics for the fastest block size based on the number of cores

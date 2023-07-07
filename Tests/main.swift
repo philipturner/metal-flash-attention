@@ -19,8 +19,8 @@ MFATestCase.runTests(speed: .veryLong)
 // M = 1 - 1536/2048
 // N = 1 - 1536/2048
 // K = 1 - 1536/2048
-// A_trans = false
-// B_trans = false
+// A_trans = [true, true]
+// B_trans = [true, true]
 // alpha = 1
 // beta = 0
 // batched = false

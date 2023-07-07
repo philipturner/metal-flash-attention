@@ -68,8 +68,6 @@
 		9835F47C2A4B53F40095D0D0 /* Operation.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = Operation.swift; sourceTree = "<group>"; };
 		9835F47E2A4B55580095D0D0 /* TensorBuffer.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = TensorBuffer.swift; sourceTree = "<group>"; };
 		9835F4812A4B58530095D0D0 /* DataType.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = DataType.swift; sourceTree = "<group>"; };
-		9842C3E52A4E7EAB0013BAC7 /* float16-latest.png */ = {isa = PBXFileReference; lastKnownFileType = image.png; path = "float16-latest.png"; sourceTree = "<group>"; };
-		9842C3E62A4E84200013BAC7 /* float32-latest.png */ = {isa = PBXFileReference; lastKnownFileType = image.png; path = "float32-latest.png"; sourceTree = "<group>"; };
 		987E35DB2A45E4F400ACACE3 /* MetalFlashAttention */ = {isa = PBXFileReference; explicitFileType = "compiled.mach-o.executable"; includeInIndex = 0; path = MetalFlashAttention; sourceTree = BUILT_PRODUCTS_DIR; };
 		987E35DE2A45E4F400ACACE3 /* main.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = main.swift; sourceTree = "<group>"; };
 		987E36012A45E5C600ACACE3 /* LICENSE */ = {isa = PBXFileReference; fileEncoding = 4; lastKnownFileType = text; path = LICENSE; sourceTree = "<group>"; };
@@ -95,6 +93,9 @@
 		98C795312A4DC1F200DB688D /* SquareMatrixBenchmark.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = SquareMatrixBenchmark.swift; sourceTree = "<group>"; };
 		98F7440E2A4A008C00B5E60A /* build.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = build.swift; sourceTree = "<group>"; };
 		98F7440F2A4A0CB200B5E60A /* API.md */ = {isa = PBXFileReference; lastKnownFileType = net.daringfireball.markdown; path = API.md; sourceTree = "<group>"; };
+		98FDDEFD2A5870220096BC27 /* float32-nn-latest.png */ = {isa = PBXFileReference; lastKnownFileType = image.png; path = "float32-nn-latest.png"; sourceTree = "<group>"; };
+		98FDDEFE2A5871800096BC27 /* float16-nn-latest.png */ = {isa = PBXFileReference; lastKnownFileType = image.png; path = "float16-nn-latest.png"; sourceTree = "<group>"; };
+		98FDDEFF2A587CC10096BC27 /* float32-nt-latest.png */ = {isa = PBXFileReference; lastKnownFileType = image.png; path = "float32-nt-latest.png"; sourceTree = "<group>"; };
 /* End PBXFileReference section */
 
 /* Begin PBXFrameworksBuildPhase section */
@@ -114,8 +115,9 @@
 		980EDCF92A4E081900BC9BF0 /* CI */ = {
 			isa = PBXGroup;
 			children = (
-				9842C3E52A4E7EAB0013BAC7 /* float16-latest.png */,
-				9842C3E62A4E84200013BAC7 /* float32-latest.png */,
+				98FDDEFF2A587CC10096BC27 /* float32-nt-latest.png */,
+				98FDDEFD2A5870220096BC27 /* float32-nn-latest.png */,
+				98FDDEFE2A5871800096BC27 /* float16-nn-latest.png */,
 			);
 			path = CI;
 			sourceTree = "<group>";

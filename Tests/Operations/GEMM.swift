@@ -64,8 +64,6 @@ struct MFA_GEMM: GEMM, MFA_Operation {
   func makeAsyncResource() -> AsyncPipeline {
     let dataType = parameters.dataType
     precondition(dataType == .float || dataType == .half)
-    precondition(parameters.A_trans == false)
-    precondition(parameters.B_trans == false)
     precondition(parameters.alpha == 1.0)
     precondition(parameters.beta == 0.0)
     precondition(parameters.batched == false)
@@ -172,8 +170,6 @@ struct MPS_GEMM: GEMM, MPS_Operation {
   func makeAsyncResource() -> AsyncGraph {
     let dataType = parameters.dataType
     precondition(dataType == .float || dataType == .half)
-    precondition(parameters.A_trans == false)
-    precondition(parameters.B_trans == false)
     precondition(parameters.alpha == 1.0)
     precondition(parameters.beta == 0.0)
     precondition(parameters.batched == false)
@@ -277,26 +273,43 @@ struct Py_GEMM: GEMM, Py_Operation {
     let tensorB = tensors.b as! Py_TensorBuffer
     let tensorC = tensors.c as! Py_TensorBuffer
     
-    let originalA = tensorA.ndarray
-    var postTransposeA: PythonObject
-    if parameters.A_trans {
-      postTransposeA = originalA.T
-    } else {
-      postTransposeA = originalA
-    }
-    
-    let originalB = tensorB.ndarray
-    var postTransposeB: PythonObject
-    if parameters.B_trans {
-      postTransposeB = originalB.T
-    } else {
-      postTransposeB = originalB
-    }
+//    let originalA = tensorA.ndarray
+//    var postTransposeA: PythonObject
+//    if parameters.A_trans {
+//      postTransposeA = originalA.T
+//    } else {
+//      postTransposeA = originalA
+//    }
+//    
+//    let originalB = tensorB.ndarray
+//    var postTransposeB: PythonObject
+//    if parameters.B_trans {
+//      postTransposeB = originalB.T
+//    } else {
+//      postTransposeB = originalB
+//    }
     
     // alpha, beta, and fused activation not recognized yet.
     
-    // TODO: Try using einsum to make fused transposes and BLAS α/β faster.
+//    // TODO: Try using einsum to make fused transposes and BLAS α/β faster.
+//    let np = PythonContext.global.np
+//    np.matmul(postTransposeA, postTransposeB, tensorC.ndarray)
+  
     let np = PythonContext.global.np
-    np.matmul(postTransposeA, postTransposeB, tensorC.ndarray)
+    if !parameters.A_trans && !parameters.B_trans {
+      np.matmul(tensorA.ndarray, tensorB.ndarray, out: tensorC.ndarray)
+      // repr = "ij,jk->ik"
+      // repr = "ik,kj->ij"
+    } else {
+      var repr: String?
+      if parameters.A_trans && parameters.B_trans {
+        repr = "ji,kj->ik"
+      } else if parameters.A_trans {
+        repr = "ji,jk->ik"
+      } else if parameters.B_trans {
+        repr = "ij,kj->ik"
+      }
+      np.einsum(repr!, tensorA.ndarray, tensorB.ndarray, out: tensorC.ndarray)
+    }
   }
 }

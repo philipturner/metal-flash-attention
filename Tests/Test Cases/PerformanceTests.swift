@@ -16,12 +16,17 @@ class PerformanceTests: MFATestCase {
   override func runVeryLongTests() {
     // Tests the precision you set as the global testing precision. For a quick
     // smoke test, you can set a larger granularity.
-    testGEMMSpeed(granularity: 2, trialsExtension: 2)
+    testGEMMSpeed(granularity: 2, trialsExtension: 2, B_trans: true)
   }
   
   // Covers the entire range of square matrix sizes, as well as differences
   // between MFA 32x32, MFA 48x48, and MPS.
-  func testGEMMSpeed(granularity: Int, trialsExtension: Int) {
+  func testGEMMSpeed(
+    granularity: Int,
+    trialsExtension: Int,
+    A_trans: Bool = false,
+    B_trans: Bool = false
+  ) {
     precondition(granularity.nonzeroBitCount == 1)
     let logProgress = true
     
@@ -101,7 +106,7 @@ class PerformanceTests: MFATestCase {
       }
       
       // If initial, this will run a ghost pass.
-      mutating func _profile(sizes: Range<Int>, granularity: Int, trialsExtension: Int, isInitial: Bool) {
+      mutating func _profile(sizes: Range<Int>, granularity: Int, trialsExtension: Int, isInitial: Bool, A_trans: Bool, B_trans: Bool) {
         func innerLoop(size: Int, reportResults: Bool) {
           if size % granularity != 0 {
             if !isInitial && reportResults {
@@ -129,9 +134,11 @@ class PerformanceTests: MFATestCase {
           let N = size
           let K = size
           let py_A = Tensor<Real>(
-            shape: [M, K], randomUniform: 0..<1, backend: .numpy)
+            shape: A_trans ? [K, M] : [M, K],
+            randomUniform: 0..<1, backend: .numpy)
           let py_B = Tensor<Real>(
-            shape: [K, N], randomUniform: 0..<1, backend: .numpy)
+            shape: B_trans ? [N, K] : [K, N],
+            randomUniform: 0..<1, backend: .numpy)
           
           let A = Tensor(copying: py_A)
           let B = Tensor(copying: py_B)
@@ -141,7 +148,7 @@ class PerformanceTests: MFATestCase {
           if isInitial {
             _ExecutionContext.executeExpression {
               backend.markFirstCommand()
-              C.matmul(A, B)
+              C.matmul(A, B, transposeA: A_trans, transposeB: B_trans)
               backend.markLastCommand()
               _ = backend.synchronize()
             }
@@ -150,7 +157,7 @@ class PerformanceTests: MFATestCase {
             for _ in 0..<trials {
               backend.markFirstCommand()
               for _ in 0..<iterations {
-                C.matmul(A, B)
+                C.matmul(A, B, transposeA: A_trans, transposeB: B_trans)
               }
               backend.markLastCommand()
               minTime = min(minTime, backend.synchronize())
@@ -169,7 +176,8 @@ class PerformanceTests: MFATestCase {
             var mps_C = Tensor<Real>(zerosLike: [M, N], backend: .mps)
             _ExecutionContext.withDefaultBackend(.mps) {
               _ExecutionContext.profileCommands {
-                mps_C.matmul(mps_A, mps_B)
+                mps_C.matmul(
+                  mps_A, mps_B, transposeA: A_trans, transposeB: B_trans)
               }
             }
             
@@ -191,7 +199,10 @@ class PerformanceTests: MFATestCase {
         }
       }
       
-      mutating func profile(granularity: Int, trialsExtension: Int, logProgress: Bool) {
+      mutating func profile(
+        granularity: Int, trialsExtension: Int, logProgress: Bool,
+        A_trans: Bool, B_trans: Bool
+      ) {
         let reportGranularity = 16
         var start = self.sizes.lowerBound
         while start < self.sizes.upperBound {
@@ -205,8 +216,14 @@ class PerformanceTests: MFATestCase {
           let sectionSizes = start..<end
           for config in Config.fastConfigs {
             prepare(config: config)
-            _profile(sizes: sectionSizes, granularity: granularity, trialsExtension: trialsExtension, isInitial: true)
-            _profile(sizes: sectionSizes, granularity: granularity, trialsExtension: trialsExtension, isInitial: false)
+            _profile(
+              sizes: sectionSizes, granularity: granularity,
+              trialsExtension: trialsExtension, isInitial: true,
+              A_trans: A_trans, B_trans: B_trans)
+            _profile(
+              sizes: sectionSizes, granularity: granularity,
+              trialsExtension: trialsExtension, isInitial: false,
+              A_trans: A_trans, B_trans: B_trans)
             cleanup(config: config)
           }
           
@@ -257,7 +274,10 @@ class PerformanceTests: MFATestCase {
       segments.append(Segment(sizes: 1536..<2049, iterations: 2))
     }
     for i in 0..<segments.count {
-      segments[i].profile(granularity: granularity, trialsExtension: trialsExtension, logProgress: logProgress)
+      segments[i].profile(
+        granularity: granularity, trialsExtension: trialsExtension,
+        logProgress: logProgress,
+        A_trans: A_trans, B_trans: B_trans)
     }
     
     func extract(config: Config) -> (size: [Int], gflops: [Double]) {
@@ -314,10 +334,17 @@ class PerformanceTests: MFATestCase {
     plt.ylim(0, MetalContext.global.infoDevice.flops / 1e9)
     plt.xlabel("Square Matrix Size")
     plt.ylabel("GFLOPS")
+    
+    let transRepr = (A_trans ? "T" : "N") + (B_trans ? "T" : "N")
+    #if DEBUG
+    let debugWarning = "(NOT USABLE FOR CI)"
+    #else
+    let debugWarning = ""
+    #endif
     if Real.self == Float.self {
-      plt.title("Float32 Utilization")
+      plt.title("Float32 Utilization (\(transRepr)) \(debugWarning)")
     } else {
-      plt.title("Float16 Utilization")
+      plt.title("Float16 Utilization (\(transRepr)) \(debugWarning)")
     }
     plt.show()
   }

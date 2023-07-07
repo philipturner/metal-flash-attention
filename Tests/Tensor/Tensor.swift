@@ -84,8 +84,6 @@ extension Tensor {
   ) {
     assert(self.backendCompatible(a))
     assert(self.backendCompatible(b))
-    assert(transposeA == false)
-    assert(transposeB == false)
     assert(alpha == 1.0)
     assert(beta == 0.0)
     
@@ -107,7 +105,6 @@ extension Tensor {
     } else {
       M = aShape[la - 1]
       A_K = aShape[la - 0]
-      
     }
     if transposeB {
       N = bShape[lb - 1]
