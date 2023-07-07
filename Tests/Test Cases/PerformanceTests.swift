@@ -16,7 +16,11 @@ class PerformanceTests: MFATestCase {
   override func runVeryLongTests() {
     // Tests the precision you set as the global testing precision. For a quick
     // smoke test, you can set a larger granularity.
-    testGEMMSpeed(granularity: 2, trialsExtension: 2, B_trans: true)
+    testGEMMSpeed(
+      granularity: 2, trialsExtension: 2, B_trans: true, batchSize: 2)
+    
+//    testGEMMSpeed(
+//      granularity: 16, trialsExtension: 1, B_trans: true, batchSize: 2)
   }
   
   // Covers the entire range of square matrix sizes, as well as differences
@@ -25,7 +29,8 @@ class PerformanceTests: MFATestCase {
     granularity: Int,
     trialsExtension: Int,
     A_trans: Bool = false,
-    B_trans: Bool = false
+    B_trans: Bool = false,
+    batchSize: Int? = nil
   ) {
     precondition(granularity.nonzeroBitCount == 1)
     let logProgress = true
@@ -106,7 +111,11 @@ class PerformanceTests: MFATestCase {
       }
       
       // If initial, this will run a ghost pass.
-      mutating func _profile(sizes: Range<Int>, granularity: Int, trialsExtension: Int, isInitial: Bool, A_trans: Bool, B_trans: Bool) {
+      mutating func _profile(
+        sizes: Range<Int>, granularity: Int,
+        trialsExtension: Int, isInitial: Bool,
+        A_trans: Bool, B_trans: Bool, batchSize: Int?
+      ) {
         func innerLoop(size: Int, reportResults: Bool) {
           if size % granularity != 0 {
             if !isInitial && reportResults {
@@ -133,16 +142,25 @@ class PerformanceTests: MFATestCase {
           let M = size
           let N = size
           let K = size
+          var shapeA = A_trans ? [K, M] : [M, K]
+          var shapeB = B_trans ? [N, K] : [K, N]
+          var shapeC = [M, N]
+          if let batchSize {
+            shapeA = [batchSize] + shapeA
+            if shapeA.last! % 3 == 0 {
+              shapeB = [1] + shapeB
+            }
+            shapeC = [batchSize] + shapeC
+          }
+          
           let py_A = Tensor<Real>(
-            shape: A_trans ? [K, M] : [M, K],
-            randomUniform: 0..<1, backend: .numpy)
+            shape: shapeA, randomUniform: 0..<1, backend: .numpy)
           let py_B = Tensor<Real>(
-            shape: B_trans ? [N, K] : [K, N],
-            randomUniform: 0..<1, backend: .numpy)
+            shape: shapeB, randomUniform: 0..<1, backend: .numpy)
           
           let A = Tensor(copying: py_A)
           let B = Tensor(copying: py_B)
-          var C = Tensor<Real>(zerosLike: [M, N])
+          var C = Tensor<Real>(zerosLike: shapeC)
           
           let backend = TensorBackend.default
           if isInitial {
@@ -164,7 +182,10 @@ class PerformanceTests: MFATestCase {
             }
             
             if reportResults {
-              let floatOps = 2 * M * N * K * iterations
+              var floatOps = 2 * M * N * K * iterations
+              if let batchSize {
+                floatOps *= batchSize
+              }
               let flops = Double(floatOps) / minTime
               self.flops[currentConfig!]!.append(flops)
             }
@@ -173,7 +194,7 @@ class PerformanceTests: MFATestCase {
           if isInitial {
             let mps_A = Tensor(copying: py_A, backend: .mps)
             let mps_B = Tensor(copying: py_B, backend: .mps)
-            var mps_C = Tensor<Real>(zerosLike: [M, N], backend: .mps)
+            var mps_C = Tensor<Real>(zerosLike: shapeC, backend: .mps)
             _ExecutionContext.withDefaultBackend(.mps) {
               _ExecutionContext.profileCommands {
                 mps_C.matmul(
@@ -181,7 +202,8 @@ class PerformanceTests: MFATestCase {
               }
             }
             
-            let params = EuclideanDistanceParameters(matrixK: K)
+            let params = EuclideanDistanceParameters(
+              matrixK: K, batchSize: batchSize)
             if !C.isApproximatelyEqual(to: mps_C, parameters: params) {
               MPL_showComparison(
                 actual: C, actualName: self.currentConfig!.name,
@@ -201,7 +223,7 @@ class PerformanceTests: MFATestCase {
       
       mutating func profile(
         granularity: Int, trialsExtension: Int, logProgress: Bool,
-        A_trans: Bool, B_trans: Bool
+        A_trans: Bool, B_trans: Bool, batchSize: Int?
       ) {
         let reportGranularity = 16
         var start = self.sizes.lowerBound
@@ -219,11 +241,11 @@ class PerformanceTests: MFATestCase {
             _profile(
               sizes: sectionSizes, granularity: granularity,
               trialsExtension: trialsExtension, isInitial: true,
-              A_trans: A_trans, B_trans: B_trans)
+              A_trans: A_trans, B_trans: B_trans, batchSize: batchSize)
             _profile(
               sizes: sectionSizes, granularity: granularity,
               trialsExtension: trialsExtension, isInitial: false,
-              A_trans: A_trans, B_trans: B_trans)
+              A_trans: A_trans, B_trans: B_trans, batchSize: batchSize)
             cleanup(config: config)
           }
           
@@ -237,6 +259,9 @@ class PerformanceTests: MFATestCase {
                 message += "xf32"
               } else {
                 message += "xf16"
+              }
+              if let batchSize {
+                message = "\(batchSize)x\(message)"
               }
               for config in Config.fastConfigs {
                 let index = size - sizes.lowerBound
@@ -267,7 +292,7 @@ class PerformanceTests: MFATestCase {
       Segment(sizes: 512..<768, iterations: 16),
       Segment(sizes: 768..<1024, iterations: 8),
     ]
-    if Real.self == Float.self {
+    if Real.self == Float.self || (batchSize ?? 1) > 1 {
       segments.append(Segment(sizes: 1024..<1537, iterations: 4))
     } else {
       segments.append(Segment(sizes: 1024..<1536, iterations: 4))
@@ -277,7 +302,7 @@ class PerformanceTests: MFATestCase {
       segments[i].profile(
         granularity: granularity, trialsExtension: trialsExtension,
         logProgress: logProgress,
-        A_trans: A_trans, B_trans: B_trans)
+        A_trans: A_trans, B_trans: B_trans, batchSize: batchSize)
     }
     
     func extract(config: Config) -> (size: [Int], gflops: [Double]) {
@@ -335,16 +360,19 @@ class PerformanceTests: MFATestCase {
     plt.xlabel("Square Matrix Size")
     plt.ylabel("GFLOPS")
     
-    let transRepr = (A_trans ? "T" : "N") + (B_trans ? "T" : "N")
+    var configRepr = (A_trans ? "T" : "N") + (B_trans ? "T" : "N")
+    if let batchSize {
+      configRepr += ", Batched, \(batchSize)xA"
+    }
     #if DEBUG
     let debugWarning = "(NOT USABLE FOR CI)"
     #else
     let debugWarning = ""
     #endif
     if Real.self == Float.self {
-      plt.title("Float32 Utilization (\(transRepr)) \(debugWarning)")
+      plt.title("Float32 Utilization (\(configRepr)) \(debugWarning)")
     } else {
-      plt.title("Float16 Utilization (\(transRepr)) \(debugWarning)")
+      plt.title("Float16 Utilization (\(configRepr)) \(debugWarning)")
     }
     plt.show()
   }

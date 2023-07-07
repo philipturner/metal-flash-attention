@@ -11,7 +11,7 @@ import PythonKit
 
 protocol GEMM: Operation {
   typealias Tensors = GEMM_Tensors
-  var parameters: GEMM_Parameters { get }
+  var parameters: GEMM_Parameters { get set }
 
   init(parameters: GEMM_Parameters)
 }
@@ -66,10 +66,7 @@ struct MFA_GEMM: GEMM, MFA_Operation {
     precondition(dataType == .float || dataType == .half)
     precondition(parameters.alpha == 1.0)
     precondition(parameters.beta == 0.0)
-    precondition(parameters.batched == false)
     precondition(parameters.fused_activation == false)
-    precondition(parameters.batchDimensionsA == nil)
-    precondition(parameters.batchDimensionsB == nil)
     
     let constants = MTLFunctionConstantValues()
     var pcopy = self.parameters
@@ -128,6 +125,7 @@ struct MFA_GEMM: GEMM, MFA_Operation {
     
     return AsyncPipeline(
       function: function,
+      batched: parameters.batched,
       threadgroupMemoryLength: blockBytes,
       gridSize: gridSize,
       groupSize: groupSize)
@@ -149,12 +147,47 @@ struct MFA_GEMM: GEMM, MFA_Operation {
     encoder.setBuffer(tensorB.buffer, offset: 0, index: 1)
     encoder.setBuffer(tensorC.buffer, offset: 0, index: 2)
     
-    let batchDimensionsC = tensors.c.shape.dropLast(2)
-    let batchSize = batchDimensionsC.reduce(1, *)
-    precondition(batchDimensionsC == [])
+    var gridZ: Int
+    if resource.batched {
+      let batchDimensionsA = tensors.a.shape.dropLast(2)
+      let batchDimensionsB = tensors.b.shape.dropLast(2)
+      let batchDimensionsC = tensors.c.shape.dropLast(2)
+      assert(batchDimensionsA.reduce(1, *) > 0)
+      assert(batchDimensionsB.reduce(1, *) == 1)
+      assert(batchDimensionsA == batchDimensionsC)
+      gridZ = batchDimensionsA.reduce(1, *)
+      
+      // Mixed precision will cause undefined behavior.
+      let elementSize = tensors.a.dataType.size
+      func byteStride(shape: [Int]) -> Int {
+        let rank = shape.count
+        return elementSize * shape[rank - 2] * shape[rank - 1]
+      }
+      let byteStrideA = byteStride(shape: tensors.a.shape)
+      let byteStrideC = byteStride(shape: tensors.c.shape)
+      withUnsafeTemporaryAllocation(
+        of: SIMD3<UInt64>.self, capacity: gridZ
+      ) { buffer in
+        for i in 0..<buffer.count {
+          buffer[i] = SIMD3(
+            UInt64(truncatingIfNeeded: i * byteStrideA),
+            0,
+            UInt64(truncatingIfNeeded: i * byteStrideC))
+        }
+        
+        let bufferLength = buffer.count * MemoryLayout<SIMD3<UInt64>>.stride
+        assert(MemoryLayout<SIMD3<UInt64>>.stride == 8 * 4)
+        encoder.setBytes(buffer.baseAddress!, length: bufferLength, index: 10)
+      }
+    } else {
+      assert(tensors.a.shape.count == 2)
+      assert(tensors.b.shape.count == 2)
+      assert(tensors.c.shape.count == 2)
+      gridZ = 1
+    }
     
     var gridSize = resource.gridSize
-    gridSize.depth = batchSize
+    gridSize.depth = gridZ
     encoder.dispatchThreadgroups(
       gridSize, threadsPerThreadgroup: resource.groupSize)
   }
@@ -172,10 +205,17 @@ struct MPS_GEMM: GEMM, MPS_Operation {
     precondition(dataType == .float || dataType == .half)
     precondition(parameters.alpha == 1.0)
     precondition(parameters.beta == 0.0)
-    precondition(parameters.batched == false)
     precondition(parameters.fused_activation == false)
-    precondition(parameters.batchDimensionsA! == [])
-    precondition(parameters.batchDimensionsB! == [])
+    if parameters.batched {
+      precondition(parameters.batchDimensionsA!.count > 0)
+      precondition(parameters.batchDimensionsA!.reduce(1, *) > 0)
+      if let batchDimensionsB = parameters.batchDimensionsB {
+        precondition(batchDimensionsB.reduce(1, *) == 1)
+      }
+    } else {
+      precondition(parameters.batchDimensionsA! == [])
+      precondition(parameters.batchDimensionsB! == [])
+    }
     
     let aBatch: [Int] = parameters.batchDimensionsA!
     let bBatch: [Int] = parameters.batchDimensionsB!
@@ -205,8 +245,14 @@ struct MPS_GEMM: GEMM, MPS_Operation {
       graph.placeholder(
         shape: nsShape(shape), dataType: dataType.mps, name: name)
     }
-    func transpose(_ tensor: MPSGraphTensor, _ name: String) -> MPSGraphTensor {
-      graph.transposeTensor(tensor, dimension: 0, withDimension: 1, name: name)
+    func transpose(
+      _ tensor: MPSGraphTensor, _ name: String, batchDims: [Int]
+    ) -> MPSGraphTensor {
+      graph.transposeTensor(
+        tensor,
+        dimension: batchDims.count + 0,
+        withDimension: batchDims.count + 1,
+        name: name)
     }
     
     var originalA: MPSGraphTensor
@@ -215,7 +261,7 @@ struct MPS_GEMM: GEMM, MPS_Operation {
     if parameters.A_trans {
       originalA = placeholder(aShapeTranspose, "A_trans")
       shapedTypeA = shapedType(aShapeTranspose)
-      postTransposeA = transpose(originalA, "A")
+      postTransposeA = transpose(originalA, "A", batchDims: aBatch)
     } else {
       originalA = placeholder(aShape, "A_trans")
       shapedTypeA = shapedType(aShape)
@@ -228,7 +274,7 @@ struct MPS_GEMM: GEMM, MPS_Operation {
     if parameters.B_trans {
       originalB = placeholder(bShapeTranspose, "B_trans")
       shapedTypeB = shapedType(bShapeTranspose)
-      postTransposeB = transpose(originalB, "B")
+      postTransposeB = transpose(originalB, "B", batchDims: bBatch)
     } else {
       originalB = placeholder(bShape, "B_trans")
       shapedTypeB = shapedType(bShape)
@@ -272,28 +318,6 @@ struct Py_GEMM: GEMM, Py_Operation {
     let tensorA = tensors.a as! Py_TensorBuffer
     let tensorB = tensors.b as! Py_TensorBuffer
     let tensorC = tensors.c as! Py_TensorBuffer
-    
-//    let originalA = tensorA.ndarray
-//    var postTransposeA: PythonObject
-//    if parameters.A_trans {
-//      postTransposeA = originalA.T
-//    } else {
-//      postTransposeA = originalA
-//    }
-//    
-//    let originalB = tensorB.ndarray
-//    var postTransposeB: PythonObject
-//    if parameters.B_trans {
-//      postTransposeB = originalB.T
-//    } else {
-//      postTransposeB = originalB
-//    }
-    
-    // alpha, beta, and fused activation not recognized yet.
-    
-//    // TODO: Try using einsum to make fused transposes and BLAS α/β faster.
-//    let np = PythonContext.global.np
-//    np.matmul(postTransposeA, postTransposeB, tensorC.ndarray)
   
     let np = PythonContext.global.np
     if !parameters.A_trans && !parameters.B_trans {
@@ -302,12 +326,24 @@ struct Py_GEMM: GEMM, Py_Operation {
       // repr = "ik,kj->ij"
     } else {
       var repr: String?
-      if parameters.A_trans && parameters.B_trans {
-        repr = "ji,kj->ik"
-      } else if parameters.A_trans {
-        repr = "ji,jk->ik"
-      } else if parameters.B_trans {
-        repr = "ij,kj->ik"
+      if parameters.batched {
+        assert(parameters.batchDimensionsA!.reduce(1, *) > 0)
+        assert(parameters.batchDimensionsB!.reduce(1, *) == 1)
+        if parameters.A_trans && parameters.B_trans {
+          repr = "hji,kj->hik"
+        } else if parameters.A_trans {
+          repr = "hji,jk->hik"
+        } else if parameters.B_trans {
+          repr = "hij,kj->hik"
+        }
+      } else {
+        if parameters.A_trans && parameters.B_trans {
+          repr = "ji,kj->ik"
+        } else if parameters.A_trans {
+          repr = "ji,jk->ik"
+        } else if parameters.B_trans {
+          repr = "ij,kj->ik"
+        }
       }
       np.einsum(repr!, tensorA.ndarray, tensorB.ndarray, out: tensorC.ndarray)
     }

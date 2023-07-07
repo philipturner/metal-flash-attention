@@ -13,6 +13,7 @@ final class MPS_Backend: MetalBackend {
   typealias _GEMM = MPS_GEMM
   typealias __GEMM = MPS_GEMM
   static let global = MPS_Backend()
+  static let dynamicBatch: Bool = false
   
   var context: _ExecutionContext = _ExecutionContext()
   var usesCustomProfiler: Bool { false }

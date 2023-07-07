@@ -66,7 +66,7 @@ struct SquareMatrixBenchmark<T: TensorElement> {
       let M: Int = matrixSize
       let N: Int = matrixSize
       let K: Int = matrixSize
-      let params = EuclideanDistanceParameters(matrixK: K)
+      let params = EuclideanDistanceParameters(matrixK: K, batchSize: nil)
       
       let py_A = Tensor<T>(
         shape: [M, K], randomUniform: 0..<1, backend: .numpy)

@@ -102,9 +102,9 @@ Setup:
 
 ![Float16 Utilization (NN)](./CI/float16-nn-latest.png)
 
-<!-- ### Float16 Utilization (NT, batched, 2xA)
+### Float16 Utilization (NT, Batched)
 
- Float16 Utilization (NT, batched, 2xA) -->
+![Float16 Utilization (NT, Batched)](./CI/float16-nt-batched-latest.png)
 
 ## Roadmap
 

@@ -116,9 +116,15 @@ extension Tensor {
     precondition(A_K == B_K, "K does not match.")
     let K = A_K
     
-    // We don't support batched GEMM yet, so >2 dimensions just throws an error.
-    if aShape.count > 2 || bShape.count > 2 || cShape.count > 2 {
-      fatalError("Batched GEMM not supported yet.")
+    
+    var batched = false
+    if aShape.count > 2 {
+      precondition(cShape.count > 2)
+      batched = true
+    }
+    if cShape.count > 2 {
+      precondition(aShape.count > 2)
+      batched = true
     }
     
     var parameters = GEMM_Parameters(
@@ -126,11 +132,9 @@ extension Tensor {
       M: M, N: N, K: K,
       A_trans: transposeA, B_trans: transposeB,
       alpha: alpha, beta: beta,
-      batched: false, fused_activation: false)
-    if buffer.backend == .mps {
-      parameters.batchDimensionsA = []
-      parameters.batchDimensionsB = []
-    }
+      batched: batched, fused_activation: false)
+    parameters.batchDimensionsA = aShape.dropLast(2)
+    parameters.batchDimensionsB = bShape.dropLast(2)
     
     // Make GEMM_Tensors
     let tensors = GEMM_Tensors(a: a.buffer, b: b.buffer, c: self.buffer)

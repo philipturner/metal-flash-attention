@@ -16,7 +16,8 @@ func MPL_showBackends<T: TensorElement>(
   mfa: Tensor<T>,
   mps: Tensor<T>,
   numpy: Tensor<T>,
-  parameters: EuclideanDistanceParameters
+  parameters: EuclideanDistanceParameters,
+  slice: Int? = nil
 ) {
   precondition(mfa.buffer.backend == .mfa)
   precondition(mps.buffer.backend == .mps)
@@ -30,6 +31,7 @@ func MPL_showBackends<T: TensorElement>(
     secondary: secondary,
     ternary: ternary,
     parameters: parameters,
+    slice: slice,
     isComparison: false)
 }
 
@@ -50,16 +52,18 @@ func MPL_showComparison<T: TensorElement>(
     secondary: secondary,
     ternary: ternary,
     parameters: parameters,
+    slice: nil,
     isComparison: true,
     actualName: actualName,
     expectedName: expectedName)
 }
 
 fileprivate func MPL_showGraphs(
-  primary: PythonObject,
-  secondary: PythonObject,
-  ternary: PythonObject,
+  primary _primary: PythonObject,
+  secondary _secondary: PythonObject,
+  ternary _ternary: PythonObject,
   parameters: EuclideanDistanceParameters,
+  slice: Int?,
   isComparison: Bool,
   actualName: String? = nil,
   expectedName: String? = nil
@@ -67,6 +71,19 @@ fileprivate func MPL_showGraphs(
   let np = PythonContext.global.np
   let plt = PythonContext.global.plt
   let mpl = PythonContext.global.mpl
+  
+  var primary: PythonObject
+  var secondary: PythonObject
+  var ternary: PythonObject
+  if let batchSize = parameters.batchSize {
+    primary = _primary[slice ?? batchSize - 1]
+    secondary = _secondary[slice ?? batchSize - 1]
+    ternary = _ternary[slice ?? batchSize - 1]
+  } else {
+    primary = _primary
+    secondary = _secondary
+    ternary = _ternary
+  }
   
   // https://matplotlib.org/2.0.2/examples/api/colorbar_only.html
   // Make a figure and axes with dimensions as desired.
@@ -227,12 +244,13 @@ func MPL_showExamples(
     }
   }
   
-  let parameters = EuclideanDistanceParameters(matrixK: K)
+  let parameters = EuclideanDistanceParameters(matrixK: K, batchSize: nil)
   MPL_showGraphs(
     primary: matrices[0],
     secondary: matrices[1],
     ternary: matrices[2],
     parameters: parameters,
+    slice: nil,
     isComparison: false)
 }
 
@@ -243,7 +261,7 @@ func MPL_showBackendsExample() {
   let M = 47
   let N = 47
   let K = 51
-  let parameters = EuclideanDistanceParameters(matrixK: K)
+  let parameters = EuclideanDistanceParameters(matrixK: K, batchSize: nil)
 
   let py_A = Tensor<Real>(
     shape: [M, K], randomUniform: 0..<1, backend: .numpy)

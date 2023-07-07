@@ -42,6 +42,8 @@ _GEMM: MetalOperation, _GEMM.Backend == Self
   var encoder: Encoder { get }
   
   var cache: OperationCache<Self> { get }
+  
+  static var dynamicBatch: Bool { get }
 }
 
 extension MetalBackend {
@@ -78,27 +80,37 @@ protocol MetalOperation {
 }
 
 class OperationCache<Backend: MetalBackend> {
-  var gemm: [GEMM_Parameters: Backend.Resource] = [:]
+  fileprivate var gemm: [GEMM_Parameters: Backend.Resource] = [:]
   
   func clear() {
     gemm.removeAll()
   }
   
-  func cache(operation: Backend._GEMM) {
-    guard gemm[operation.parameters] == nil else {
+  func cache(operation _operation: Backend._GEMM) {
+    var reducedOperation = _operation
+    if Backend.dynamicBatch {
+      reducedOperation.parameters.batchDimensionsA = nil
+      reducedOperation.parameters.batchDimensionsB = nil
+    }
+    guard gemm[reducedOperation.parameters] == nil else {
       return
     }
-    gemm[operation.parameters] = operation.makeAsyncResource()
+    gemm[reducedOperation.parameters] = _operation.makeAsyncResource()
   }
   
   func encode(
-    operation: Backend._GEMM,
+    operation _operation: Backend._GEMM,
     encoder: Backend.Encoder,
     tensors: GEMM_Tensors
   ) {
-    guard let resource = gemm[operation.parameters] else {
+    var reducedOperation = _operation
+    if Backend.dynamicBatch {
+      reducedOperation.parameters.batchDimensionsA = nil
+      reducedOperation.parameters.batchDimensionsB = nil
+    }
+    guard let resource = gemm[reducedOperation.parameters] else {
       fatalError("Forgot ghost pass.")
     }
-    operation.encode(encoder: encoder, tensors: tensors, resource: resource)
+    _operation.encode(encoder: encoder, tensors: tensors, resource: resource)
   }
 }

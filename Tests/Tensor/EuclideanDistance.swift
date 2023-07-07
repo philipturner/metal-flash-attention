@@ -17,14 +17,18 @@ struct EuclideanDistanceParameters {
   // `averageDeviation` is sqrt(K) during a matrix multiplication.
   var averageDeviation: Float
   
-  init(averageMagnitude: Float, averageDeviation: Float) {
+  var batchSize: Int?
+  
+  init(averageMagnitude: Float, averageDeviation: Float, batchSize: Int?) {
     self.averageMagnitude = averageMagnitude
     self.averageDeviation = averageDeviation
+    self.batchSize = batchSize
   }
   
-  init(matrixK: Int) {
+  init(matrixK: Int, batchSize: Int?) {
     self.averageMagnitude = 0.5 * Float(matrixK)
     self.averageDeviation = sqrt(Float(matrixK))
+    self.batchSize = batchSize
   }
 }
 

@@ -96,6 +96,7 @@
 		98FDDEFD2A5870220096BC27 /* float32-nn-latest.png */ = {isa = PBXFileReference; lastKnownFileType = image.png; path = "float32-nn-latest.png"; sourceTree = "<group>"; };
 		98FDDEFE2A5871800096BC27 /* float16-nn-latest.png */ = {isa = PBXFileReference; lastKnownFileType = image.png; path = "float16-nn-latest.png"; sourceTree = "<group>"; };
 		98FDDEFF2A587CC10096BC27 /* float32-nt-latest.png */ = {isa = PBXFileReference; lastKnownFileType = image.png; path = "float32-nt-latest.png"; sourceTree = "<group>"; };
+		98FDDF002A5895CE0096BC27 /* float16-nt-batched-latest.png */ = {isa = PBXFileReference; lastKnownFileType = image.png; path = "float16-nt-batched-latest.png"; sourceTree = "<group>"; };
 /* End PBXFileReference section */
 
 /* Begin PBXFrameworksBuildPhase section */
@@ -115,6 +116,7 @@
 		980EDCF92A4E081900BC9BF0 /* CI */ = {
 			isa = PBXGroup;
 			children = (
+				98FDDF002A5895CE0096BC27 /* float16-nt-batched-latest.png */,
 				98FDDEFF2A587CC10096BC27 /* float32-nt-latest.png */,
 				98FDDEFD2A5870220096BC27 /* float32-nn-latest.png */,
 				98FDDEFE2A5871800096BC27 /* float16-nn-latest.png */,

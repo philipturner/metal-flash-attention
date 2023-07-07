@@ -258,9 +258,9 @@ void _gemm_impl(device T *A [[buffer(0)]],
 {
   if (batched) {
     ulong3 offsets = matrix_offsets[gid.z];
-    A += offsets[0];
-    B += offsets[1];
-    C += offsets[2];
+    A = (device T*)((device uchar*)A + offsets[0]);
+    B = (device T*)((device uchar*)B + offsets[1]);
+    C = (device T*)((device uchar*)C + offsets[2]);
   }
   
   simdgroup_matrix_storage<T> sram[1024];

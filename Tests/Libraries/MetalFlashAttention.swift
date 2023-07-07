@@ -13,6 +13,7 @@ final class MFA_Backend: MetalBackend {
   typealias _GEMM = MFA_GEMM
   typealias __GEMM = MFA_GEMM
   static let global = MFA_Backend()
+  static let dynamicBatch: Bool = true
   
   var context: _ExecutionContext = _ExecutionContext()
   var usesCustomProfiler: Bool { true }
@@ -62,17 +63,21 @@ class AsyncPipeline: AsyncResource {
   
   // Pre-compute some of the dispatch metadata to speed up encoding. Some
   // functions will ignore the metadata or overwrite some of its values.
+  var batched: Bool
   var threadgroupMemoryLength: UInt16
   var gridSize: MTLSize
   var groupSize: MTLSize
   
   init(
     function: MTLFunction,
+    batched: Bool,
     threadgroupMemoryLength: UInt16,
     gridSize: MTLSize,
     groupSize: MTLSize
   ) {
     self._semaphore = DispatchSemaphore(value: 0)
+    
+    self.batched = batched
     self.threadgroupMemoryLength = threadgroupMemoryLength
     self.gridSize = gridSize
     self.groupSize = groupSize

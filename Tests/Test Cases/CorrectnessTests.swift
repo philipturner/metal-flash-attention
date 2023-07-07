@@ -20,15 +20,18 @@ class CorrectnessTests: MFATestCase {
   func testRandomMatrices(logProgress: Bool) {
     let start = CACurrentMediaTime()
     
-    // 25 - batch 1, NN
-    // 50 - batch 1, NN/NT/TN/TT
-    // 75 - batch 2-8 for either operand
-    let numTrials = 75 // 150
-    let maxMatrixDimension = 1000
+    //  0 -  25: batch 1, NN
+    // 25 -  75: batch 1, NN/NT/TN/TT
+    // 75 - 150: batch 2-16 for A/C
+    let numNonTransposedTrials = 25
+    let numNonBatchedTrials = 75
+    let numTrials = numNonBatchedTrials + 75
     
     // Create a biased random distribution that favors smaller numbers. Take the
     // uniform distribution, then cube the results.
-    let allRandomInts: [SIMD3<Int>] = (0..<numTrials).map { _ in
+    let allRandomInts: [SIMD3<Int>] = (0..<numTrials).map { i in
+      let maxMatrixDimension = (i < numNonBatchedTrials) ? 1000 : 500
+      
       var randomVecFloat = SIMD3<Float>.random(in: 0..<1)
       randomVecFloat = randomVecFloat * randomVecFloat * randomVecFloat
       var randomInts = SIMD3<Int>(randomVecFloat * Float(maxMatrixDimension))
@@ -39,17 +42,23 @@ class CorrectnessTests: MFATestCase {
     let allRandomTransposes: [(Bool, Bool)] = (0..<numTrials).map { i in
       if i < 25 {
         return (false, false)
-      } else if i < 75 {
-        // Only B_trans supported right now.
-        return (Bool.random(), Bool.random())
       } else {
-        fatalError("Unsupported")
+        return (Bool.random(), Bool.random())
+      }
+    }
+    
+    let allRandomB: [Int?] = (0..<numTrials).map { i in
+      if i < numNonBatchedTrials {
+        return nil
+      } else {
+        return Int.random(in: 2...16)
       }
     }
     
     func testRandomSize(index: Int, ghost: Bool) {
       let randomInts = allRandomInts[index]
       let randomTransposes = allRandomTransposes[index]
+      let batchSize = allRandomB[index]
       
       let M = randomInts[0]
       let N = randomInts[1]
@@ -59,13 +68,23 @@ class CorrectnessTests: MFATestCase {
       let DTypeRepr = (Real.self == Float.self) ? "f32" : "f16"
       let transRepr = (A_trans ? "T" : "N") + (B_trans ? "T" : "N")
       
+      var shapeA = A_trans ? [K, M] : [M, K]
+      var shapeB = B_trans ? [N, K] : [K, N]
+      var shapeC = [M, N]
+      if let batchSize {
+        shapeA = [batchSize] + shapeA
+        if index % 2 == 0 {
+          shapeB = [1] + shapeB
+        }
+        shapeC = [batchSize] + shapeC
+      }
+      
       let mps_A = Tensor<Real>(
-        shape: A_trans ? [K, M] : [M, K],
-        randomUniform: 0..<1, backend: .mps)
+        shape: shapeA, randomUniform: 0..<1, backend: .mps)
       let mps_B = Tensor<Real>(
-        shape: B_trans ? [N, K] : [K, N],
-        randomUniform: 0..<1, backend: .mps)
-      var mps_C = Tensor<Real>(zerosLike: [M, N], backend: .mps)
+        shape: shapeB, randomUniform: 0..<1, backend: .mps)
+      var mps_C = Tensor<Real>(
+        zerosLike: shapeC, backend: .mps)
       
       let mfa_A = Tensor(copying: mps_A, backend: .mfa)
       let mfa_B = Tensor(copying: mps_B, backend: .mfa)
@@ -106,7 +125,8 @@ class CorrectnessTests: MFATestCase {
           _ = TensorBackend.default.synchronize()
         }
         
-        let params = EuclideanDistanceParameters(matrixK: K)
+        let params = EuclideanDistanceParameters(
+          matrixK: K, batchSize: batchSize)
         if !mfa_C.isApproximatelyEqual(to: mps_C, parameters: params) {
           MPL_showComparison(
             actual: mfa_C, actualName: "MFA",
@@ -114,7 +134,13 @@ class CorrectnessTests: MFATestCase {
           fatalError("Tensors did not match.")
         }
         if logProgress {
-          print("Passed test: \(M)x\(N)x\(K)x\(DTypeRepr) (\(transRepr))")
+          var shapeRepr: String
+          if let batchSize {
+            shapeRepr = "\(batchSize)x\(M)x\(N)x\(K)"
+          } else {
+            shapeRepr = "\(M)x\(N)x\(K)"
+          }
+          print("Passed test: \(shapeRepr)x\(DTypeRepr) (\(transRepr))")
         }
       }
     }
