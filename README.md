@@ -115,5 +115,6 @@ Releases:
   - Fused transposes for A and B
   - Support for batched GEMM in some cases
 - v0.3.0-alpha
+  - Attention
   - Batching along B and multidimensional broadcasting
   - Alpha and beta constants from BLAS
