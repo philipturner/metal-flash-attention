@@ -113,8 +113,8 @@ Releases:
   - Initial release, only non-batched GEMM without fused transposes
 - v0.2.0-alpha
   - Fused transposes for A and B
-  - Support for batched GEMM in some cases
+  - Batched GEMM
 - v0.3.0-alpha
   - Attention
-  - Batching along B and multidimensional broadcasting
+  - Fused activations
   - Alpha and beta constants from BLAS
