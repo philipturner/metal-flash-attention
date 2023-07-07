@@ -115,7 +115,5 @@ Releases:
   - Fused transposes for A and B
   - Support for batched GEMM in some cases
 - v0.3.0-alpha
-  - Benchmarks for larger matrices and 64x64 block sizes
   - Batching along B and multidimensional broadcasting
   - Alpha and beta constants from BLAS
-  - Heuristics for the fastest block size based on the number of cores
