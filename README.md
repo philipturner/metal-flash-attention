@@ -114,7 +114,7 @@ Releases:
 - v0.2.0-alpha
   - Fused transposes for A and B
   - Batched GEMM
-- v0.3.0-alpha
+- v1.0.0
   - Attention
   - Fused activations
   - Alpha and beta constants from BLAS
