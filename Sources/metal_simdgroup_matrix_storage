@@ -20,13 +20,14 @@ namespace metal
     
     storage_type t;
     
-    thread vec<T, 2>* thread_elements() thread {
+    METAL_FUNC thread vec<T, 2>* thread_elements() thread {
       return reinterpret_cast<thread vec<T, 2>*>(&t);
     }
     
     // 'bfloat' is 'float' with the lower 16 bits set to garbage (BF15).
-    thread ushort4* thread_elements_bfloat() thread {
-      return reinterpret_cast<thread ushort4*>(&t);
+    METAL_FUNC thread ushort4* thread_elements_bfloat() thread {
+      thread float2* _elements = thread_elements();
+      return reinterpret_cast<thread ushort4*>(_elements);
     }
     
     METAL_FUNC simdgroup_matrix_storage() thread = default;
