@@ -12,6 +12,7 @@ namespace metal {
   enum MTLDataType: uint {
     MTLDataTypeFloat = 3,
     MTLDataTypeHalf = 16,
+    MTLDataTypeBool = 53,
     MTLDataTypeBFloat = 121,
   };
 }

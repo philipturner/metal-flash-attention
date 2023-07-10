@@ -4,14 +4,16 @@ A faster alternative to Metal Performance Shaders, a reference implementation of
 
 Algorithms:
 - [ ] Attention
-  - [ ] Dense FlashAttention (TBD% ALU @ 64 heads)
-  - [ ] Triangular FlashAttention (TBD% ALU effective @ 64 heads)
+  - [ ] Dense
+  - [ ] Block-Sparse
+  - [ ] Triangular
+  - [ ] Gradient
 - [ ] Convolution
-  - [ ] ConvGEMM 1x1 (TBD% ALU)
-  - [ ] ConvGEMM 3x3 (TBD% ALU)
-  - [ ] Winograd 4x4 (TBD% ALU effective)
-  - [ ] Winograd 5x5 (TBD% ALU effective)
-  - [ ] Winograd 6x6 (TBD% ALU effective)
+  - [ ] ConvGEMM 1x1
+  - [ ] ConvGEMM 3x3
+  - [ ] Winograd 4x4
+  - [ ] Winograd 5x5
+  - [ ] Winograd 6x6
 - [x] GEMM
   - [x] FP16 (93.3% ALU)
   - [x] FP32 (87.2% ALU)
@@ -19,7 +21,7 @@ Algorithms:
   - [x] [Stream-K](https://arxiv.org/abs/2301.03598)
   - [ ] Fused Activations
 - [ ] Normalization
-  - [ ] Group Normalization (TBD% SLC Bandwidth)
+  - [ ] Group Normalization
 
 ## Usage
 

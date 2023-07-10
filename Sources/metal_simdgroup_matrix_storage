@@ -24,6 +24,11 @@ namespace metal
       return reinterpret_cast<thread vec<T, 2>*>(&t);
     }
     
+    // 'bfloat' is 'float' with the lower 16 bits set to garbage (BF15).
+    thread ushort4* thread_elements_bfloat() thread {
+      return reinterpret_cast<thread ushort4*>(&t);
+    }
+    
     METAL_FUNC simdgroup_matrix_storage() thread = default;
     
     METAL_FUNC simdgroup_matrix_storage(vec<T, 2> thread_elements) thread {
@@ -82,6 +87,16 @@ namespace metal
       }
     }
     
+    METAL_FUNC void load(const threadgroup ushort *src, ushort elements_per_row, ushort2 matrix_origin, bool transpose_matrix = false) {
+      if (transpose_matrix) {
+        *(thread_elements_bfloat()).y = src[matrix_origin.x * elements_per_row + matrix_origin.y];
+        *(thread_elements_bfloat()).w = src[(matrix_origin.x + 1) * elements_per_row + matrix_origin.y];
+      } else {
+        *(thread_elements_bfloat()).zw = *reinterpret_cast<const threadgroup ushort2*>(src + matrix_origin.y * elements_per_row + matrix_origin.x);
+        *(thread_elements_bfloat()).y = *(thread_elements_bfloat()).z;
+      }
+    }
+    
     METAL_FUNC void store(device T *src, uint elements_per_row, ushort2 matrix_origin, bool transpose_matrix = false) {
       if (transpose_matrix) {
         src[ulong(matrix_origin.x * elements_per_row) + matrix_origin.y] = thread_elements()[0][0];
@@ -97,6 +112,16 @@ namespace metal
         src[(matrix_origin.x + 1) * elements_per_row + matrix_origin.y] = thread_elements()[0][1];
       } else {
         *reinterpret_cast<threadgroup vec<T, 2>*>(src + matrix_origin.y * elements_per_row + matrix_origin.x) = *(thread_elements());
+      }
+    }
+    
+    METAL_FUNC void store(threadgroup ushort *src, ushort elements_per_row, ushort2 matrix_origin, bool transpose_matrix = false) {
+      if (transpose_matrix) {
+        src[matrix_origin.x * elements_per_row + matrix_origin.y] = *(thread_elements_bfloat()).y;
+        src[(matrix_origin.x + 1) * elements_per_row + matrix_origin.y] = *(thread_elements_bfloat()).w;
+      } else {
+        *(thread_elements_bfloat()).z = *(thread_elements_bfloat()).y;
+        *reinterpret_cast<threadgroup vec<T, 2>*>(src + matrix_origin.y * elements_per_row + matrix_origin.x) = *(thread_elements_bfloat()).zw;
       }
     }
     

@@ -16,11 +16,11 @@ constant uint M [[function_constant(0)]];
 constant uint N [[function_constant(1)]];
 constant uint K [[function_constant(2)]];
 
-// Whether each input is transposed.
+// Whether each matrix is transposed.
 constant bool A_trans [[function_constant(10)]];
 constant bool B_trans [[function_constant(11)]];
-constant uint A_leading_dim = (A_trans ? M : K);
-constant uint B_leading_dim = (B_trans ? K : N);
+constant uint A_leading_dim = A_trans ? M : K;
+constant uint B_leading_dim = B_trans ? K : N;
 
 // Alpha and beta constants from BLAS.
 constant float alpha [[function_constant(20)]];
