@@ -22,81 +22,44 @@ constant uint C [[function_constant(1)]];
 constant uint H [[function_constant(2)]];
 constant uint D [[function_constant(3)]];
 
-// TODO: (Q/O/dQ/dO), (K/V/dK/dV), (lm) should use a pre-determined offset.
-// These are batch offsets, not offsets caused by H having strides.
-
 // Whether each matrix is transposed.
 constant bool Q_trans [[function_constant(10)]];
 constant bool K_trans [[function_constant(11)]];
 constant bool V_trans [[function_constant(12)]];
 constant bool O_trans [[function_constant(13)]];
-constant bool mask_trans = false;
-constant bool lm_trans = true;
 
 // Leading dimension for the operand and its gradient.
 constant uint Q_leading_dim = Q_trans ? R : H * D;
 constant uint K_leading_dim = K_trans ? H * D : C;
 constant uint V_leading_dim = V_trans ? C : H * D;
 constant uint O_leading_dim = O_trans ? R : H * D;
-constant uint mask_leading_dim = mask_trans ? R : C;
-constant uint lm_leading_dim = lm_trans ? R : H * D;
+constant uint lm_leading_dim = R;
 
-constant uint QT_leading_dim = !Q_trans ? R : H * D;
-constant uint KT_leading_dim = !K_trans ? H * D : C;
-constant uint VT_leading_dim = !V_trans ? C : H * D;
-constant uint OT_leading_dim = !O_trans ? R : H * D;
-constant uint maskT_leading_dim = !mask_trans ? R : C;
-constant uint lmT_leading_dim = !lm_trans ? R : H * D;
-
-// Data type of each matrix.
 constant uint Q_data_type [[function_constant(20)]];
-constant uint K_data_type = Q_data_type;
-constant uint V_data_type = Q_data_type;
-constant uint O_data_type = Q_data_type;
-constant uint mask_data_type = Q_data_type;
-
-constant uint dQ_data_type = (Q_data_type == MTLDataTypeFloat) ? MTLDataTypeFloat : MTLDataTypeBFloat;
-constant uint dK_data_type = dQ_data_type;
-constant uint dV_data_type = dQ_data_type;
-constant uint dO_data_type = dQ_data_type;
-constant uint lm_data_type = MTLDataTypeFloat;
 
 constant bool batched [[function_constant(100)]];
 constant bool forward [[function_constant(50000)]]; // 101
 constant bool backward [[function_constant(102)]];
 constant bool gradient [[function_constant(103)]];
+constant bool have_lm = gradient;
 
-// TODO: Allow `block_sparse` without `masked` by just not checking whether the flag applies the mask.
+// Masking and sparsity only supported in the forward kernel.
 constant bool masked [[function_constant(110)]];
 constant bool block_sparse [[function_constant(111)]];
 constant bool generate_block_mask = masked && block_sparse && !forward && !backward;
 
 constant ushort R_simd [[function_constant(200)]];
 constant ushort C_simd [[function_constant(201)]];
-
-constant ushort R_modulo = (R % R_simd == 0) ? R_simd : (R % R_simd);
-constant ushort C_modulo = (C % C_simd == 0) ? C_simd : (C % C_simd);
-constant ushort R_padded = (R_modulo + 7) / 8 * 8;
-constant ushort C_padded = (C_modulo + 7) / 8 * 8;
+constant ushort D_simd [[function_constant(202)]];
 
 constant ushort R_splits [[function_constant(210)]];
-constant bool have_lm = gradient;
-
 constant ushort R_group = R_simd * R_splits;
-constant ushort C_group = C_simd;
-constant uint block_mask_leading_dim = mask_trans ? (R + R_group - 1) / R_group : (C + C_group - 1) / C_group;
 constant ushort D_group = (Q_data_type == MTLDataTypeFloat) ? 16 : 32;
 
-constant ushort R_simd_padded = (R + 7) / 8 * 8;
-constant ushort C_simd_padded = (C + 7) / 8 * 8;
-constant ushort D_thread_padded = (D + 1) / 2 * 2;
-constant ushort D_simd_padded = (D + 7) / 8 * 8;
-
 constant ushort Q_block_leading_dim = (Q_trans ? R_group : D);
-constant ushort K_block_leading_dim = (K_trans ? D : C_group);
-constant ushort V_block_leading_dim = (V_trans ? C_group : D);
+constant ushort K_block_leading_dim = (K_trans ? D : C_simd);
+constant ushort V_block_leading_dim = (V_trans ? C_simd : D);
 constant ushort O_block_leading_dim = (O_trans ? R_group : D);
-constant ushort mask_block_leading_dim = (mask_trans ? R_group : C_group);
 
 #pragma clang diagnostic pop
 
@@ -116,476 +79,6 @@ METAL_FUNC device T* apply_batch_offset(device T *pointer, ulong offset) {
 template <typename T>
 METAL_FUNC thread simdgroup_matrix_storage<T>* get_sram(thread simdgroup_matrix_storage<T> *sram, ushort sram_leading_dim, ushort2 matrix_origin) {
   return sram + (matrix_origin.y / 8) * (sram_leading_dim / 8) + (matrix_origin.x / 8);
-}
-
-template <typename T>
-METAL_FUNC thread simdgroup_matrix_storage<T>* get_mask(thread simdgroup_matrix_storage<T> *sram, ushort2 matrix_origin) {
-  return get_sram(sram, C_simd, matrix_origin);
-}
-
-template <typename T>
-METAL_FUNC thread simdgroup_matrix_storage<T>* get_qvo(thread simdgroup_matrix_storage<T> *sram, ushort2 matrix_origin) {
-  return get_sram(sram, D_simd_padded, matrix_origin);
-}
-
-template <typename T>
-METAL_FUNC thread simdgroup_matrix_storage<T>* get_k(thread simdgroup_matrix_storage<T> *sram, ushort2 matrix_origin) {
-  return get_sram(sram, C_simd, matrix_origin);
-}
-
-template <typename T>
-void load_block_mask(thread simdgroup_matrix_storage<T> *mask_sram,
-                     threadgroup T *mask_block,
-                     ushort r_start, ushort r_end,
-                     ushort c_start, ushort c_end,
-                     bool broadcast)
-{
-  if (broadcast) {
-#pragma clang loop unroll(full)
-    for (ushort r = r_start; r < r_end; r += 8) {
-#pragma clang loop unroll(full)
-      for (ushort c = c_start; c < c_end; c += 8) {
-        ushort2 origin(c, r);
-        auto mask = get_mask(mask_sram, origin);
-        *mask = mask_sram[0];
-      }
-    }
-  } else {
-#pragma clang loop unroll(full)
-    for (ushort r = r_start; r < r_end; r += 8) {
-#pragma clang loop unroll(full)
-      for (ushort c = c_start; c < c_end; c += 8) {
-        ushort2 origin(c, r);
-        auto mask = get_mask(mask_sram, origin);
-        mask->load(mask_block, mask_block_leading_dim, origin, mask_trans);
-      }
-    }
-  }
-}
-
-template <typename T, bool is_q, bool is_o, bool is_k, bool is_v>
-void load_sram_iter(thread simdgroup_matrix_storage<T> *sram,
-                    threadgroup void *block, ushort d, bool transpose)
-{
-  // WARNING: This will fail in backwards mode, as 'D_simd_padded' does not
-  // match 'D_group'. We need a better solution.
-  
-  // MATRIX->load((threadgroup T*)block, LEADING_DIM, origin, TRANS);
-  
-//  if (is_q || is_o) {
-//#pragma clang loop unroll(full)
-//    for (ushort r = 0; r < R_simd; r += 8) {
-//      ushort2 origin(d, r);
-//      auto qo = get_sram(sram, transpose ? R_simd : D_simd_padded, origin);
-//      LOAD_SRAM(qo, Q_block_leading_dim, Q_trans)
-//    }
-//  } else if (is_k || is_v) {
-//#pragma clang loop unroll(full)
-//    for (ushort c = 0; c < C_simd; c += 8) {
-//      if (is_k) {
-//        ushort2 origin(c, d);
-//        auto k = get_sram(sram, transpose ? D_simd_padded, C_simd, origin);
-//        LOAD_SRAM(k, K_block_leading_dim, K_trans)
-//      } else if (is_v) {
-//        ushort2 origin(d, c);
-//        auto v = get_sram(sram, D_simd_padded, origin);
-//        LOAD_SRAM(v, V_block_leading_dim, V_trans)
-//      }
-//    }
-//  }
-//#undef LOAD_SRAM
-}
-
-template <bool upcast_bfloat, bool is_q, bool is_o, bool is_k, bool is_v>
-void load_sram_iter_bfloat(thread simdgroup_matrix_storage<float> *sram,
-                    threadgroup void *block, ushort d, bool transpose)
-{
-//#define LOAD_SRAM(MATRIX, LEADING_DIM, TRANS) \
-//if (upcast_bfloat) { \
-//MATRIX->load_bfloat((threadgroup ushort*)block, LEADING_DIM, origin, TRANS); \
-//} else { \
-//MATRIX->load((threadgroup float*)block, LEADING_DIM, origin, TRANS); \
-//} \
-//  
-//  if (is_q || is_o) {
-//#pragma clang loop unroll(full)
-//    for (ushort r = 0; r < R_simd; r += 8) {
-//      ushort2 origin(d, r);
-//      auto qo = get_sram(sram, D_simd_padded, origin);
-//      LOAD_SRAM(qo, Q_block_leading_dim, Q_trans)
-//    }
-//  } else if (is_k || is_v) {
-//#pragma clang loop unroll(full)
-//    for (ushort c = 0; c < C_simd; c += 8) {
-//      if (is_k) {
-//        ushort2 origin(c, d);
-//        auto k = get_sram(sram, C_simd, origin);
-//        LOAD_SRAM(k, K_block_leading_dim, K_trans)
-//      } else if (is_v) {
-//        ushort2 origin(d, c);
-//        auto v = get_sram(sram, D_simd_padded, origin);
-//        LOAD_SRAM(v, V_block_leading_dim, V_trans)
-//      }
-//    }
-//  }
-//#undef LOAD_SRAM
-}
-
-template <typename T, bool is_q, bool is_o>
-void zero_sram_iter_qo(thread simdgroup_matrix_storage<T> *sram,
-                       ushort d, ushort r_start, bool transpose)
-{
-#pragma clang loop unroll(full)
-  for (ushort r = r_start; r < R_simd; r += 8) {
-    ushort2 origin(d, r);
-    auto qo = get_sram(sram, D_simd_padded, origin);
-    *qo = simdgroup_matrix_storage<T>(0);
-  }
-}
-
-template <typename T, bool is_k, bool is_v>
-void zero_sram_iter_kv(thread simdgroup_matrix_storage<T> *sram,
-                       ushort d, ushort c_start, bool transpose)
-{
-#pragma clang loop unroll(full)
-  for (ushort c = c_start; c < C_simd; c += 8) {
-    if (is_k) {
-      ushort2 origin(c, d);
-      auto k = get_sram(sram, C_simd, origin);
-      *k = simdgroup_matrix_storage<T>(0);
-    } else if (is_v) {
-      ushort2 origin(d, c);
-      auto v = get_sram(sram, D_simd_padded, origin);
-      *v = simdgroup_matrix_storage<T>(0);
-    }
-  }
-}
-
-// `sequence_position` is the position at the start of the simd.
-template <typename T, bool is_q, bool is_o, bool is_k, bool is_v>
-void load_sram(thread simdgroup_matrix_storage<T> *sram,
-               threadgroup void *block, ushort K, bool transpose,
-               uint sequence_position, ushort2 offset_in_simd)
-{
-  if ((is_q || is_o) && (R_modulo < R_simd)) {
-    if (sequence_position >= R) {
-      return;
-    }
-  } else if ((is_k || is_v) && (C_modulo < C_simd)) {
-    if (sequence_position >= C) {
-      return;
-    }
-  }
-  
-  // TODO: Some kind of partitioning along the K dimension for the backward
-  // pass, so blocks don't need to be padded to match D.
-  ushort D_max;
-  if (forward) {
-    D_max = D_simd_padded - 8;
-  } else {
-    D_max = K;
-  }
-#pragma clang loop unroll(full)
-  for (ushort d = 0; d < D_max; d += 8) {
-    load_sram_iter<
-    T, is_q, is_o, is_k, is_v
-    >(sram, block, d, transpose);
-  }
-  
-  if (forward) {
-    bool do_load;
-    if (D_thread_padded == D_simd_padded) {
-      do_load = true;
-    } else if (is_q || is_o || is_v) {
-      do_load = (offset_in_simd.x >= D_thread_padded % 8);
-    } else if (is_k) {
-      do_load = (offset_in_simd.y >= D_thread_padded % 8);
-    } else {
-      do_load = false;
-    }
-    if (do_load) {
-      load_sram_iter<
-      T, is_q, is_o, is_k, is_v
-      >(sram, block, D_simd_padded - 8, transpose);
-    } else {
-      ushort d = D_simd_padded - 8;
-      
-      if (is_q || is_o) {
-        zero_sram_iter_qo<T, is_q, is_o>(sram, d, 0, transpose);
-      } else if (is_k || is_v) {
-        zero_sram_iter_kv<T, is_k, is_v>(sram, d, 0, transpose);
-      }
-    }
-  }
-  
-  if (forward) {
-    D_max = D_simd_padded;
-  } else {
-    D_max = K;
-  }
-  if ((is_q || is_o) && (R_simd_padded < R_simd) && (backward)) {
-    if (sequence_position + R_simd > R) {
-#pragma clang loop unroll(full)
-      for (ushort d = 0; d < D_max; d += 8) {
-        zero_sram_iter_qo<T, is_q, is_o>(sram, d, R_simd_padded, transpose);
-      }
-    }
-  } else if ((is_k || is_v) && (C_simd_padded < C_simd) && (forward)) {
-    if (sequence_position + C_simd > C) {
-#pragma clang loop unroll(full)
-      for (ushort d = 0; d < D_max; d += 8) {
-        zero_sram_iter_kv<T, is_k, is_v>(sram, d, C_simd_padded, transpose);
-      }
-    }
-  }
-}
-
-template <bool upcast_bfloat, bool is_q, bool is_o, bool is_k, bool is_v>
-void load_sram_bfloat(thread simdgroup_matrix_storage<float> *sram,
-                      threadgroup void *block, ushort K, bool transpose,
-                      uint sequence_position, ushort2 offset_in_simd)
-{
-  if ((is_q || is_o) && (R_modulo < R_simd)) {
-    if (sequence_position >= R) {
-      return;
-    }
-  } else if ((is_k || is_v) && (C_modulo < C_simd)) {
-    if (sequence_position >= C) {
-      return;
-    }
-  }
-  
-  // TODO: Some kind of partitioning along the K dimension for the backward
-  // pass, so blocks don't need to be padded to match D.
-  ushort D_max;
-  if (forward) {
-    D_max = D_simd_padded - 8;
-  } else {
-    D_max = K;
-  }
-#pragma clang loop unroll(full)
-  for (ushort d = 0; d < D_max; d += 8) {
-    load_sram_iter_bfloat<
-    upcast_bfloat, is_q, is_o, is_k, is_v
-    >(sram, block, d, transpose);
-  }
-  
-  if (forward) {
-    bool do_load;
-    if (D_thread_padded == D_simd_padded) {
-      do_load = true;
-    } else if (is_q || is_o || is_v) {
-      do_load = (offset_in_simd.x >= D_thread_padded % 8);
-    } else if (is_k) {
-      do_load = (offset_in_simd.y >= D_thread_padded % 8);
-    } else {
-      do_load = false;
-    }
-    if (do_load) {
-      load_sram_iter_bfloat<
-      upcast_bfloat, is_q, is_o, is_k, is_v
-      >(sram, block, D_simd_padded - 8, transpose);
-    } else {
-      ushort d = D_simd_padded - 8;
-      
-      if (is_q || is_o) {
-        zero_sram_iter_qo<float, is_q, is_o>(sram, d, 0, transpose);
-      } else if (is_k || is_v) {
-        zero_sram_iter_kv<float, is_k, is_v>(sram, d, 0, transpose);
-      }
-    }
-  }
-  
-  if (forward) {
-    D_max = D_simd_padded;
-  } else {
-    D_max = K;
-  }
-  if ((is_q || is_o) && (R_simd_padded < R_simd) && (backward)) {
-    if (sequence_position + R_simd > R) {
-#pragma clang loop unroll(full)
-      for (ushort d = 0; d < D_max; d += 8) {
-        zero_sram_iter_qo<float, is_q, is_o>(sram, d, R_simd_padded, transpose);
-      }
-    }
-  } else if ((is_k || is_v) && (C_simd_padded < C_simd) && (forward)) {
-    if (sequence_position + C_simd > C) {
-#pragma clang loop unroll(full)
-      for (ushort d = 0; d < D_max; d += 8) {
-        zero_sram_iter_kv<float, is_k, is_v>(sram, d, C_simd_padded, transpose);
-      }
-    }
-  }
-}
-
-template <typename T>
-void load_q(thread simdgroup_matrix_storage<T> *sram,
-            threadgroup void *block, ushort K, bool transpose,
-            uint sequence_position, ushort2 offset_in_simd) {
-  load_sram<T, true, false, false, false>(sram, block, K, transpose, sequence_position, offset_in_simd);
-}
-
-template <typename T>
-void load_o(thread simdgroup_matrix_storage<T> *sram,
-            threadgroup void *block, ushort K, bool transpose,
-            uint sequence_position, ushort2 offset_in_simd) {
-  load_sram<T, false, true, false, false>(sram, block, K, transpose, sequence_position, offset_in_simd);
-}
-
-template <typename T>
-void load_k(thread simdgroup_matrix_storage<T> *sram,
-            threadgroup void *block, ushort K, bool transpose,
-            uint sequence_position, ushort2 offset_in_simd) {
-  load_sram<T, false, false, true, false>(sram, block, K, transpose, sequence_position, offset_in_simd);
-}
-
-template <typename T>
-void load_v(thread simdgroup_matrix_storage<T> *sram,
-            threadgroup void *block, ushort K, bool transpose,
-            uint sequence_position, ushort2 offset_in_simd) {
-  load_sram<T, false, false, false, true>(sram, block, K, transpose, sequence_position, offset_in_simd);
-}
-
-template <bool upcast_bfloat>
-void load_q_bfloat(thread simdgroup_matrix_storage<float> *sram,
-                   threadgroup void *block, ushort K, bool transpose,
-                   uint sequence_position, ushort2 offset_in_simd) {
-  load_sram_bfloat<upcast_bfloat, true, false, false, false>(sram, block, K, transpose, sequence_position, offset_in_simd);
-}
-
-template <bool upcast_bfloat>
-void load_o_bfloat(thread simdgroup_matrix_storage<float> *sram,
-                   threadgroup void *block, ushort K, bool transpose,
-                   uint sequence_position, ushort2 offset_in_simd) {
-  load_sram_bfloat<upcast_bfloat, false, true, false, false>(sram, block, K, transpose, sequence_position, offset_in_simd);
-}
-
-template <bool upcast_bfloat>
-void load_k_bfloat(thread simdgroup_matrix_storage<float> *sram,
-                   threadgroup void *block, ushort K, bool transpose,
-                   uint sequence_position, ushort2 offset_in_simd) {
-  load_sram_bfloat<upcast_bfloat, false, false, true, false>(sram, block, K, transpose, sequence_position, offset_in_simd);
-}
-
-template <bool upcast_bfloat>
-void load_v_bfloat(thread simdgroup_matrix_storage<float> *sram,
-                   threadgroup void *block, ushort K, bool transpose,
-                   uint sequence_position, ushort2 offset_in_simd) {
-  load_sram_bfloat<upcast_bfloat, false, false, false, true>(sram, block, K, transpose, sequence_position, offset_in_simd);
-}
-
-// The mask cannot be padded using simple zero-padding or -INF padding. Instead,
-// the code for the softmax must explicitly elide computations on the edge.
-template <typename T, bool is_generate_block_mask>
-void load_mask(thread simdgroup_matrix_storage<T> *sram,
-               threadgroup T *block, uint2 mask_offset)
-{
-  if (is_generate_block_mask) {
-    load_block_mask(sram, block, 0, R_padded, 0, C_padded, false);
-    
-    load_block_mask(sram, block, 0, R_padded, C_padded, C_simd,
-                    mask_offset.x + C_simd > C);
-    
-    load_block_mask(sram, block, R_padded, R_simd, 0, C_padded,
-                    mask_offset.y + R_simd > R);
-    
-    load_block_mask(sram, block, R_padded, R_simd, C_padded, C_simd,
-                    (mask_offset.y + R_simd > R) || (mask_offset.x + C_simd > C));
-  } else {
-    load_block_mask(sram, block, 0, R_simd, 0, C_simd, false);
-  }
-}
-
-template <typename T, bool is_generate_block_mask>
-void prefetch_mask(threadgroup T *dst, device T *src, uint2 mask_offset)
-{
-  ushort2 src_tile(min(uint(C_group), C - mask_offset.x),
-                   min(uint(R_group), R - mask_offset.y));
-  ushort2 dst_tile = src_tile;
-  if (is_generate_block_mask) {
-    dst_tile = (~7 & (src_tile + 7));
-  }
-  auto mask_src = simdgroup_matrix_storage<T>::apply_offset(src, mask_leading_dim, mask_offset, mask_trans);
-  
-  simdgroup_event events[1];
-  events[0].async_copy(dst, mask_block_leading_dim, dst_tile, mask_src, mask_leading_dim, src_tile, mask_trans, simdgroup_async_copy_clamp_mode::clamp_to_edge);
-  simdgroup_event::wait(1, events);
-}
-
-// `sequence_position` is the position at the start of the threadgroup.
-template <typename T, bool is_q, bool is_o, bool is_k, bool is_v>
-void prefetch(threadgroup T *dst, device T *src,
-              uint3 gid, uint sequence_position,
-              thread simdgroup_event* event)
-{
-  // TODO: Incorporate the H dimension (gid.y) when fetching data.
-  // TODO: Incorporate the batch dimension (gid.z).
-  
-  // TODO: Allow partial reads along the D dimension for the backward pass.
-  
-  // TODO: Finish the function body.
-}
-
-template <typename T>
-void prefetch_q(threadgroup T *dst, device T *src, uint3 gid, uint sequence_position,
-                thread simdgroup_event* event) {
-  prefetch<T, true, false, false, false>(dst, src, gid, sequence_position, event);
-}
-
-template <typename T>
-void prefetch_o(threadgroup T *dst, device T *src, uint3 gid, uint sequence_position,
-                thread simdgroup_event* event) {
-  prefetch<T, false, true, false, false>(dst, src, gid, sequence_position, event);
-}
-
-template <typename T>
-void prefetch_k(threadgroup T *dst, device T *src, uint3 gid, uint sequence_position,
-                thread simdgroup_event* event) {
-  prefetch<T, false, false, true, false>(dst, src, gid, sequence_position, event);
-}
-
-template <typename T>
-void prefetch_v(threadgroup T *dst, device T *src, uint3 gid, uint sequence_position,
-                thread simdgroup_event* event) {
-  prefetch<T, false, false, false, true>(dst, src, gid, sequence_position, event);
-}
-
-template <typename T>
-void zero_init(thread simdgroup_matrix_storage<T>* sram, ushort rows, ushort cols) {
-#pragma clang loop unroll(full)
-  for (ushort r = 0; r < rows; r += 8) {
-#pragma clang loop unroll(full)
-    for (ushort c = 0; c < rows; c += 8) {
-      ushort2 origin(c, r);
-      auto value = get_sram(sram, cols, origin);
-      *value = simdgroup_matrix_storage<T>(0);
-    }
-  }
-}
-
-template <typename T>
-void zero_init_q(thread simdgroup_matrix_storage<T>* sram) {
-  zero_init(sram, R_simd, D_simd_padded);
-}
-
-template <typename T>
-void zero_init_o(thread simdgroup_matrix_storage<T>* sram) {
-  zero_init(sram, R_simd, D_simd_padded);
-}
-
-template <typename T>
-void zero_init_k(thread simdgroup_matrix_storage<T>* sram) {
-  zero_init(sram, D_simd_padded, C_simd);
-}
-
-template <typename T>
-void zero_init_v(thread simdgroup_matrix_storage<T>* sram) {
-  zero_init(sram, C_simd, D_simd_padded);
-}
-
-template <typename T>
-void zero_init_attention(thread simdgroup_matrix_storage<T>* sram) {
-  zero_init(sram, C_simd, R_simd);
 }
 
 template <typename A_data_type, typename B_data_type, typename C_data_type>
@@ -615,6 +108,9 @@ void gemm(ushort M, ushort N, ushort K, bool accumulate,
 
 // MARK: - Kernels
 
+// The mask cannot be padded using simple zero-padding. Consider writing
+// directly to threadgroup memory and setting to -INF. Then, guarantee that the
+// other operand is zero, not NAN.
 template <typename T>
 void _generate_block_mask_impl(threadgroup T *threadgroup_block [[threadgroup(0)]],
                                device T *mask [[buffer(11), function_constant(masked)]],
@@ -624,32 +120,34 @@ void _generate_block_mask_impl(threadgroup T *threadgroup_block [[threadgroup(0)
                                ushort sidx [[simdgroup_index_in_threadgroup]],
                                ushort lane_id [[thread_index_in_simdgroup]])
 {
-  uint2 mask_offset(gid.x * C_group, gid.y * R_group + sidx * R_simd);
+  uint2 mask_offset(gid.x * C_simd, gid.y * R_group + sidx * R_simd);
   if (sidx == 0) {
-    prefetch_mask<T, true>(threadgroup_block, mask, mask_offset);
+    ushort2 src_tile(min(uint(C_simd), C - mask_offset.x),
+                     min(uint(R_group), R - mask_offset.y));
+    ushort2 dst_tile(C_simd, R_group);
+    auto mask_src = simdgroup_matrix_storage<T>::apply_offset(mask, C, mask_offset);
+    
+    simdgroup_event events[1];
+    events[0].async_copy(threadgroup_block, C_simd, dst_tile, mask_src, C, src_tile, false, simdgroup_async_copy_clamp_mode::clamp_to_edge);
+    simdgroup_event::wait(1, events);
   }
   threadgroup_barrier(mem_flags::mem_threadgroup);
   
   bool all_off = true;
   bool all_on = true;
   if (mask_offset.x < C && mask_offset.y < R) {
-    // Only fetch data from threadgroup memory if mask_sram[0] is valid. The
-    // data in that matrix broadcasts to all other registers.
-    simdgroup_matrix_storage<T> mask_sram[1024];
-    
     ushort2 offset_in_simd = simdgroup_matrix_storage<T>::offset(lane_id);
-    threadgroup T *mask_block = threadgroup_block + sidx * R_simd * C_group;
-    mask_block = simdgroup_matrix_storage<T>::apply_offset(mask_block, mask_block_leading_dim, offset_in_simd);
-    
-    load_mask<T, true>(mask_sram, mask_block, mask_offset);
+    threadgroup T *mask_block = threadgroup_block + sidx * R_simd * C_simd;
+    mask_block = simdgroup_matrix_storage<T>::apply_offset(mask_block, C_simd, offset_in_simd);
     
 #pragma clang loop unroll(full)
     for (ushort r = 0; r < R_simd; r += 8) {
 #pragma clang loop unroll(full)
       for (ushort c = 0; c < C_simd; c += 8) {
         ushort2 origin(c, r);
-        auto mask = get_mask(mask_sram, origin);
-        vec<T, 2> elements = mask->thread_elements()[0];
+        simdgroup_matrix_storage<T> mask;
+        mask.load(mask_block, C_simd, origin);
+        vec<T, 2> elements = mask.thread_elements()[0];
         
         T off = -numeric_limits<T>::max();
         if (!(elements[0] <= off)) { all_off = false; }
@@ -688,6 +186,7 @@ void _generate_block_mask_impl(threadgroup T *threadgroup_block [[threadgroup(0)
     } else {
       block_mask_element = 2;
     }
+    uint block_mask_leading_dim = (C + C_simd - 1) / C_simd;
     block_mask[gid.y * block_mask_leading_dim + gid.x] = block_mask_element;
   }
 }

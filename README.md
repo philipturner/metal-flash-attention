@@ -6,7 +6,6 @@ Algorithms:
 - [ ] Attention
   - [ ] Dense
   - [ ] Block-Sparse
-  - [ ] Gradient
 - [ ] Convolution
   - [ ] ConvGEMM 1x1
   - [ ] ConvGEMM 3x3
