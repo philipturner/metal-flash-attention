@@ -24,12 +24,6 @@ namespace metal
       return reinterpret_cast<thread vec<T, 2>*>(&t);
     }
     
-    // 'bfloat' is 'float' with the lower 16 bits set to garbage (BF15).
-    METAL_FUNC thread ushort4* thread_elements_bfloat() thread {
-      thread float2* _elements = thread_elements();
-      return reinterpret_cast<thread ushort4*>(_elements);
-    }
-    
     METAL_FUNC simdgroup_matrix_storage() thread = default;
     
     METAL_FUNC simdgroup_matrix_storage(vec<T, 2> thread_elements) thread {
@@ -88,16 +82,6 @@ namespace metal
       }
     }
     
-    METAL_FUNC void load(const threadgroup ushort *src, ushort elements_per_row, ushort2 matrix_origin, bool transpose_matrix = false) {
-      if (transpose_matrix) {
-        *(thread_elements_bfloat()).y = src[matrix_origin.x * elements_per_row + matrix_origin.y];
-        *(thread_elements_bfloat()).w = src[(matrix_origin.x + 1) * elements_per_row + matrix_origin.y];
-      } else {
-        *(thread_elements_bfloat()).zw = *reinterpret_cast<const threadgroup ushort2*>(src + matrix_origin.y * elements_per_row + matrix_origin.x);
-        *(thread_elements_bfloat()).y = *(thread_elements_bfloat()).z;
-      }
-    }
-    
     METAL_FUNC void store(device T *src, uint elements_per_row, ushort2 matrix_origin, bool transpose_matrix = false) {
       if (transpose_matrix) {
         src[ulong(matrix_origin.x * elements_per_row) + matrix_origin.y] = thread_elements()[0][0];
@@ -116,7 +100,45 @@ namespace metal
       }
     }
     
-    METAL_FUNC void store(threadgroup ushort *src, ushort elements_per_row, ushort2 matrix_origin, bool transpose_matrix = false) {
+    template <typename U, typename V>
+    METAL_FUNC void multiply(simdgroup_matrix_storage<U> a, simdgroup_matrix_storage<V> b, bool accumulate = true) {
+      if (!accumulate) {
+        *(thread_elements()) = vec<T, 2>(0);
+      }
+      t = __metal_simdgroup_matrix_8x8_multiply_accumulate(a.t, b.t, t, typename simdgroup_matrix_storage<T>::storage_type());
+    }
+    
+    // 'bfloat' is 'float' with the lower 16 bits set to garbage (BF15).
+    
+    METAL_FUNC thread ushort4* thread_elements_bfloat() thread {
+      thread float2* elements = thread_elements();
+      return reinterpret_cast<thread ushort4*>(elements);
+    }
+    
+    METAL_FUNC simdgroup_matrix_storage<float> unpack_bfloat() thread {
+      ushort4 output;
+      thread ushort2& elements = thread_elements();
+      output.y = elements[0];
+      output.w = elements[1];
+      return simdgroup_matrix_storage(as_type<float2>(output));
+    }
+    
+    METAL_FUNC simdgroup_matrix_storage<ushort> pack_bfloat() thread {
+      thread ushort4* elements = thread_elements_bfloat();
+      return simdgroup_matrix_storage(ushort2(elements->y, elements->w));
+    }
+    
+    METAL_FUNC void load_bfloat(const threadgroup ushort *src, ushort elements_per_row, ushort2 matrix_origin, bool transpose_matrix = false) {
+      if (transpose_matrix) {
+        *(thread_elements_bfloat()).y = src[matrix_origin.x * elements_per_row + matrix_origin.y];
+        *(thread_elements_bfloat()).w = src[(matrix_origin.x + 1) * elements_per_row + matrix_origin.y];
+      } else {
+        *(thread_elements_bfloat()).zw = *reinterpret_cast<const threadgroup ushort2*>(src + matrix_origin.y * elements_per_row + matrix_origin.x);
+        *(thread_elements_bfloat()).y = *(thread_elements_bfloat()).z;
+      }
+    }
+    
+    METAL_FUNC void store_bfloat(threadgroup ushort *src, ushort elements_per_row, ushort2 matrix_origin, bool transpose_matrix = false) {
       if (transpose_matrix) {
         src[matrix_origin.x * elements_per_row + matrix_origin.y] = *(thread_elements_bfloat()).y;
         src[(matrix_origin.x + 1) * elements_per_row + matrix_origin.y] = *(thread_elements_bfloat()).w;
@@ -124,14 +146,6 @@ namespace metal
         *(thread_elements_bfloat()).z = *(thread_elements_bfloat()).y;
         *reinterpret_cast<threadgroup vec<T, 2>*>(src + matrix_origin.y * elements_per_row + matrix_origin.x) = *(thread_elements_bfloat()).zw;
       }
-    }
-    
-    template <typename U, typename V>
-    METAL_FUNC void multiply(simdgroup_matrix_storage<U> a, simdgroup_matrix_storage<V> b, bool accumulate = true) {
-      if (!accumulate) {
-        *(thread_elements()) = vec<T, 2>(0);
-      }
-      t = __metal_simdgroup_matrix_8x8_multiply_accumulate(a.t, b.t, t, typename simdgroup_matrix_storage<T>::storage_type());
     }
   };
 } // namespace metal
