@@ -81,6 +81,18 @@ METAL_FUNC thread simdgroup_matrix_storage<T>* get_sram(thread simdgroup_matrix_
   return sram + (matrix_origin.y / 8) * (sram_leading_dim / 8) + (matrix_origin.x / 8);
 }
 
+template <typename T>
+METAL_FUNC void prefetch(threadgroup T *dst, device T *src,
+                         ushort2 tile, uint2 offset, uint3 gid,
+                         uint2 bounds, bool transpose)
+{
+  tile.x = min(int(tile.x), int(bounds.x - offset.x));
+  tile.y = min(int(tile.y), int(bounds.y - offset.y));
+  
+  simdgroup_event events[1];
+//  events[0].async_copy(
+}
+
 template <typename A_data_type, typename B_data_type, typename C_data_type>
 void gemm(ushort M, ushort N, ushort K, bool accumulate,
           thread simdgroup_matrix_storage<A_data_type>* A,
@@ -213,8 +225,6 @@ void _attention_impl(device T *Q [[buffer(0)]],
 {
   ushort2 offset_in_simd = simdgroup_matrix_storage<T>::offset(lane_id);
   
-  // TODO: Rewrite the entire file, forget about elision of zero padding.
-  
   // Threadgroup size is 128.
   if (forward) {
     simdgroup_matrix_storage<T> Q_sram[128];
@@ -263,80 +273,7 @@ void _attention_impl(device T *Q [[buffer(0)]],
       gemm(R_simd, D_simd_padded, C_simd, true, attention_matrix, V_sram, O_sram);
     }
   }
-  
-  // During the backward pass, data flows both toward Q and toward K. A single
-  // threadgroup must tackle an entire NxN attention matrix. However, unlike
-  // inference, there's typically several batches. Make threadgroups as large as
-  // possible (384 threads) and set the X grid dimension to 1.
-  if (backward) {
-    // Stream all of Q/O/K/V/dQ/dO/dK/dV directly from RAM, only temporarily
-    // cached in D=8 matrices.
-    for (uint j = 0; j < C; j += C_group) {
-      for (uint i = 0; i < R; i += R_group) {
-        simdgroup_matrix_storage<T> attention_matrix[128];
-        zero_init_attention(attention_matrix);
-        
-        for (ushort d = 0; d < D; d += D_group) {
-          auto Q_block = threadgroup_block;
-          auto K_block = threadgroup_block + R_group * D_group;
-          if (sidx == 0) {
-            simdgroup_event events[2];
-            prefetch_q(Q_block, Q, gid, i, events + 0);
-            prefetch_k(K_block, K, gid, j, events + 1);
-            simdgroup_event::wait(2, events);
-          }
-          
-          simdgroup_matrix_storage<T> Q_sram[128];
-          simdgroup_matrix_storage<T> K_sram[128];
-#pragma clang loop unroll(full)
-          for (ushort k = 0; k < D_group; k += 8) {
-            load_q(Q_sram, Q_block, 8, false, i, offset_in_simd);
-            load_k(K_sram, K_block, 8, false, j, offset_in_simd);
-            gemm(R_simd, C_simd, 8, true, Q_sram, K_sram, attention_matrix);
-            Q_block += R_group * 8;
-            K_block += 8 * C_group;
-          }
-        }
-        
-        // TODO: Scale by rsqrt(D) and virtually softmax
-        
-        for (ushort d = 0; d < D; d += D_group) {
-          auto dV_block = threadgroup_block;
-          auto dO_block = threadgroup_block + ;
-        }
-      }
-    }
-  }
 }
-
-#if 0
-simdgroup_matrix_storage<T> K_sram[128];
-simdgroup_matrix_storage<T> V_sram[128];
-simdgroup_matrix_storage<float> dK_sram[128];
-simdgroup_matrix_storage<float> dV_sram[128];
-
-uint sequence_position = gid.x * C_group + sidx * C_simd;
-auto K_block = threadgroup_block;
-auto V_block = K_block + C_group * D_simd_padded;
-if (sidx == 0) {
-  simdgroup_event events[2];
-  prefetch_k(K_block, K, gid, sequence_position, events + 0);
-  prefetch_v(V_block, V, gid, sequence_position, events + 1);
-  simdgroup_event::wait(2, events);
-}
-zero_init_k(dK_sram);
-zero_init_v(dV_sram);
-
-threadgroup_barrier(mem_flags::mem_threadgroup);
-load_k(K_sram, K_block, sequence_position, offset_in_simd);
-load_v(V_sram, V_block, sequence_position, offset_in_simd);
-threadgroup_barrier(mem_flags::mem_threadgroup);
-
-// Materialize a 192x256 attention matrix (FP16), 192x128 (FP32).
-for (uint i = 0; i < R; i += R_group) {
-  
-}
-#endif
 
 kernel void attention(device void *Q [[buffer(0)]],
                       device void *K [[buffer(1)]],
