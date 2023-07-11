@@ -41,6 +41,13 @@ constant uint O_leading_dim = O_trans ? R : H * D;
 constant uint mask_leading_dim = mask_trans ? R : C;
 constant uint lm_leading_dim = lm_trans ? R : H * D;
 
+constant uint QT_leading_dim = !Q_trans ? R : H * D;
+constant uint KT_leading_dim = !K_trans ? H * D : C;
+constant uint VT_leading_dim = !V_trans ? C : H * D;
+constant uint OT_leading_dim = !O_trans ? R : H * D;
+constant uint maskT_leading_dim = !mask_trans ? R : C;
+constant uint lmT_leading_dim = !lm_trans ? R : H * D;
+
 // Data type of each matrix.
 constant uint Q_data_type [[function_constant(20)]];
 constant uint K_data_type = Q_data_type;
@@ -73,12 +80,12 @@ constant ushort R_padded = (R_modulo + 7) / 8 * 8;
 constant ushort C_padded = (C_modulo + 7) / 8 * 8;
 
 constant ushort R_splits [[function_constant(210)]];
-constant ushort C_splits [[function_constant(50001)]]; // 211
 constant bool have_lm = gradient;
 
 constant ushort R_group = R_simd * R_splits;
 constant ushort C_group = C_simd;
 constant uint block_mask_leading_dim = mask_trans ? (R + R_group - 1) / R_group : (C + C_group - 1) / C_group;
+constant ushort D_group = (Q_data_type == MTLDataTypeFloat) ? 16 : 32;
 
 constant ushort R_simd_padded = (R + 7) / 8 * 8;
 constant ushort C_simd_padded = (C + 7) / 8 * 8;
@@ -158,73 +165,75 @@ void load_block_mask(thread simdgroup_matrix_storage<T> *mask_sram,
 
 template <typename T, bool is_q, bool is_o, bool is_k, bool is_v>
 void load_sram_iter(thread simdgroup_matrix_storage<T> *sram,
-                    threadgroup void *block, ushort d)
+                    threadgroup void *block, ushort d, bool transpose)
 {
-#define LOAD_SRAM(MATRIX, LEADING_DIM, TRANS) \
-MATRIX->load((threadgroup T*)block, LEADING_DIM, origin, TRANS); \
+  // WARNING: This will fail in backwards mode, as 'D_simd_padded' does not
+  // match 'D_group'. We need a better solution.
   
-  if (is_q || is_o) {
-#pragma clang loop unroll(full)
-    for (ushort r = 0; r < R_simd; r += 8) {
-      ushort2 origin(d, r);
-      auto qo = get_sram(sram, D_simd_padded, origin);
-      LOAD_SRAM(qo, Q_block_leading_dim, Q_trans)
-    }
-  } else if (is_k || is_v) {
-#pragma clang loop unroll(full)
-    for (ushort c = 0; c < C_simd; c += 8) {
-      if (is_k) {
-        ushort2 origin(c, d);
-        auto k = get_sram(sram, C_simd, origin);
-        LOAD_SRAM(k, K_block_leading_dim, K_trans)
-      } else if (is_v) {
-        ushort2 origin(d, c);
-        auto v = get_sram(sram, D_simd_padded, origin);
-        LOAD_SRAM(v, V_block_leading_dim, V_trans)
-      }
-    }
-  }
-#undef LOAD_SRAM
+  // MATRIX->load((threadgroup T*)block, LEADING_DIM, origin, TRANS);
+  
+//  if (is_q || is_o) {
+//#pragma clang loop unroll(full)
+//    for (ushort r = 0; r < R_simd; r += 8) {
+//      ushort2 origin(d, r);
+//      auto qo = get_sram(sram, transpose ? R_simd : D_simd_padded, origin);
+//      LOAD_SRAM(qo, Q_block_leading_dim, Q_trans)
+//    }
+//  } else if (is_k || is_v) {
+//#pragma clang loop unroll(full)
+//    for (ushort c = 0; c < C_simd; c += 8) {
+//      if (is_k) {
+//        ushort2 origin(c, d);
+//        auto k = get_sram(sram, transpose ? D_simd_padded, C_simd, origin);
+//        LOAD_SRAM(k, K_block_leading_dim, K_trans)
+//      } else if (is_v) {
+//        ushort2 origin(d, c);
+//        auto v = get_sram(sram, D_simd_padded, origin);
+//        LOAD_SRAM(v, V_block_leading_dim, V_trans)
+//      }
+//    }
+//  }
+//#undef LOAD_SRAM
 }
 
 template <bool upcast_bfloat, bool is_q, bool is_o, bool is_k, bool is_v>
 void load_sram_iter_bfloat(thread simdgroup_matrix_storage<float> *sram,
-                    threadgroup void *block, ushort d)
+                    threadgroup void *block, ushort d, bool transpose)
 {
-#define LOAD_SRAM(MATRIX, LEADING_DIM, TRANS) \
-if (upcast_bfloat) { \
-MATRIX->load_bfloat((threadgroup ushort*)block, LEADING_DIM, origin, TRANS); \
-} else { \
-MATRIX->load((threadgroup float*)block, LEADING_DIM, origin, TRANS); \
-} \
-  
-  if (is_q || is_o) {
-#pragma clang loop unroll(full)
-    for (ushort r = 0; r < R_simd; r += 8) {
-      ushort2 origin(d, r);
-      auto qo = get_sram(sram, D_simd_padded, origin);
-      LOAD_SRAM(qo, Q_block_leading_dim, Q_trans)
-    }
-  } else if (is_k || is_v) {
-#pragma clang loop unroll(full)
-    for (ushort c = 0; c < C_simd; c += 8) {
-      if (is_k) {
-        ushort2 origin(c, d);
-        auto k = get_sram(sram, C_simd, origin);
-        LOAD_SRAM(k, K_block_leading_dim, K_trans)
-      } else if (is_v) {
-        ushort2 origin(d, c);
-        auto v = get_sram(sram, D_simd_padded, origin);
-        LOAD_SRAM(v, V_block_leading_dim, V_trans)
-      }
-    }
-  }
-#undef LOAD_SRAM
+//#define LOAD_SRAM(MATRIX, LEADING_DIM, TRANS) \
+//if (upcast_bfloat) { \
+//MATRIX->load_bfloat((threadgroup ushort*)block, LEADING_DIM, origin, TRANS); \
+//} else { \
+//MATRIX->load((threadgroup float*)block, LEADING_DIM, origin, TRANS); \
+//} \
+//  
+//  if (is_q || is_o) {
+//#pragma clang loop unroll(full)
+//    for (ushort r = 0; r < R_simd; r += 8) {
+//      ushort2 origin(d, r);
+//      auto qo = get_sram(sram, D_simd_padded, origin);
+//      LOAD_SRAM(qo, Q_block_leading_dim, Q_trans)
+//    }
+//  } else if (is_k || is_v) {
+//#pragma clang loop unroll(full)
+//    for (ushort c = 0; c < C_simd; c += 8) {
+//      if (is_k) {
+//        ushort2 origin(c, d);
+//        auto k = get_sram(sram, C_simd, origin);
+//        LOAD_SRAM(k, K_block_leading_dim, K_trans)
+//      } else if (is_v) {
+//        ushort2 origin(d, c);
+//        auto v = get_sram(sram, D_simd_padded, origin);
+//        LOAD_SRAM(v, V_block_leading_dim, V_trans)
+//      }
+//    }
+//  }
+//#undef LOAD_SRAM
 }
 
 template <typename T, bool is_q, bool is_o>
 void zero_sram_iter_qo(thread simdgroup_matrix_storage<T> *sram,
-                       ushort d, ushort r_start)
+                       ushort d, ushort r_start, bool transpose)
 {
 #pragma clang loop unroll(full)
   for (ushort r = r_start; r < R_simd; r += 8) {
@@ -236,7 +245,7 @@ void zero_sram_iter_qo(thread simdgroup_matrix_storage<T> *sram,
 
 template <typename T, bool is_k, bool is_v>
 void zero_sram_iter_kv(thread simdgroup_matrix_storage<T> *sram,
-                       ushort d, ushort c_start)
+                       ushort d, ushort c_start, bool transpose)
 {
 #pragma clang loop unroll(full)
   for (ushort c = c_start; c < C_simd; c += 8) {
@@ -255,7 +264,7 @@ void zero_sram_iter_kv(thread simdgroup_matrix_storage<T> *sram,
 // `sequence_position` is the position at the start of the simd.
 template <typename T, bool is_q, bool is_o, bool is_k, bool is_v>
 void load_sram(thread simdgroup_matrix_storage<T> *sram,
-               threadgroup void *block,
+               threadgroup void *block, ushort K, bool transpose,
                uint sequence_position, ushort2 offset_in_simd)
 {
   if ((is_q || is_o) && (R_modulo < R_simd)) {
@@ -268,49 +277,64 @@ void load_sram(thread simdgroup_matrix_storage<T> *sram,
     }
   }
   
+  // TODO: Some kind of partitioning along the K dimension for the backward
+  // pass, so blocks don't need to be padded to match D.
+  ushort D_max;
+  if (forward) {
+    D_max = D_simd_padded - 8;
+  } else {
+    D_max = K;
+  }
 #pragma clang loop unroll(full)
-  for (ushort d = 0; d < D_simd_padded - 8; d += 8) {
+  for (ushort d = 0; d < D_max; d += 8) {
     load_sram_iter<
     T, is_q, is_o, is_k, is_v
-    >(sram, block, d);
+    >(sram, block, d, transpose);
   }
   
-  bool do_load;
-  if (D_thread_padded == D_simd_padded) {
-    do_load = true;
-  } else if (is_q || is_o || is_v) {
-    do_load = (offset_in_simd.x >= D_thread_padded % 8);
-  } else if (is_k) {
-    do_load = (offset_in_simd.y >= D_thread_padded % 8);
-  } else {
-    do_load = false;
-  }
-  if (do_load) {
-    load_sram_iter<
-    T, is_q, is_o, is_k, is_v
-    >(sram, block, D_simd_padded - 8);
-  } else {
-    ushort d = D_simd_padded - 8;
-    
-    if (is_q || is_o) {
-      zero_sram_iter_qo<T, is_q, is_o>(sram, d, 0);
-    } else if (is_k || is_v) {
-      zero_sram_iter_kv<T, is_k, is_v>(sram, d, 0);
+  if (forward) {
+    bool do_load;
+    if (D_thread_padded == D_simd_padded) {
+      do_load = true;
+    } else if (is_q || is_o || is_v) {
+      do_load = (offset_in_simd.x >= D_thread_padded % 8);
+    } else if (is_k) {
+      do_load = (offset_in_simd.y >= D_thread_padded % 8);
+    } else {
+      do_load = false;
+    }
+    if (do_load) {
+      load_sram_iter<
+      T, is_q, is_o, is_k, is_v
+      >(sram, block, D_simd_padded - 8, transpose);
+    } else {
+      ushort d = D_simd_padded - 8;
+      
+      if (is_q || is_o) {
+        zero_sram_iter_qo<T, is_q, is_o>(sram, d, 0, transpose);
+      } else if (is_k || is_v) {
+        zero_sram_iter_kv<T, is_k, is_v>(sram, d, 0, transpose);
+      }
     }
   }
   
+  if (forward) {
+    D_max = D_simd_padded;
+  } else {
+    D_max = K;
+  }
   if ((is_q || is_o) && (R_simd_padded < R_simd) && (backward)) {
     if (sequence_position + R_simd > R) {
 #pragma clang loop unroll(full)
-      for (ushort d = 0; d < D_simd_padded; d += 8) {
-        zero_sram_iter_qo<T, is_q, is_o>(sram, d, R_simd_padded);
+      for (ushort d = 0; d < D_max; d += 8) {
+        zero_sram_iter_qo<T, is_q, is_o>(sram, d, R_simd_padded, transpose);
       }
     }
   } else if ((is_k || is_v) && (C_simd_padded < C_simd) && (forward)) {
     if (sequence_position + C_simd > C) {
 #pragma clang loop unroll(full)
-      for (ushort d = 0; d < D_simd_padded; d += 8) {
-        zero_sram_iter_kv<T, is_k, is_v>(sram, d, C_simd_padded);
+      for (ushort d = 0; d < D_max; d += 8) {
+        zero_sram_iter_kv<T, is_k, is_v>(sram, d, C_simd_padded, transpose);
       }
     }
   }
@@ -318,7 +342,7 @@ void load_sram(thread simdgroup_matrix_storage<T> *sram,
 
 template <bool upcast_bfloat, bool is_q, bool is_o, bool is_k, bool is_v>
 void load_sram_bfloat(thread simdgroup_matrix_storage<float> *sram,
-                      threadgroup void *block,
+                      threadgroup void *block, ushort K, bool transpose,
                       uint sequence_position, ushort2 offset_in_simd)
 {
   if ((is_q || is_o) && (R_modulo < R_simd)) {
@@ -331,100 +355,123 @@ void load_sram_bfloat(thread simdgroup_matrix_storage<float> *sram,
     }
   }
   
+  // TODO: Some kind of partitioning along the K dimension for the backward
+  // pass, so blocks don't need to be padded to match D.
+  ushort D_max;
+  if (forward) {
+    D_max = D_simd_padded - 8;
+  } else {
+    D_max = K;
+  }
 #pragma clang loop unroll(full)
-  for (ushort d = 0; d < D_simd_padded - 8; d += 8) {
+  for (ushort d = 0; d < D_max; d += 8) {
     load_sram_iter_bfloat<
     upcast_bfloat, is_q, is_o, is_k, is_v
-    >(sram, block, d);
+    >(sram, block, d, transpose);
   }
   
-  bool do_load;
-  if (D_thread_padded == D_simd_padded) {
-    do_load = true;
-  } else if (is_q || is_o || is_v) {
-    do_load = (offset_in_simd.x >= D_thread_padded % 8);
-  } else if (is_k) {
-    do_load = (offset_in_simd.y >= D_thread_padded % 8);
-  } else {
-    do_load = false;
-  }
-  if (do_load) {
-    load_sram_iter_bfloat<
-    upcast_bfloat, is_q, is_o, is_k, is_v
-    >(sram, block, D_simd_padded - 8);
-  } else {
-    ushort d = D_simd_padded - 8;
-    
-    if (is_q || is_o) {
-      zero_sram_iter_qo<float, is_q, is_o>(sram, d, 0);
-    } else if (is_k || is_v) {
-      zero_sram_iter_kv<float, is_k, is_v>(sram, d, 0);
+  if (forward) {
+    bool do_load;
+    if (D_thread_padded == D_simd_padded) {
+      do_load = true;
+    } else if (is_q || is_o || is_v) {
+      do_load = (offset_in_simd.x >= D_thread_padded % 8);
+    } else if (is_k) {
+      do_load = (offset_in_simd.y >= D_thread_padded % 8);
+    } else {
+      do_load = false;
+    }
+    if (do_load) {
+      load_sram_iter_bfloat<
+      upcast_bfloat, is_q, is_o, is_k, is_v
+      >(sram, block, D_simd_padded - 8, transpose);
+    } else {
+      ushort d = D_simd_padded - 8;
+      
+      if (is_q || is_o) {
+        zero_sram_iter_qo<float, is_q, is_o>(sram, d, 0, transpose);
+      } else if (is_k || is_v) {
+        zero_sram_iter_kv<float, is_k, is_v>(sram, d, 0, transpose);
+      }
     }
   }
   
+  if (forward) {
+    D_max = D_simd_padded;
+  } else {
+    D_max = K;
+  }
   if ((is_q || is_o) && (R_simd_padded < R_simd) && (backward)) {
     if (sequence_position + R_simd > R) {
 #pragma clang loop unroll(full)
-      for (ushort d = 0; d < D_simd_padded; d += 8) {
-        zero_sram_iter_qo<float, is_q, is_o>(sram, d, R_simd_padded);
+      for (ushort d = 0; d < D_max; d += 8) {
+        zero_sram_iter_qo<float, is_q, is_o>(sram, d, R_simd_padded, transpose);
       }
     }
   } else if ((is_k || is_v) && (C_simd_padded < C_simd) && (forward)) {
     if (sequence_position + C_simd > C) {
 #pragma clang loop unroll(full)
-      for (ushort d = 0; d < D_simd_padded; d += 8) {
-        zero_sram_iter_kv<float, is_k, is_v>(sram, d, C_simd_padded);
+      for (ushort d = 0; d < D_max; d += 8) {
+        zero_sram_iter_kv<float, is_k, is_v>(sram, d, C_simd_padded, transpose);
       }
     }
   }
 }
 
 template <typename T>
-void load_q(thread simdgroup_matrix_storage<T> *sram, threadgroup void *block,
+void load_q(thread simdgroup_matrix_storage<T> *sram,
+            threadgroup void *block, ushort K, bool transpose,
             uint sequence_position, ushort2 offset_in_simd) {
-  load_sram<T, true, false, false, false>(sram, block, sequence_position, offset_in_simd);
+  load_sram<T, true, false, false, false>(sram, block, K, transpose, sequence_position, offset_in_simd);
 }
 
 template <typename T>
-void load_o(thread simdgroup_matrix_storage<T> *sram, threadgroup void *block,
+void load_o(thread simdgroup_matrix_storage<T> *sram,
+            threadgroup void *block, ushort K, bool transpose,
             uint sequence_position, ushort2 offset_in_simd) {
-  load_sram<T, false, true, false, false>(sram, block, sequence_position, offset_in_simd);
+  load_sram<T, false, true, false, false>(sram, block, K, transpose, sequence_position, offset_in_simd);
 }
 
 template <typename T>
-void load_k(thread simdgroup_matrix_storage<T> *sram, threadgroup void *block,
+void load_k(thread simdgroup_matrix_storage<T> *sram,
+            threadgroup void *block, ushort K, bool transpose,
             uint sequence_position, ushort2 offset_in_simd) {
-  load_sram<T, false, false, true, false>(sram, block, sequence_position, offset_in_simd);
+  load_sram<T, false, false, true, false>(sram, block, K, transpose, sequence_position, offset_in_simd);
 }
 
 template <typename T>
-void load_v(thread simdgroup_matrix_storage<T> *sram, threadgroup void *block,
+void load_v(thread simdgroup_matrix_storage<T> *sram,
+            threadgroup void *block, ushort K, bool transpose,
             uint sequence_position, ushort2 offset_in_simd) {
-  load_sram<T, false, false, false, true>(sram, block, sequence_position, offset_in_simd);
+  load_sram<T, false, false, false, true>(sram, block, K, transpose, sequence_position, offset_in_simd);
 }
 
 template <bool upcast_bfloat>
-void load_q_bfloat(thread simdgroup_matrix_storage<float> *sram, threadgroup void *block,
-            uint sequence_position, ushort2 offset_in_simd) {
-  load_sram_bfloat<upcast_bfloat, true, false, false, false>(sram, block, sequence_position, offset_in_simd);
+void load_q_bfloat(thread simdgroup_matrix_storage<float> *sram,
+                   threadgroup void *block, ushort K, bool transpose,
+                   uint sequence_position, ushort2 offset_in_simd) {
+  load_sram_bfloat<upcast_bfloat, true, false, false, false>(sram, block, K, transpose, sequence_position, offset_in_simd);
 }
 
 template <bool upcast_bfloat>
-void load_o_bfloat(thread simdgroup_matrix_storage<float> *sram, threadgroup void *block,
-            uint sequence_position, ushort2 offset_in_simd) {
-  load_sram_bfloat<upcast_bfloat, false, true, false, false>(sram, block, sequence_position, offset_in_simd);
+void load_o_bfloat(thread simdgroup_matrix_storage<float> *sram,
+                   threadgroup void *block, ushort K, bool transpose,
+                   uint sequence_position, ushort2 offset_in_simd) {
+  load_sram_bfloat<upcast_bfloat, false, true, false, false>(sram, block, K, transpose, sequence_position, offset_in_simd);
 }
 
 template <bool upcast_bfloat>
-void load_k_bfloat(thread simdgroup_matrix_storage<float> *sram, threadgroup void *block,
-            uint sequence_position, ushort2 offset_in_simd) {
-  load_sram_bfloat<upcast_bfloat, false, false, true, false>(sram, block, sequence_position, offset_in_simd);
+void load_k_bfloat(thread simdgroup_matrix_storage<float> *sram,
+                   threadgroup void *block, ushort K, bool transpose,
+                   uint sequence_position, ushort2 offset_in_simd) {
+  load_sram_bfloat<upcast_bfloat, false, false, true, false>(sram, block, K, transpose, sequence_position, offset_in_simd);
 }
 
 template <bool upcast_bfloat>
-void load_v_bfloat(thread simdgroup_matrix_storage<float> *sram, threadgroup void *block,
-            uint sequence_position, ushort2 offset_in_simd) {
-  load_sram_bfloat<upcast_bfloat, false, false, false, true>(sequence_position, offset_in_simd);
+void load_v_bfloat(thread simdgroup_matrix_storage<float> *sram,
+                   threadgroup void *block, ushort K, bool transpose,
+                   uint sequence_position, ushort2 offset_in_simd) {
+  load_sram_bfloat<upcast_bfloat, false, false, false, true>(sram, block, K, transpose, sequence_position, offset_in_simd);
 }
 
 // The mask cannot be padded using simple zero-padding or -INF padding. Instead,
@@ -474,6 +521,8 @@ void prefetch(threadgroup T *dst, device T *src,
   // TODO: Incorporate the H dimension (gid.y) when fetching data.
   // TODO: Incorporate the batch dimension (gid.z).
   
+  // TODO: Allow partial reads along the D dimension for the backward pass.
+  
   // TODO: Finish the function body.
 }
 
@@ -503,7 +552,9 @@ void prefetch_v(threadgroup T *dst, device T *src, uint3 gid, uint sequence_posi
 
 template <typename T>
 void zero_init(thread simdgroup_matrix_storage<T>* sram, ushort rows, ushort cols) {
+#pragma clang loop unroll(full)
   for (ushort r = 0; r < rows; r += 8) {
+#pragma clang loop unroll(full)
     for (ushort c = 0; c < rows; c += 8) {
       ushort2 origin(c, r);
       auto value = get_sram(sram, cols, origin);
@@ -530,6 +581,11 @@ void zero_init_k(thread simdgroup_matrix_storage<T>* sram) {
 template <typename T>
 void zero_init_v(thread simdgroup_matrix_storage<T>* sram) {
   zero_init(sram, C_simd, D_simd_padded);
+}
+
+template <typename T>
+void zero_init_attention(thread simdgroup_matrix_storage<T>* sram) {
+  zero_init(sram, C_simd, R_simd);
 }
 
 template <typename A_data_type, typename B_data_type, typename C_data_type>
@@ -636,11 +692,6 @@ void _generate_block_mask_impl(threadgroup T *threadgroup_block [[threadgroup(0)
   }
 }
 
-// TODO:
-// Grid X = sequence dimension (R for forward, C for backward)
-// Grid Y = heads dimension (H)
-// Grid Z = batch dimension
-// Threadgroup size = 128
 template <typename T, typename dT, bool is_bfloat>
 void _attention_impl(device T *Q [[buffer(0)]],
                      device T *K [[buffer(1)]],
@@ -663,6 +714,8 @@ void _attention_impl(device T *Q [[buffer(0)]],
 {
   ushort2 offset_in_simd = simdgroup_matrix_storage<T>::offset(lane_id);
   
+  // TODO: Rewrite the entire file, forget about elision of zero padding.
+  
   // Threadgroup size is 128.
   if (forward) {
     simdgroup_matrix_storage<T> Q_sram[128];
@@ -677,7 +730,7 @@ void _attention_impl(device T *Q [[buffer(0)]],
     zero_init_o(O_sram);
     
     threadgroup_barrier(mem_flags::mem_threadgroup);
-    load_q(Q_sram, threadgroup_block, i, offset_in_simd);
+    load_q(Q_sram, threadgroup_block, D, false, i, offset_in_simd);
     
     // Inner loop.
     for (uint j = 0; j < C; j += C_group) {
@@ -690,12 +743,12 @@ void _attention_impl(device T *Q [[buffer(0)]],
       
       simdgroup_matrix_storage<T> K_sram[128];
       threadgroup_barrier(mem_flags::mem_threadgroup);
-      load_k(K_sram, threadgroup_block, j, offset_in_simd);
+      load_k(K_sram, threadgroup_block, D, false, j, offset_in_simd);
       
       simdgroup_matrix_storage<T> attention_matrix[128];
       gemm(R_simd, C_simd, D_simd_padded, false, Q_sram, K_sram, attention_matrix);
       
-      // TODO: Softmax
+      // TODO: Scale by rsqrt(D) and softmax
       
       threadgroup_barrier(mem_flags::mem_threadgroup);
       if (sidx == 0) {
@@ -706,7 +759,7 @@ void _attention_impl(device T *Q [[buffer(0)]],
       
       simdgroup_matrix_storage<T> V_sram[128];
       threadgroup_barrier(mem_flags::mem_threadgroup);
-      load_v(V_sram, threadgroup_block, j, offset_in_simd);
+      load_v(V_sram, threadgroup_block, D, false, j, offset_in_simd);
       
       gemm(R_simd, D_simd_padded, C_simd, true, attention_matrix, V_sram, O_sram);
     }
@@ -719,36 +772,72 @@ void _attention_impl(device T *Q [[buffer(0)]],
   if (backward) {
     // Stream all of Q/O/K/V/dQ/dO/dK/dV directly from RAM, only temporarily
     // cached in D=8 matrices.
-    simdgroup_matrix_storage<T> attention_matrix[128];
-    
-    simdgroup_matrix_storage<T> K_sram[128];
-    simdgroup_matrix_storage<T> V_sram[128];
-    simdgroup_matrix_storage<float> dK_sram[128];
-    simdgroup_matrix_storage<float> dV_sram[128];
-    
-    uint sequence_position = gid.x * C_group + sidx * C_simd;
-    auto K_block = threadgroup_block;
-    auto V_block = K_block + C_group * D_simd_padded;
-    if (sidx == 0) {
-      simdgroup_event events[2];
-      prefetch_k(K_block, K, gid, sequence_position, events + 0);
-      prefetch_v(V_block, V, gid, sequence_position, events + 1);
-      simdgroup_event::wait(2, events);
-    }
-    zero_init_k(dK_sram);
-    zero_init_v(dV_sram);
-    
-    threadgroup_barrier(mem_flags::mem_threadgroup);
-    load_k(K_sram, K_block, sequence_position, offset_in_simd);
-    load_v(V_sram, V_block, sequence_position, offset_in_simd);
-    threadgroup_barrier(mem_flags::mem_threadgroup);
-    
-    // Materialize a 192x256 attention matrix (FP16), 192x128 (FP32).
-    for (uint i = 0; i < R; i += R_group) {
-      
+    for (uint j = 0; j < C; j += C_group) {
+      for (uint i = 0; i < R; i += R_group) {
+        simdgroup_matrix_storage<T> attention_matrix[128];
+        zero_init_attention(attention_matrix);
+        
+        for (ushort d = 0; d < D; d += D_group) {
+          auto Q_block = threadgroup_block;
+          auto K_block = threadgroup_block + R_group * D_group;
+          if (sidx == 0) {
+            simdgroup_event events[2];
+            prefetch_q(Q_block, Q, gid, i, events + 0);
+            prefetch_k(K_block, K, gid, j, events + 1);
+            simdgroup_event::wait(2, events);
+          }
+          
+          simdgroup_matrix_storage<T> Q_sram[128];
+          simdgroup_matrix_storage<T> K_sram[128];
+#pragma clang loop unroll(full)
+          for (ushort k = 0; k < D_group; k += 8) {
+            load_q(Q_sram, Q_block, 8, false, i, offset_in_simd);
+            load_k(K_sram, K_block, 8, false, j, offset_in_simd);
+            gemm(R_simd, C_simd, 8, true, Q_sram, K_sram, attention_matrix);
+            Q_block += R_group * 8;
+            K_block += 8 * C_group;
+          }
+        }
+        
+        // TODO: Scale by rsqrt(D) and virtually softmax
+        
+        for (ushort d = 0; d < D; d += D_group) {
+          auto dV_block = threadgroup_block;
+          auto dO_block = threadgroup_block + ;
+        }
+      }
     }
   }
 }
+
+#if 0
+simdgroup_matrix_storage<T> K_sram[128];
+simdgroup_matrix_storage<T> V_sram[128];
+simdgroup_matrix_storage<float> dK_sram[128];
+simdgroup_matrix_storage<float> dV_sram[128];
+
+uint sequence_position = gid.x * C_group + sidx * C_simd;
+auto K_block = threadgroup_block;
+auto V_block = K_block + C_group * D_simd_padded;
+if (sidx == 0) {
+  simdgroup_event events[2];
+  prefetch_k(K_block, K, gid, sequence_position, events + 0);
+  prefetch_v(V_block, V, gid, sequence_position, events + 1);
+  simdgroup_event::wait(2, events);
+}
+zero_init_k(dK_sram);
+zero_init_v(dV_sram);
+
+threadgroup_barrier(mem_flags::mem_threadgroup);
+load_k(K_sram, K_block, sequence_position, offset_in_simd);
+load_v(V_sram, V_block, sequence_position, offset_in_simd);
+threadgroup_barrier(mem_flags::mem_threadgroup);
+
+// Materialize a 192x256 attention matrix (FP16), 192x128 (FP32).
+for (uint i = 0; i < R; i += R_group) {
+  
+}
+#endif
 
 kernel void attention(device void *Q [[buffer(0)]],
                       device void *K [[buffer(1)]],
