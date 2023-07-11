@@ -130,11 +130,11 @@ namespace metal
     
     METAL_FUNC void load_bfloat(const threadgroup ushort *src, ushort elements_per_row, ushort2 matrix_origin, bool transpose_matrix = false) {
       if (transpose_matrix) {
-        *(thread_elements_bfloat()).y = src[matrix_origin.x * elements_per_row + matrix_origin.y];
-        *(thread_elements_bfloat()).w = src[(matrix_origin.x + 1) * elements_per_row + matrix_origin.y];
+        thread_elements_bfloat()->y = src[matrix_origin.x * elements_per_row + matrix_origin.y];
+        thread_elements_bfloat()->w = src[(matrix_origin.x + 1) * elements_per_row + matrix_origin.y];
       } else {
-        *(thread_elements_bfloat()).zw = *reinterpret_cast<const threadgroup ushort2*>(src + matrix_origin.y * elements_per_row + matrix_origin.x);
-        *(thread_elements_bfloat()).y = *(thread_elements_bfloat()).z;
+        thread_elements_bfloat()->zw = *reinterpret_cast<const threadgroup ushort2*>(src + matrix_origin.y * elements_per_row + matrix_origin.x);
+        thread_elements_bfloat()->y = thread_elements_bfloat()->z;
       }
     }
     

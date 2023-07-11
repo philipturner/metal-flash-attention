@@ -11,6 +11,8 @@
 #include "metal_simdgroup_matrix_storage"
 using namespace metal;
 
+// MARK: - Function Constants
+
 // Dimensions of each matrix.
 constant uint M [[function_constant(0)]];
 constant uint N [[function_constant(1)]];
@@ -66,6 +68,8 @@ constant ushort B_sram_offset = A_sram_offset + A_sram_length;
 constant ushort C_sram_offset = B_sram_offset + B_sram_length;
 constant ushort A_block_offset = 0;
 constant ushort B_block_offset = A_block_offset + A_block_length;
+
+// MARK: - Utilities
 
 template <typename T>
 METAL_FUNC thread simdgroup_matrix_storage<T>* A_sram(thread simdgroup_matrix_storage<T> *sram, ushort2 matrix_origin) {
@@ -240,6 +244,8 @@ struct activation_functor {
   
   typedef visible_function_table<function> function_table;
 };
+
+// MARK: - Kernels
 
 template <typename T>
 void _gemm_impl(device T *A [[buffer(0)]],
