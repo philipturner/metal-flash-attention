@@ -62,10 +62,7 @@ constant bool gradient [[function_constant(103)]];
 // TODO: Allow `block_sparse` without `masked` by just not checking whether the flag applies the mask.
 constant bool masked [[function_constant(110)]];
 constant bool block_sparse [[function_constant(111)]];
-constant bool triangular [[function_constant(112)]];
 constant bool generate_block_mask = masked && block_sparse && !forward && !backward;
-// TODO: Change l -> inv(l) after combining partial sums for triangular.
-// Otherwise, always store as inv(l).
 
 constant ushort R_simd [[function_constant(200)]];
 constant ushort C_simd [[function_constant(201)]];
@@ -77,8 +74,7 @@ constant ushort C_padded = (C_modulo + 7) / 8 * 8;
 
 constant ushort R_splits [[function_constant(210)]];
 constant ushort C_splits [[function_constant(50001)]]; // 211
-constant bool have_lm = (gradient && (forward || backward)) || (triangular && C_splits == 2);
-// TODO: Atomically mark the lower bit of 'l', removing the need for 'float4'.
+constant bool have_lm = gradient;
 
 constant ushort R_group = R_simd * R_splits;
 constant ushort C_group = C_simd;
@@ -536,6 +532,31 @@ void zero_init_v(thread simdgroup_matrix_storage<T>* sram) {
   zero_init(sram, C_simd, D_simd_padded);
 }
 
+template <typename A_data_type, typename B_data_type, typename C_data_type>
+void gemm(ushort M, ushort N, ushort K, bool accumulate,
+          thread simdgroup_matrix_storage<A_data_type>* A,
+          thread simdgroup_matrix_storage<B_data_type>* B,
+          thread simdgroup_matrix_storage<C_data_type>* C)
+{
+#pragma clang loop unroll(full)
+  for (ushort k = 0; k < K; k += 8) {
+#pragma clang loop unroll(full)
+    for (ushort m = 0; m < K; m += 8) {
+      ushort2 a_origin(k, m);
+#pragma clang loop unroll(full)
+      for (ushort n = 0; n < N; n += 8) {
+        ushort2 b_origin(n, k);
+        auto a = get_sram(A, K, a_origin);
+        auto b = get_sram(B, N, b_origin);
+        
+        ushort2 c_origin(n, m);
+        auto c = get_sram(C, N, c_origin);
+        c->multiply(*a, *b, accumulate);
+      }
+    }
+  }
+}
+
 // MARK: - Kernels
 
 template <typename T>
@@ -642,29 +663,69 @@ void _attention_impl(device T *Q [[buffer(0)]],
 {
   ushort2 offset_in_simd = simdgroup_matrix_storage<T>::offset(lane_id);
   
-  simdgroup_matrix_storage<T> Q_sram[128];
-  simdgroup_matrix_storage<float> O_sram[128];
+  // Threadgroup size is 128.
   if (forward) {
-    uint sequence_position = gid.x * R_group + sidx * R_simd;
+    simdgroup_matrix_storage<T> Q_sram[128];
+    simdgroup_matrix_storage<float> O_sram[128];
+    
+    uint i = gid.x * R_group + sidx * R_simd;
     if (sidx == 0) {
       simdgroup_event events[1];
-      prefetch_q(threadgroup_block, Q, gid, sequence_position, events);
+      prefetch_q(threadgroup_block, Q, gid, i, events);
       simdgroup_event::wait(1, events);
     }
     zero_init_o(O_sram);
     
     threadgroup_barrier(mem_flags::mem_threadgroup);
-    load_q(Q_sram, threadgroup_block, sequence_position, offset_in_simd);
-    threadgroup_barrier(mem_flags::mem_threadgroup);
+    load_q(Q_sram, threadgroup_block, i, offset_in_simd);
+    
+    // Inner loop.
+    for (uint j = 0; j < C; j += C_group) {
+      threadgroup_barrier(mem_flags::mem_threadgroup);
+      if (sidx == 0) {
+        simdgroup_event events[1];
+        prefetch_k(threadgroup_block, K, gid, j, events);
+        simdgroup_event::wait(1, events);
+      }
+      
+      simdgroup_matrix_storage<T> K_sram[128];
+      threadgroup_barrier(mem_flags::mem_threadgroup);
+      load_k(K_sram, threadgroup_block, j, offset_in_simd);
+      
+      simdgroup_matrix_storage<T> attention_matrix[128];
+      gemm(R_simd, C_simd, D_simd_padded, false, Q_sram, K_sram, attention_matrix);
+      
+      // TODO: Softmax
+      
+      threadgroup_barrier(mem_flags::mem_threadgroup);
+      if (sidx == 0) {
+        simdgroup_event events[1];
+        prefetch_v(threadgroup_block, V, gid, j, events);
+        simdgroup_event::wait(1, events);
+      }
+      
+      simdgroup_matrix_storage<T> V_sram[128];
+      threadgroup_barrier(mem_flags::mem_threadgroup);
+      load_v(V_sram, threadgroup_block, j, offset_in_simd);
+      
+      gemm(R_simd, D_simd_padded, C_simd, true, attention_matrix, V_sram, O_sram);
+    }
   }
   
-  // TODO: Unpack dK_sram / dV_sram once for every inner loop iteration along
-  // the D dimension.
-  simdgroup_matrix_storage<T> K_sram[128];
-  simdgroup_matrix_storage<T> V_sram[128];
-  simdgroup_matrix_storage<dT> dK_sram[128];
-  simdgroup_matrix_storage<dT> dV_sram[128];
+  // During the backward pass, data flows both toward Q and toward K. A single
+  // threadgroup must tackle an entire NxN attention matrix. However, unlike
+  // inference, there's typically several batches. Make threadgroups as large as
+  // possible (384 threads) and set the X grid dimension to 1.
   if (backward) {
+    // Stream all of Q/O/K/V/dQ/dO/dK/dV directly from RAM, only temporarily
+    // cached in D=8 matrices.
+    simdgroup_matrix_storage<T> attention_matrix[128];
+    
+    simdgroup_matrix_storage<T> K_sram[128];
+    simdgroup_matrix_storage<T> V_sram[128];
+    simdgroup_matrix_storage<float> dK_sram[128];
+    simdgroup_matrix_storage<float> dV_sram[128];
+    
     uint sequence_position = gid.x * C_group + sidx * C_simd;
     auto K_block = threadgroup_block;
     auto V_block = K_block + C_group * D_simd_padded;
@@ -681,6 +742,11 @@ void _attention_impl(device T *Q [[buffer(0)]],
     load_k(K_sram, K_block, sequence_position, offset_in_simd);
     load_v(V_sram, V_block, sequence_position, offset_in_simd);
     threadgroup_barrier(mem_flags::mem_threadgroup);
+    
+    // Materialize a 192x256 attention matrix (FP16), 192x128 (FP32).
+    for (uint i = 0; i < R; i += R_group) {
+      
+    }
   }
 }
 
