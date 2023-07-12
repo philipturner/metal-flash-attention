@@ -303,9 +303,9 @@ void _gemm_impl(device T *A [[buffer(0)]],
   
   if (K > K_simd) {
 #pragma clang loop unroll(full)
-    for (int m = 0; m < M_padded; m += 8) {
+    for (ushort m = 0; m < M_padded; m += 8) {
 #pragma clang loop unroll(full)
-      for (int n = 0; n < N_padded; n += 8) {
+      for (ushort n = 0; n < N_padded; n += 8) {
         *C_sram(sram, ushort2(n, m)) = simdgroup_matrix_storage<T>(0);
       }
     }

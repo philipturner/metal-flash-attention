@@ -33,20 +33,17 @@ constant uint Q_leading_dim = Q_trans ? R : H * D;
 constant uint K_leading_dim = K_trans ? H * D : C;
 constant uint V_leading_dim = V_trans ? C : H * D;
 constant uint O_leading_dim = O_trans ? R : H * D;
-constant uint lm_leading_dim = R;
 
-constant uint Q_data_type [[function_constant(20)]];
+constant float alpha = rsqrt(float(D));
+
+constant uint Q_data_type [[function_constant(30)]];
 
 constant bool batched [[function_constant(100)]];
-constant bool forward [[function_constant(50000)]]; // 101
-constant bool backward [[function_constant(102)]];
-constant bool gradient [[function_constant(103)]];
-constant bool have_lm = gradient;
-
-// Masking and sparsity only supported in the forward kernel.
-constant bool masked [[function_constant(110)]];
-constant bool block_sparse [[function_constant(111)]];
-constant bool generate_block_mask = masked && block_sparse && !forward && !backward;
+constant bool masked [[function_constant(50000)]]; // 101
+constant bool block_sparse [[function_constant(102)]];
+constant bool forward [[function_constant(103)]];
+constant bool backward [[function_constant(104)]];
+constant bool generate_block_mask [[function_constant(105)]];
 
 constant ushort R_simd [[function_constant(200)]];
 constant ushort C_simd [[function_constant(201)]];
@@ -54,12 +51,11 @@ constant ushort D_simd [[function_constant(202)]];
 
 constant ushort R_splits [[function_constant(210)]];
 constant ushort R_group = R_simd * R_splits;
-constant ushort D_group = (Q_data_type == MTLDataTypeFloat) ? 16 : 32;
 
-constant ushort Q_block_leading_dim = (Q_trans ? R_group : D);
-constant ushort K_block_leading_dim = (K_trans ? D : C_simd);
-constant ushort V_block_leading_dim = (V_trans ? C_simd : D);
-constant ushort O_block_leading_dim = (O_trans ? R_group : D);
+constant ushort Q_block_leading_dim = (Q_trans ? R_group : D_simd);
+constant ushort K_block_leading_dim = (K_trans ? D_simd : C_simd);
+constant ushort V_block_leading_dim = (V_trans ? C_simd : D_simd);
+constant ushort O_block_leading_dim = (O_trans ? R_group : D_simd);
 
 #pragma clang diagnostic pop
 
@@ -81,23 +77,11 @@ METAL_FUNC thread simdgroup_matrix_storage<T>* get_sram(thread simdgroup_matrix_
   return sram + (matrix_origin.y / 8) * (sram_leading_dim / 8) + (matrix_origin.x / 8);
 }
 
-template <typename T>
-METAL_FUNC void prefetch(threadgroup T *dst, device T *src,
-                         ushort2 tile, uint2 offset, uint3 gid,
-                         uint2 bounds, bool transpose)
-{
-  tile.x = min(int(tile.x), int(bounds.x - offset.x));
-  tile.y = min(int(tile.y), int(bounds.y - offset.y));
-  
-  simdgroup_event events[1];
-//  events[0].async_copy(
-}
-
 template <typename A_data_type, typename B_data_type, typename C_data_type>
 void gemm(ushort M, ushort N, ushort K, bool accumulate,
-          thread simdgroup_matrix_storage<A_data_type>* A,
-          thread simdgroup_matrix_storage<B_data_type>* B,
-          thread simdgroup_matrix_storage<C_data_type>* C)
+          ushort A_leading_dim, thread simdgroup_matrix_storage<A_data_type>* A,
+          ushort B_leading_dim, thread simdgroup_matrix_storage<B_data_type>* B,
+          ushort C_leading_dim, thread simdgroup_matrix_storage<C_data_type>* C)
 {
 #pragma clang loop unroll(full)
   for (ushort k = 0; k < K; k += 8) {
@@ -107,11 +91,11 @@ void gemm(ushort M, ushort N, ushort K, bool accumulate,
 #pragma clang loop unroll(full)
       for (ushort n = 0; n < N; n += 8) {
         ushort2 b_origin(n, k);
-        auto a = get_sram(A, K, a_origin);
-        auto b = get_sram(B, N, b_origin);
+        auto a = get_sram(A, A_leading_dim, a_origin);
+        auto b = get_sram(B, B_leading_dim, b_origin);
         
         ushort2 c_origin(n, m);
-        auto c = get_sram(C, N, c_origin);
+        auto c = get_sram(C, C_leading_dim, c_origin);
         c->multiply(*a, *b, accumulate);
       }
     }
@@ -139,9 +123,9 @@ void _generate_block_mask_impl(threadgroup T *threadgroup_block [[threadgroup(0)
     ushort2 dst_tile(C_simd, R_group);
     auto mask_src = simdgroup_matrix_storage<T>::apply_offset(mask, C, mask_offset);
     
-    simdgroup_event events[1];
-    events[0].async_copy(threadgroup_block, C_simd, dst_tile, mask_src, C, src_tile, false, simdgroup_async_copy_clamp_mode::clamp_to_edge);
-    simdgroup_event::wait(1, events);
+    simdgroup_event event;
+    event.async_copy(threadgroup_block, C_simd, dst_tile, mask_src, C, src_tile, false, simdgroup_async_copy_clamp_mode::clamp_to_edge);
+    simdgroup_event::wait(1, &event);
   }
   threadgroup_barrier(mem_flags::mem_threadgroup);
   
@@ -203,74 +187,207 @@ void _generate_block_mask_impl(threadgroup T *threadgroup_block [[threadgroup(0)
   }
 }
 
-template <typename T, typename dT, bool is_bfloat>
+template <typename T>
 void _attention_impl(device T *Q [[buffer(0)]],
                      device T *K [[buffer(1)]],
                      device T *V [[buffer(2)]],
                      device T *O [[buffer(3)]],
                      
-                     device dT *dQ [[buffer(5), function_constant(backward)]],
-                     device dT *dK [[buffer(6), function_constant(backward)]],
-                     device dT *dV [[buffer(7), function_constant(backward)]],
-                     device dT *dO [[buffer(8), function_constant(backward)]],
-                     
                      threadgroup T *threadgroup_block [[threadgroup(0)]],
                      device T *mask [[buffer(11), function_constant(masked)]],
                      device uchar *block_mask [[buffer(12), function_constant(block_sparse)]],
-                     device float2 *lm [[buffer(13), function_constant(have_lm)]],
                      
                      uint3 gid [[threadgroup_position_in_grid]],
                      ushort sidx [[simdgroup_index_in_threadgroup]],
                      ushort lane_id [[thread_index_in_simdgroup]])
 {
-  ushort2 offset_in_simd = simdgroup_matrix_storage<T>::offset(lane_id);
-  
-  // Threadgroup size is 128.
-  if (forward) {
-    simdgroup_matrix_storage<T> Q_sram[128];
-    simdgroup_matrix_storage<float> O_sram[128];
-    
+  if (R % R_group > 0) {
     uint i = gid.x * R_group + sidx * R_simd;
-    if (sidx == 0) {
-      simdgroup_event events[1];
-      prefetch_q(threadgroup_block, Q, gid, i, events);
-      simdgroup_event::wait(1, events);
+    if (i >= R) {
+      return;
     }
-    zero_init_o(O_sram);
+  }
+  
+  ushort2 offset_in_simd = simdgroup_matrix_storage<T>::offset(lane_id);
+  simdgroup_matrix_storage<T> Q_sram[128];
+  simdgroup_matrix_storage<float> O_sram[128];
+  float l_sram[128];
+  float m_sram[128];
+  
+  // Fetch Q block.
+  if (sidx == 0) {
+    uint2 Q_offset(0, gid.x * R_group);
+    ushort2 src_tile(D, min(uint(R_group), R - Q_offset.y));
+    ushort2 dst_tile(D_simd, src_tile.y);
     
+    auto Q_src = simdgroup_matrix_storage<T>::apply_offset(Q, Q_leading_dim, Q_offset, Q_trans);
+    Q_src += gid.y * (Q_trans ? D * R : D);
+    Q_src = apply_batch_offset(Q_src, gid.z * R * H * D);
+    
+    simdgroup_event event;
+    event.async_copy(threadgroup_block, Q_block_leading_dim, dst_tile, Q_src, Q_leading_dim, src_tile, Q_trans);
+    simdgroup_event::wait(1, &event);
+  }
+  
+  // Initialize O, l, and m.
+#pragma clang loop unroll(full)
+  for (ushort r = 0; r < R_simd; r += 8) {
+#pragma clang loop unroll(full)
+    for (ushort d = 0; d < D_simd; d += 8) {
+      *get_sram(O_sram, D_simd, ushort2(d, r)) = simdgroup_matrix_storage<float>(0);
+    }
+    l_sram[r / 8] = 0;
+    m_sram[r / 8] = -numeric_limits<T>::max();
+  }
+  
+  uint j_block_max = (C + C_simd - 1) / C_simd;
+  for (uint j_block = 0; j_block < j_block_max; j_block += 1) {
+    ushort flags = masked ? 2 : 1;
+    if (block_sparse) {
+      flags = block_mask[gid.x * j_block_max + j_block];
+      if (flags == 0) {
+        continue;
+      }
+    }
+    
+    // Fetch K block.
     threadgroup_barrier(mem_flags::mem_threadgroup);
-    load_q(Q_sram, threadgroup_block, D, false, i, offset_in_simd);
+    if (sidx == 0) {
+      uint2 K_offset(j_block * C_simd, 0);
+      ushort2 src_tile(min(uint(C_simd), C - K_offset.x), D);
+      ushort2 dst_tile(src_tile.x, D_simd);
+      
+      auto K_src = simdgroup_matrix_storage<T>::apply_offset(K, K_leading_dim, K_offset, K_trans);
+      K_src += gid.y * (K_trans ? D : D * C);
+      K_src = apply_batch_offset(K_src, gid.z * C * H * D);
+      
+      simdgroup_event event;
+      event.async_copy(threadgroup_block, K_block_leading_dim, dst_tile, K_src, K_leading_dim, src_tile, K_trans);
+      simdgroup_event::wait(1, &event);
+    }
+    auto K_block = simdgroup_matrix_storage<T>::apply_offset(threadgroup_block, K_block_leading_dim, offset_in_simd, K_trans);
     
-    // Inner loop.
-    for (uint j = 0; j < C; j += C_group) {
-      threadgroup_barrier(mem_flags::mem_threadgroup);
-      if (sidx == 0) {
-        simdgroup_event events[1];
-        prefetch_k(threadgroup_block, K, gid, j, events);
-        simdgroup_event::wait(1, events);
-      }
-      
+    // Multiply Q * K.
+    threadgroup_barrier(mem_flags::mem_threadgroup);
+    simdgroup_matrix_storage<T> attention_matrix[128];
+#pragma clang loop unroll(full)
+    for (ushort d = 0; d < D_simd; d += 8) {
       simdgroup_matrix_storage<T> K_sram[128];
-      threadgroup_barrier(mem_flags::mem_threadgroup);
-      load_k(K_sram, threadgroup_block, D, false, j, offset_in_simd);
-      
-      simdgroup_matrix_storage<T> attention_matrix[128];
-      gemm(R_simd, C_simd, D_simd_padded, false, Q_sram, K_sram, attention_matrix);
-      
-      // TODO: Scale by rsqrt(D) and softmax
-      
+#pragma clang loop unroll(full)
+      for (ushort c = 0; c < C_simd; c += 8) {
+        auto k = get_sram(K_sram, C_simd, ushort2(c, 0));
+        k->load(K_block, K_block_leading_dim, ushort2(c, d), K_trans);
+      }
+      gemm(R_simd, C_simd, 8, d > 0,
+           D_simd, Q_sram + d / 8,
+           C_simd, K_sram,
+           C_simd, attention_matrix + d / 8);
+    }
+    
+    // Apply explicit mask.
+    if (masked && flags == 2) {
       threadgroup_barrier(mem_flags::mem_threadgroup);
       if (sidx == 0) {
-        simdgroup_event events[1];
-        prefetch_v(threadgroup_block, V, gid, j, events);
-        simdgroup_event::wait(1, events);
+        uint2 mask_offset(j_block * C_simd, gid.x * R_group);
+        ushort2 src_tile(min(uint(C_simd), C - mask_offset.x),
+                         min(uint(R_group), R - mask_offset.y));
+        ushort2 dst_tile = src_tile;
+        auto mask_src = simdgroup_matrix_storage<T>::apply_offset(mask, C, mask_offset);
+        
+        simdgroup_event event;
+        event.async_copy(threadgroup_block, C_simd, dst_tile, mask_src, C, src_tile);
+        simdgroup_event::wait(1, &event);
+      }
+      ushort2 mask_offset(0, sidx * R_simd);
+      mask_offset += offset_in_simd;
+      auto mask_block = simdgroup_matrix_storage<T>::apply_offset(threadgroup_block, C, mask_offset);
+      
+      threadgroup_barrier(mem_flags::mem_threadgroup);
+#pragma clang loop unroll(full)
+      for (ushort r = 0; r < R_simd; r += 8) {
+#pragma clang loop unroll(full)
+        for (ushort c = 0; c < C_simd; c += 8) {
+          ushort2 origin(c, r);
+          simdgroup_matrix_storage<T> mask;
+          mask.load(mask_block, C_simd, origin);
+          
+          auto s = get_sram(attention_matrix, C_simd, origin);
+          *(s->thread_elements()) += *(mask.thread_elements());
+        }
+      }
+    }
+    
+    // Apply edge mask.
+    if ((C % C_simd > 0) && (j_block * C_simd + C_simd > C)) {
+      const ushort c_modulo = C % C_simd;
+      const ushort c_floor = c_modulo - (c_modulo % 8);
+      const ushort c_edge_thread = c_modulo - c_floor;
+      ushort c = c_floor;
+      
+#pragma clang loop unroll(full)
+      for (ushort index = 0; index < 2; index += 1) {
+        if (offset_in_simd.x + index >= c_edge_thread) {
+#pragma clang loop unroll(full)
+          for (ushort r = 0; r < R_simd; r += 8) {
+            auto s = get_sram(attention_matrix, C_simd, ushort2(c, r));
+            s->thread_elements()[index] = -numeric_limits<T>::max();
+          }
+        }
       }
       
-      simdgroup_matrix_storage<T> V_sram[128];
-      threadgroup_barrier(mem_flags::mem_threadgroup);
-      load_v(V_sram, threadgroup_block, D, false, j, offset_in_simd);
+#pragma clang loop unroll(full)
+      for (c += 8; c < C_simd; c += 8) {
+#pragma clang loop unroll(full)
+        for (ushort r = 0; r < R_simd; r += 8) {
+          auto s = get_sram(attention_matrix, C_simd, ushort2(c, r));
+          *(s->thread_elements()) = -numeric_limits<T>::max();
+        }
+      }
+    }
+    
+    // Perform softmax.
+#pragma clang loop unroll(full)
+    for (ushort r = 0; r < R_simd; r += 8) {
+      float2 _m;
+#pragma clang loop unroll(full)
+      for (ushort c = 0; c < C_simd; c += 8) {
+        auto s = get_sram(attention_matrix, C_simd, ushort2(c, r));
+        if (c == 0) {
+          _m = float2(*(s->thread_elements()));
+        } else {
+          _m = max(_m, float2(*(s->thread_elements())));
+        }
+      }
+      float m = max(_m[0], _m[1]);
+      m = max(m, simd_shuffle_xor(m, 1));
+      m = max(m, simd_shuffle_xor(m, 8));
+      m *= alpha;
       
-      gemm(R_simd, D_simd_padded, C_simd, true, attention_matrix, V_sram, O_sram);
+      m = max(m, m_sram[r / 8]);
+      float correction = exp2(M_LOG2E_F * (m_sram[r / 8] - m));
+      if (m > m_sram[r / 8]) {
+#pragma clang loop unroll(full)
+        for (ushort d = 0; d < D_simd; d += 8) {
+          auto o = get_sram(O_sram, D_simd, ushort2(d, r));
+          *(o->thread_elements()) *= correction;
+        }
+      }
+      m_sram[r / 8] = m;
+      m *= -M_LOG2E_F;
+      
+      float2 _l = 0;
+#pragma clang loop unroll(full)
+      for (ushort c = 0; c < C_simd; c += 8) {
+        auto s = get_sram(attention_matrix, C_simd, ushort2(c, r));
+        float2 p = float2(*s->thread_elements());
+        p = exp2(fma(p, alpha * M_LOG2E_F, m));
+        *(s->thread_elements()) = vec<T, 2>(p);
+        _l += float2(*(s->thread_elements()));
+      }
+      float l = _l[0] + _l[1];
+      l += simd_shuffle_xor(l, 1);
+      l += simd_shuffle_xor(l, 8);
+      l_sram[r / 8] = fma(l_sram[r / 8], correction, l);
     }
   }
 }
@@ -280,16 +397,10 @@ kernel void attention(device void *Q [[buffer(0)]],
                       device void *V [[buffer(2)]],
                       device void *O [[buffer(3)]],
                       
-                      device void *dQ [[buffer(5), function_constant(backward)]],
-                      device void *dK [[buffer(6), function_constant(backward)]],
-                      device void *dV [[buffer(7), function_constant(backward)]],
-                      device void *dO [[buffer(8), function_constant(backward)]],
-                      
                       threadgroup void *threadgroup_block [[threadgroup(0)]],
-                      constant ulong4 *matrix_offsets [[buffer(10), function_constant(batched)]],
+                      constant vec<ulong, 8> *matrix_offsets [[buffer(10), function_constant(batched)]],
                       device void *mask [[buffer(11), function_constant(masked)]],
                       device uchar *block_mask [[buffer(12), function_constant(block_sparse)]],
-                      device float2 *lm [[buffer(13), function_constant(have_lm)]],
                       
                       uint3 gid [[threadgroup_position_in_grid]],
                       ushort sidx [[simdgroup_index_in_threadgroup]],
@@ -297,51 +408,24 @@ kernel void attention(device void *Q [[buffer(0)]],
 {
   if (batched) {
     if (masked) {
-      mask = ((device uchar*)mask) + matrix_offsets[gid.z].x;
+      mask = ((device uchar*)mask) + matrix_offsets[gid.z][0];
     }
     if (block_sparse) {
-      block_mask += matrix_offsets[gid.z].y;
+      block_mask += matrix_offsets[gid.z][1];
     }
   }
   
-  // Don't do anything when function constants are invalid.
-  if (forward && backward) {
-    
-  } else if (backward && !gradient) {
-    
-  } else if (gradient && !forward && !backward) {
-    
-  } else if (generate_block_mask) {
-    if (mask_data_type == MTLDataTypeFloat) {
-      _generate_block_mask_impl<float>((threadgroup float*)threadgroup_block,
-                                       (device float*)mask, block_mask,
-                                       gid, sidx, lane_id);
-    } else if (mask_data_type == MTLDataTypeHalf) {
-      _generate_block_mask_impl<half>((threadgroup half*)threadgroup_block,
-                                      (device half*)mask, block_mask,
-                                      gid, sidx, lane_id);
-    }
-  } else {
+  if (generate_block_mask) {
     if (Q_data_type == MTLDataTypeFloat) {
-      _attention_impl<
-      float, float, false
-      >((device float*)Q, (device float*)K,
-        (device float*)V, (device float*)O,
-        (device float*)dQ, (device float*)dK,
-        (device float*)dV, (device float*)dO,
-        (threadgroup float*)threadgroup_block,
-        (device float*)mask, block_mask, lm,
-        gid, sidx, lane_id);
+      _generate_block_mask_impl((threadgroup float*)threadgroup_block, (device float*)mask, block_mask, gid, sidx, lane_id);
     } else if (Q_data_type == MTLDataTypeHalf) {
-      _attention_impl
-      <half, ushort, true
-      >((device half*)Q, (device half*)K,
-        (device half*)V, (device half*)O,
-        (device ushort*)dQ, (device ushort*)dK,
-        (device ushort*)dV, (device ushort*)dO,
-        (threadgroup half*)threadgroup_block,
-        (device half*)mask, block_mask, lm,
-        gid, sidx, lane_id);
+      _generate_block_mask_impl((threadgroup half*)threadgroup_block, (device half*)mask, block_mask, gid, sidx, lane_id);
+    }
+  } else if (forward) {
+    if (Q_data_type == MTLDataTypeFloat) {
+      _attention_impl((device float*)Q, (device float*)K, (device float*)V, (device float*)O, (threadgroup float*)threadgroup_block, (device float*)mask, block_mask, gid, sidx, lane_id);
+    } else if (Q_data_type == MTLDataTypeHalf) {
+      _attention_impl((device half*)Q, (device half*)K, (device half*)V, (device half*)O, (threadgroup half*)threadgroup_block, (device half*)mask, block_mask, gid, sidx, lane_id);
     }
   }
 }
