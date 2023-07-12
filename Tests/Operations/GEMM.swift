@@ -109,7 +109,13 @@ struct MFA_GEMM: GEMM, MFA_Operation {
     let K_group = K_simd * K_splits
     let A_block_length = M_group * K_group
     let B_block_length = K_group * N_group
-    let blockBytes = (A_block_length + B_block_length) * UInt16(dataType.size)
+    
+    var block_elements = A_block_length + B_block_length;
+    if (pcopy.M % 8 != 0) && (pcopy.N % 8 != 0) {
+      let C_block_length = M_group * N_group;
+      block_elements = max(C_block_length, block_elements)
+    }
+    var blockBytes = block_elements * UInt16(dataType.size)
     
     func ceilDivide(target: Int, granularity: UInt16) -> Int {
       (target + Int(granularity) - 1) / Int(granularity)

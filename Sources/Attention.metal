@@ -27,8 +27,6 @@ constant bool Q_trans [[function_constant(10)]];
 constant bool K_trans [[function_constant(11)]];
 constant bool V_trans [[function_constant(12)]];
 constant bool O_trans [[function_constant(13)]];
-
-// Leading dimension for the operand and its gradient.
 constant uint Q_leading_dim = Q_trans ? R : H * D;
 constant uint K_leading_dim = K_trans ? H * D : C;
 constant uint V_leading_dim = V_trans ? C : H * D;
@@ -47,7 +45,7 @@ constant bool generate_block_mask [[function_constant(105)]];
 
 constant ushort R_simd [[function_constant(200)]];
 constant ushort C_simd [[function_constant(201)]];
-constant ushort D_simd [[function_constant(202)]];
+constant ushort D_simd = (D + 7) / 8 * 8;
 
 constant ushort R_splits [[function_constant(210)]];
 constant ushort R_group = R_simd * R_splits;
@@ -104,9 +102,6 @@ void gemm(ushort M, ushort N, ushort K, bool accumulate,
 
 // MARK: - Kernels
 
-// The mask cannot be padded using simple zero-padding. Consider writing
-// directly to threadgroup memory and setting to -INF. Then, guarantee that the
-// other operand is zero, not NAN.
 template <typename T>
 void _generate_block_mask_impl(threadgroup T *threadgroup_block [[threadgroup(0)]],
                                device T *mask [[buffer(11), function_constant(masked)]],
@@ -214,7 +209,7 @@ void _attention_impl(device T *Q [[buffer(0)]],
   float l_sram[128];
   float m_sram[128];
   
-  // Fetch Q block.
+  // Load Q block.
   if (sidx == 0) {
     uint2 Q_offset(0, gid.x * R_group);
     ushort2 src_tile(D, min(uint(R_group), R - Q_offset.y));
@@ -229,15 +224,29 @@ void _attention_impl(device T *Q [[buffer(0)]],
     simdgroup_event::wait(1, &event);
   }
   
-  // Initialize O, l, and m.
+  // Initialize O, l, m.
 #pragma clang loop unroll(full)
   for (ushort r = 0; r < R_simd; r += 8) {
 #pragma clang loop unroll(full)
     for (ushort d = 0; d < D_simd; d += 8) {
-      *get_sram(O_sram, D_simd, ushort2(d, r)) = simdgroup_matrix_storage<float>(0);
+      auto o = get_sram(O_sram, D_simd, ushort2(d, r));
+      *o = simdgroup_matrix_storage<float>(0);
     }
     l_sram[r / 8] = 0;
     m_sram[r / 8] = -numeric_limits<T>::max();
+  }
+  auto Q_offset = ushort2(0, sidx * R_simd) + offset_in_simd;
+  auto Q_block = simdgroup_matrix_storage<T>::apply_offset(threadgroup_block, Q_block_leading_dim, Q_offset, Q_trans);
+  
+  threadgroup_barrier(mem_flags::mem_threadgroup);
+#pragma clang loop unroll(full)
+  for (ushort r = 0; r < R_simd; r += 8) {
+#pragma clang loop unroll(full)
+    for (ushort d = 0; d < D_simd; d += 8) {
+      ushort2 origin(d, r);
+      auto q = get_sram(Q_sram, D_simd, origin);
+      q->load(Q_block, Q_block_leading_dim, origin, Q_trans);
+    }
   }
   
   uint j_block_max = (C + C_simd - 1) / C_simd;
@@ -250,12 +259,12 @@ void _attention_impl(device T *Q [[buffer(0)]],
       }
     }
     
-    // Fetch K block.
+    // Load K block.
     threadgroup_barrier(mem_flags::mem_threadgroup);
     if (sidx == 0) {
       uint2 K_offset(j_block * C_simd, 0);
       ushort2 src_tile(min(uint(C_simd), C - K_offset.x), D);
-      ushort2 dst_tile(src_tile.x, D_simd);
+      ushort2 dst_tile(src_tile.x, D);
       
       auto K_src = simdgroup_matrix_storage<T>::apply_offset(K, K_leading_dim, K_offset, K_trans);
       K_src += gid.y * (K_trans ? D : D * C);
@@ -273,15 +282,23 @@ void _attention_impl(device T *Q [[buffer(0)]],
 #pragma clang loop unroll(full)
     for (ushort d = 0; d < D_simd; d += 8) {
       simdgroup_matrix_storage<T> K_sram[128];
+      if ((D != D_simd) && (d + 8 == D_simd) && (offset_in_simd.y >= D % 8)) {
 #pragma clang loop unroll(full)
-      for (ushort c = 0; c < C_simd; c += 8) {
-        auto k = get_sram(K_sram, C_simd, ushort2(c, 0));
-        k->load(K_block, K_block_leading_dim, ushort2(c, d), K_trans);
+        for (ushort c = 0; c < C_simd; c += 8) {
+          auto k = get_sram(K_sram, C_simd, ushort2(c, 0));
+          *k = simdgroup_matrix_storage<T>(0);
+        }
+      } else {
+#pragma clang loop unroll(full)
+        for (ushort c = 0; c < C_simd; c += 8) {
+          auto k = get_sram(K_sram, C_simd, ushort2(c, 0));
+          k->load(K_block, K_block_leading_dim, ushort2(c, d), K_trans);
+        }
       }
       gemm(R_simd, C_simd, 8, d > 0,
            D_simd, Q_sram + d / 8,
-           C_simd, K_sram,
-           C_simd, attention_matrix + d / 8);
+           C_simd, K_sram + d / 8,
+           C_simd, attention_matrix);
     }
     
     // Apply explicit mask.
@@ -298,8 +315,7 @@ void _attention_impl(device T *Q [[buffer(0)]],
         event.async_copy(threadgroup_block, C_simd, dst_tile, mask_src, C, src_tile);
         simdgroup_event::wait(1, &event);
       }
-      ushort2 mask_offset(0, sidx * R_simd);
-      mask_offset += offset_in_simd;
+      auto mask_offset = ushort2(0, sidx * R_simd) + offset_in_simd;
       auto mask_block = simdgroup_matrix_storage<T>::apply_offset(threadgroup_block, C, mask_offset);
       
       threadgroup_barrier(mem_flags::mem_threadgroup);
@@ -345,7 +361,7 @@ void _attention_impl(device T *Q [[buffer(0)]],
       }
     }
     
-    // Perform softmax.
+    // Compute softmax.
 #pragma clang loop unroll(full)
     for (ushort r = 0; r < R_simd; r += 8) {
       float2 _m;
@@ -389,6 +405,68 @@ void _attention_impl(device T *Q [[buffer(0)]],
       l += simd_shuffle_xor(l, 8);
       l_sram[r / 8] = fma(l_sram[r / 8], correction, l);
     }
+    
+    // Load V block.
+    threadgroup_barrier(mem_flags::mem_threadgroup);
+    if (sidx == 0) {
+      uint2 V_offset(0, j_block * C_simd);
+      ushort2 src_tile(D, min(uint(C_simd), C - V_offset.y));
+      ushort2 dst_tile(D, C_simd);
+      
+      auto V_src = simdgroup_matrix_storage<T>::apply_offset(V, V_leading_dim, V_offset, V_trans);
+      V_src += gid.y * (V_trans ? D * C : D);
+      V_src = apply_batch_offset(V_src, gid.z * C * H * D);
+      
+      simdgroup_event event;
+      event.async_copy(threadgroup_block, V_block_leading_dim, dst_tile, V_src, V_leading_dim, src_tile, V_trans);
+      simdgroup_event::wait(1, &event);
+    }
+    auto V_block = simdgroup_matrix_storage<T>::apply_offset(threadgroup_block, V_block_leading_dim, offset_in_simd, V_trans);
+    
+    // Multiply P * V.
+    threadgroup_barrier(mem_flags::mem_threadgroup);
+#pragma clang loop unroll(full)
+    for (ushort d = 0; d < D_simd; d += 8) {
+      simdgroup_matrix_storage<T> V_sram[128];
+#pragma clang loop unroll(full)
+      for (ushort c = 0; c < C_simd; c += 8) {
+        auto v = get_sram(V_sram, 8, ushort2(0, c));
+        v->load(V_block, V_block_leading_dim, ushort2(d, c), V_trans);
+      }
+      gemm(R_simd, 8, C_simd, true,
+           C_simd, attention_matrix,
+           8, V_sram,
+           D_simd, O_sram + d / 8);
+    }
+  }
+  auto O_offset = ushort2(0, sidx * R_simd) + offset_in_simd;
+  auto O_block = simdgroup_matrix_storage<T>::apply_offset(threadgroup_block, O_block_leading_dim, O_offset, O_trans);
+  
+  // Write O block.
+  threadgroup_barrier(mem_flags::mem_threadgroup);
+#pragma clang loop unroll(full)
+  for (ushort r = 0; r < R_simd; r += 8) {
+    float l = 1 / l_sram[r / 8];
+#pragma clang loop unroll(full)
+    for (ushort d = 0; d < D_simd; d += 8) {
+      ushort2 origin(d, r);
+      auto o_elements = get_sram(O_sram, D_simd, origin)->thread_elements();
+      simdgroup_matrix_storage<T> o(vec<T, 2>(*o_elements * l));
+      o.store(O_block, O_block_leading_dim, origin, O_trans);
+    }
+  }
+  
+  threadgroup_barrier(mem_flags::mem_threadgroup);
+  if (sidx == 0) {
+    uint2 O_offset(0, gid.x * R_group);
+    ushort2 tile(D, min(uint(R_group), R - O_offset.y));
+    
+    auto O_dst = simdgroup_matrix_storage<T>::apply_offset(O, O_leading_dim, O_offset, O_trans);
+    O_dst += gid.y * (O_trans ? D * R : D);
+    O_dst = apply_batch_offset(O_dst, gid.z * R * H * D);
+    
+    simdgroup_event event;
+    event.async_copy(O_dst, O_leading_dim, tile, threadgroup_block, O_block_leading_dim, tile, O_trans);
   }
 }
 
@@ -398,7 +476,7 @@ kernel void attention(device void *Q [[buffer(0)]],
                       device void *O [[buffer(3)]],
                       
                       threadgroup void *threadgroup_block [[threadgroup(0)]],
-                      constant vec<ulong, 8> *matrix_offsets [[buffer(10), function_constant(batched)]],
+                      constant ulong4 *matrix_offsets [[buffer(10), function_constant(batched)]],
                       device void *mask [[buffer(11), function_constant(masked)]],
                       device uchar *block_mask [[buffer(12), function_constant(block_sparse)]],
                       
