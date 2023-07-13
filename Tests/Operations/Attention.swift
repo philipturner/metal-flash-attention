@@ -55,8 +55,6 @@ struct MFA_Attention {
   }
 }
 
-// TODO: Implement MPSGraph and NumPy einsum attention before MFA attention
-
 struct MPS_Attention {
   var parameters: Attention_Parameters
   
@@ -243,5 +241,72 @@ struct MPS_Attention {
     }
     return AsyncGraph(
       graph: graph, feeds: feeds, targetTensors: [postTransposeO])
+  }
+}
+
+struct Py_Attention {
+  var parameters: Attention_Parameters
+  
+  init(parameters: Attention_Parameters) {
+    self.parameters = parameters
+  }
+  
+  func execute(tensors: Attention_Tensors) {
+    let tensorQ = tensors.q as! Py_TensorBuffer
+    let tensorK = tensors.k as! Py_TensorBuffer
+    let tensorV = tensors.v as! Py_TensorBuffer
+    let tensorO = tensors.o as! Py_TensorBuffer
+    var tensorMask: Py_TensorBuffer?
+    if parameters.masked {
+      // WARNING: Mask dimensions need to be [B, 1, R, C].
+      tensorMask = (tensors.mask! as! Py_TensorBuffer)
+    }
+    
+    let np = PythonContext.global.np
+    
+    var postTransposeQ = tensorQ.ndarray
+    if parameters.Q_trans {
+      postTransposeQ = np.einsum("...ijk->...kij", tensorQ.ndarray)
+    }
+    
+    var postTransposeK = tensorK.ndarray
+    if parameters.K_trans {
+      postTransposeK = np.einsum("...ijk->...jki", tensorK.ndarray)
+    }
+    
+    var postTransposeV = tensorV.ndarray
+    if parameters.V_trans {
+      postTransposeV = np.einsum("...ijk->...kij", tensorV.ndarray)
+    }
+    
+    // Multiply Q * K.
+    // [R, H, D] * [H, D, C] -> [H, R, C]
+    var attentionMatrix = np.einsum(
+      "...ijk,...jkl->...jil", postTransposeQ, postTransposeK)
+    attentionMatrix *= PythonObject(rsqrt(Double(parameters.D)))
+    
+    // Apply explicit mask.
+    if let tensorMask {
+      np.add(attentionMatrix, tensorMask.ndarray, out: attentionMatrix)
+    }
+    
+    // Perform softmax.
+    let lastAxis = PythonObject(tensorQ.shape.count - 1)
+    let summary = np[dynamicMember: "max"](
+      attentionMatrix, axis: lastAxis, keepdims: true)
+    np.subtract(attentionMatrix, summary, out: attentionMatrix)
+    np.exp(attentionMatrix, out: attentionMatrix)
+    np.sum(
+      attentionMatrix, axis: lastAxis, keepdims: true, out: summary)
+    np.divide(attentionMatrix, summary, out: summary)
+    
+    // Multiply P * V.
+    // [H, R, C] * [C, H, D] -> [R, H, D]
+    let originalO = tensorO.ndarray
+    np.einsum(
+      "...ijk,...kil->jil", attentionMatrix, postTransposeV, out: originalO)
+    if parameters.O_trans {
+      np.einsum("...ijk->...jki", originalO, out: originalO)
+    }
   }
 }
