@@ -110,12 +110,12 @@ struct MFA_GEMM: GEMM, MFA_Operation {
     let A_block_length = M_group * K_group
     let B_block_length = K_group * N_group
     
-    var block_elements = A_block_length + B_block_length;
+    var blockElements = A_block_length + B_block_length;
     if (pcopy.M % 8 != 0) && (pcopy.N % 8 != 0) {
       let C_block_length = M_group * N_group;
-      block_elements = max(C_block_length, block_elements)
+      blockElements = max(C_block_length, blockElements)
     }
-    var blockBytes = block_elements * UInt16(dataType.size)
+    let blockBytes = blockElements * UInt16(dataType.size)
     
     func ceilDivide(target: Int, granularity: UInt16) -> Int {
       (target + Int(granularity) - 1) / Int(granularity)
@@ -129,9 +129,13 @@ struct MFA_GEMM: GEMM, MFA_Operation {
       height: 1,
       depth: 1)
     
+    var flags: UInt32 = 0
+    if parameters.batched {
+      flags |= 0x1
+    }
     return AsyncPipeline(
       function: function,
-      batched: parameters.batched,
+      flags: flags,
       threadgroupMemoryLength: blockBytes,
       gridSize: gridSize,
       groupSize: groupSize)
@@ -154,7 +158,7 @@ struct MFA_GEMM: GEMM, MFA_Operation {
     encoder.setBuffer(tensorC.buffer, offset: 0, index: 2)
     
     var gridZ: Int
-    if resource.batched {
+    if resource.flags & 0x1 > 0 {
       let batchDimensionsA = tensors.a.shape.dropLast(2)
       let batchDimensionsB = tensors.b.shape.dropLast(2)
       let batchDimensionsC = tensors.c.shape.dropLast(2)

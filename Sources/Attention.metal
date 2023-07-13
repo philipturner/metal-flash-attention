@@ -507,4 +507,3 @@ kernel void attention(device void *Q [[buffer(0)]],
     }
   }
 }
-

@@ -53,6 +53,182 @@ struct MFA_Attention {
   init(parameters: Attention_Parameters) {
     self.parameters = parameters
   }
+  
+  func makeAsyncResource() -> AsyncPipeline {
+    let dataType = parameters.dataType
+    precondition(dataType == .float || dataType == .half)
+    precondition(!parameters.block_sparse, "Block sparsity not supported yet.")
+    
+    let constants = MTLFunctionConstantValues()
+    var pcopy = self.parameters
+    constants.setConstantValue(&pcopy.R, type: .uint, index: 0)
+    constants.setConstantValue(&pcopy.C, type: .uint, index: 1)
+    constants.setConstantValue(&pcopy.H, type: .uint, index: 2)
+    constants.setConstantValue(&pcopy.D, type: .uint, index: 3)
+    constants.setConstantValue(&pcopy.Q_trans, type: .bool, index: 10)
+    constants.setConstantValue(&pcopy.K_trans, type: .bool, index: 11)
+    constants.setConstantValue(&pcopy.V_trans, type: .bool, index: 12)
+    constants.setConstantValue(&pcopy.O_trans, type: .bool, index: 13)
+    
+    var dataTypeRawValue = dataType.rawValue
+    constants.setConstantValue(&dataTypeRawValue, type: .uint, index: 30)
+    constants.setConstantValue(&pcopy.batched, type: .bool, index: 50000)
+    constants.setConstantValue(&pcopy.block_sparse, type: .bool, index: 102)
+    
+    var forward = true
+    var backward = false
+    var generateBlockMask = false
+    constants.setConstantValue(&forward, type: .bool, index: 103)
+    constants.setConstantValue(&backward, type: .bool, index: 104)
+    constants.setConstantValue(&generateBlockMask, type: .bool, index: 105)
+    
+    var R_simd = Self.functionConstants["R_simd"] as! UInt16
+    var C_simd = Self.functionConstants["C_simd"] as! UInt16
+    var R_splits = Self.functionConstants["R_splits"] as! UInt16
+    constants.setConstantValue(&R_simd, type: .ushort, index: 200)
+    constants.setConstantValue(&C_simd, type: .ushort, index: 201)
+    constants.setConstantValue(&R_splits, type: .ushort, index: 210)
+    
+    let library = MetalContext.global.library
+    let function = try! library.makeFunction(
+      name: "attention", constantValues: constants)
+    
+    let D_simd = UInt16(pcopy.D + 7) / 8 * 8
+    let R_group = R_simd * R_splits
+    let Q_block_length = R_group * D_simd
+    let K_block_length = D_simd * C_simd
+    let V_block_length = C_simd * D_simd
+    let O_block_length = R_group * D_simd
+    
+    var blockElements = max(Q_block_length, K_block_length)
+    blockElements = max(blockElements, V_block_length)
+    blockElements = max(blockElements, O_block_length)
+    if pcopy.masked {
+      let mask_block_length = R_group * C_simd
+      blockElements = max(blockElements, mask_block_length)
+    }
+    let blockBytes = blockElements * UInt16(dataType.size)
+    
+    func ceilDivide(target: Int, granularity: UInt16) -> Int {
+      (target + Int(granularity) - 1) / Int(granularity)
+    }
+    let gridSize = MTLSize(
+      width: ceilDivide(target: parameters.R, granularity: R_group),
+      height: parameters.H,
+      depth: 1)
+    let groupSize = MTLSize(
+      width: 32 * Int(R_splits),
+      height: 1,
+      depth: 1)
+    
+    var flags: UInt32 = 0
+    if parameters.batched {
+      flags |= 0x1
+    }
+    if parameters.masked {
+      flags |= 0x2
+    }
+    if parameters.block_sparse {
+      flags |= 0x4
+    }
+    return AsyncPipeline(
+      function: function,
+      flags: flags,
+      threadgroupMemoryLength: blockBytes,
+      gridSize: gridSize,
+      groupSize: groupSize)
+  }
+  
+  func encode(
+    encoder: MTLComputeCommandEncoder,
+    tensors: Attention_Tensors,
+    resource: AsyncPipeline
+  ) {
+    encoder.setComputePipelineState(resource.resource)
+    encoder.setThreadgroupMemoryLength(
+      Int(resource.threadgroupMemoryLength), index: 0)
+    
+    let tensorQ = tensors.q as! MFA_TensorBuffer
+    let tensorK = tensors.k as! MFA_TensorBuffer
+    let tensorV = tensors.v as! MFA_TensorBuffer
+    let tensorO = tensors.o as! MFA_TensorBuffer
+    encoder.setBuffer(tensorQ.buffer, offset: 0, index: 0)
+    encoder.setBuffer(tensorK.buffer, offset: 0, index: 1)
+    encoder.setBuffer(tensorV.buffer, offset: 0, index: 2)
+    encoder.setBuffer(tensorO.buffer, offset: 0, index: 3)
+    
+    var gridZ: Int
+    if resource.flags & 0x1 > 0 {
+      let batchDimensionsQ = tensors.q.shape.dropLast(3)
+      let batchDimensionsK = tensors.k.shape.dropLast(3)
+      let batchDimensionsV = tensors.v.shape.dropLast(3)
+      let batchDimensionsO = tensors.o.shape.dropLast(3)
+      assert(batchDimensionsQ.reduce(1, *) > 0)
+      assert(batchDimensionsQ == batchDimensionsK)
+      assert(batchDimensionsQ == batchDimensionsV)
+      assert(batchDimensionsQ == batchDimensionsO)
+      gridZ = batchDimensionsQ.reduce(1, *)
+      
+      let elementSize = tensors.q.dataType.size
+      func byteStride(shape: [Int]) -> Int {
+        var output = elementSize
+        output *= shape[shape.count - 1]
+        output *= shape[shape.count - 2]
+        output *= shape[shape.count - 3]
+        if shape.dropLast(3).reduce(1, *) == 1 {
+          output = 0
+        }
+        return output
+      }
+      var byteStrideMask = 0
+      let byteStrideBlockMask = 0
+      
+      if resource.flags & 0x2 > 0 {
+        let batchDimensionsMask = tensors.mask!.shape.dropLast(3)
+        assert(
+          batchDimensionsMask.reduce(1, *) == 1 ||
+          batchDimensionsMask == batchDimensionsQ)
+        byteStrideMask = byteStride(shape: tensors.mask!.shape)
+      }
+      
+      withUnsafeTemporaryAllocation(
+        of: SIMD4<UInt64>.self, capacity: gridZ
+      ) { buffer in
+        for i in 0..<buffer.count {
+          buffer[i] = SIMD4(
+            UInt64(truncatingIfNeeded: i * byteStrideMask),
+            UInt64(truncatingIfNeeded: i * byteStrideBlockMask),
+            UInt64(0),
+            UInt64(0))
+        }
+        
+        let bufferLength = buffer.count * MemoryLayout<SIMD4<UInt64>>.stride
+        assert(MemoryLayout<SIMD4<UInt64>>.stride == 8 * 4)
+        encoder.setBytes(buffer.baseAddress!, length: bufferLength, index: 10)
+      }
+    } else {
+      assert(tensors.q.shape.count == 3)
+      assert(tensors.k.shape.count == 3)
+      assert(tensors.v.shape.count == 3)
+      assert(tensors.o.shape.count == 3)
+      if let tensorMask = tensors.mask {
+        assert(tensorMask.shape.count == 3)
+      }
+      gridZ = 1
+    }
+    
+    if resource.flags & 0x2 > 0 {
+      let tensorMask = tensors.mask! as! MFA_TensorBuffer
+      let maskShape = tensors.mask!.shape
+      assert(maskShape[maskShape.count - 3] == 1)
+      encoder.setBuffer(tensorMask.buffer, offset: 0, index: 11)
+    }
+    
+    var gridSize = resource.gridSize
+    gridSize.depth = gridZ
+    encoder.dispatchThreadgroups(
+      gridSize, threadsPerThreadgroup: resource.groupSize)
+  }
 }
 
 struct MPS_Attention {
@@ -241,6 +417,29 @@ struct MPS_Attention {
     }
     return AsyncGraph(
       graph: graph, feeds: feeds, targetTensors: [postTransposeO])
+  }
+  
+  func encode(
+    encoder: MPSCommandBuffer,
+    tensors: Attention_Tensors,
+    resource: AsyncGraph
+  ) {
+    let tensorQ = tensors.q as! MPS_TensorBuffer
+    let tensorK = tensors.k as! MPS_TensorBuffer
+    let tensorV = tensors.v as! MPS_TensorBuffer
+    let tensorO = tensors.o as! MPS_TensorBuffer
+    var inputs = [tensorQ.tensorData, tensorK.tensorData, tensorV.tensorData]
+    
+    if let mask = tensors.mask {
+      let tensorMask = mask as! MPS_TensorBuffer
+      inputs.append(tensorMask.tensorData)
+    }
+    let results = [tensorO.tensorData]
+    resource.resource.encode(
+      to: encoder,
+      inputs: inputs,
+      results: results,
+      executionDescriptor: nil)
   }
 }
 

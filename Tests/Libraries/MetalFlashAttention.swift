@@ -63,21 +63,21 @@ class AsyncPipeline: AsyncResource {
   
   // Pre-compute some of the dispatch metadata to speed up encoding. Some
   // functions will ignore the metadata or overwrite some of its values.
-  var batched: Bool
+  var flags: UInt32
   var threadgroupMemoryLength: UInt16
   var gridSize: MTLSize
   var groupSize: MTLSize
   
   init(
     function: MTLFunction,
-    batched: Bool,
+    flags: UInt32,
     threadgroupMemoryLength: UInt16,
     gridSize: MTLSize,
     groupSize: MTLSize
   ) {
     self._semaphore = DispatchSemaphore(value: 0)
     
-    self.batched = batched
+    self.flags = 0x1
     self.threadgroupMemoryLength = threadgroupMemoryLength
     self.gridSize = gridSize
     self.groupSize = groupSize

@@ -36,6 +36,7 @@
 		98C7952C2A4C714400DB688D /* Random.swift in Sources */ = {isa = PBXBuildFile; fileRef = 98C7952B2A4C714400DB688D /* Random.swift */; };
 		98C795302A4C71A400DB688D /* Atomics in Frameworks */ = {isa = PBXBuildFile; productRef = 98C7952F2A4C71A400DB688D /* Atomics */; };
 		98C795322A4DC1F200DB688D /* SquareMatrixBenchmark.swift in Sources */ = {isa = PBXBuildFile; fileRef = 98C795312A4DC1F200DB688D /* SquareMatrixBenchmark.swift */; };
+		98F2F5DD2A60978C006216F4 /* MatrixTransposeTest.swift in Sources */ = {isa = PBXBuildFile; fileRef = 98F2F5DC2A60978C006216F4 /* MatrixTransposeTest.swift */; };
 /* End PBXBuildFile section */
 
 /* Begin PBXCopyFilesBuildPhase section */
@@ -91,6 +92,7 @@
 		98C795292A4B962B00DB688D /* MFATestCase.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = MFATestCase.swift; sourceTree = "<group>"; };
 		98C7952B2A4C714400DB688D /* Random.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = Random.swift; sourceTree = "<group>"; };
 		98C795312A4DC1F200DB688D /* SquareMatrixBenchmark.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = SquareMatrixBenchmark.swift; sourceTree = "<group>"; };
+		98F2F5DC2A60978C006216F4 /* MatrixTransposeTest.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = MatrixTransposeTest.swift; sourceTree = "<group>"; };
 		98F7440E2A4A008C00B5E60A /* build.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = build.swift; sourceTree = "<group>"; };
 		98F7440F2A4A0CB200B5E60A /* API.md */ = {isa = PBXFileReference; lastKnownFileType = net.daringfireball.markdown; path = API.md; sourceTree = "<group>"; };
 		98FDDEFD2A5870220096BC27 /* float32-nn-latest.png */ = {isa = PBXFileReference; lastKnownFileType = image.png; path = "float32-nn-latest.png"; sourceTree = "<group>"; };
@@ -240,6 +242,7 @@
 				98C795292A4B962B00DB688D /* MFATestCase.swift */,
 				98C795272A4B95EC00DB688D /* PerformanceTests.swift */,
 				98C795312A4DC1F200DB688D /* SquareMatrixBenchmark.swift */,
+				98F2F5DC2A60978C006216F4 /* MatrixTransposeTest.swift */,
 			);
 			path = "Test Cases";
 			sourceTree = "<group>";
@@ -344,6 +347,7 @@
 				9835F4732A4B39C80095D0D0 /* NumPy.swift in Sources */,
 				98C795202A4B8D0900DB688D /* GEMM.swift in Sources */,
 				9835F45C2A4A3BAD0095D0D0 /* Convolution.metal in Sources */,
+				98F2F5DD2A60978C006216F4 /* MatrixTransposeTest.swift in Sources */,
 				98C795262A4B8D3E00DB688D /* Normalization.swift in Sources */,
 				98C7951B2A4B73A000DB688D /* EuclideanDistance.swift in Sources */,
 				9835F46B2A4B36E70095D0D0 /* MetalPerformanceShadersGraph.swift in Sources */,
