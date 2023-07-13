@@ -426,17 +426,17 @@ void _attention_impl(device T *Q [[buffer(0)]],
     // Multiply P * V.
     threadgroup_barrier(mem_flags::mem_threadgroup);
 #pragma clang loop unroll(full)
-    for (ushort d = 0; d < D_simd; d += 8) {
+    for (ushort c = 0; c < C_simd; c += 8) {
       simdgroup_matrix_storage<T> V_sram[128];
 #pragma clang loop unroll(full)
-      for (ushort c = 0; c < C_simd; c += 8) {
-        auto v = get_sram(V_sram, 8, ushort2(0, c));
+      for (ushort d = 0; d < D_simd; d += 8) {
+        auto v = get_sram(V_sram, 8, ushort2(d, 0));
         v->load(V_block, V_block_leading_dim, ushort2(d, c), V_trans);
       }
-      gemm(R_simd, 8, C_simd, true,
-           C_simd, attention_matrix,
-           8, V_sram,
-           D_simd, O_sram + d / 8);
+      gemm(R_simd, D_simd, 8, true,
+           C_simd, attention_matrix + c / 8,
+           D_simd, V_sram,
+           D_simd, O_sram);
     }
   }
   auto O_offset = ushort2(0, sidx * R_simd) + offset_in_simd;
