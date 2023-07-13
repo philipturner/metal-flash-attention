@@ -278,7 +278,7 @@ struct MPS_GEMM: GEMM, MPS_Operation {
       shapedTypeA = shapedType(aShapeTranspose)
       postTransposeA = transpose(originalA, "A", batchDims: aBatch)
     } else {
-      originalA = placeholder(aShape, "A_trans")
+      originalA = placeholder(aShape, "A")
       shapedTypeA = shapedType(aShape)
       postTransposeA = originalA
     }
@@ -291,7 +291,7 @@ struct MPS_GEMM: GEMM, MPS_Operation {
       shapedTypeB = shapedType(bShapeTranspose)
       postTransposeB = transpose(originalB, "B", batchDims: bBatch)
     } else {
-      originalB = placeholder(bShape, "B_trans")
+      originalB = placeholder(bShape, "B")
       shapedTypeB = shapedType(bShape)
       postTransposeB = originalB
     }
