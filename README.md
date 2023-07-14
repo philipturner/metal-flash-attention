@@ -145,7 +145,9 @@ Scaling by sequence length:
   - Dense: no mask
   - Masked: triangular mask
   - Sparse: triangular mask, summarized by block-sparse mask
-- Sequence length: every multiple of 2
+- Sequence length:
+  - Small sequences: every even integer
+  - Large sequences: every multiple of 64
 - Head size: 64
 - Head count: 5
 - Batch size: 1
@@ -180,7 +182,11 @@ Scaling by sparsity:
 | Float32 | TBD | TBD | TBD | TBD |
 | Float16 | TBD | TBD | TBD | TBD |
 
-### Float16 Sequence Scaling
+### Float32 Sequence Scaling (Small)
+
+### Float16 Sequence Scaling (Small)
+
+### Float16 Sequence Scaling (Large)
 
 ### Float32 Head Scaling
 

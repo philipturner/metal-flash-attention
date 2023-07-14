@@ -53,9 +53,9 @@ struct MFA_Attention: Attention, MFA_Operation {
   var parameters: Attention_Parameters
   
   static var functionConstants: [String: MTLConvertible] = [
-    "R_simd": UInt16(8), // 16
-    "C_simd": UInt16(8), // 64
-    "R_splits": UInt16(1), // 4
+    "R_simd": UInt16(16), // 16
+    "C_simd": UInt16(64), // 64
+    "R_splits": UInt16(4), // 4
     
     // TODO: Set block_sparse as a function constant here, have the async
     // pipeline manage the underlying buffer, make batch dimensions part of the
@@ -497,12 +497,8 @@ struct Py_Attention: Attention, Py_Operation {
     
     // Multiply Q * K.
     // [R, H, D] * [H, D, C] -> [H, R, C]
-//    postTransposeQ = np.ones_like(postTransposeQ)
-//    postTransposeK = np.ones_like(postTransposeK)
-//    postTransposeV = np.ones_like(postTransposeV)
     var attentionMatrix = np.einsum(
       "...ijk,...jkl->...jil", postTransposeQ, postTransposeK)
-//    attentionMatrix = np.ones_like(attentionMatrix)
                                    
     attentionMatrix *= PythonObject(rsqrt(Double(parameters.D)))
     

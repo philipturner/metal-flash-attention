@@ -45,26 +45,31 @@ func showMaskTest() {
 }
 
 func showAttentionTest() {
-  let expectedBackend: TensorBackend = .numpy
+  let expectedBackend: TensorBackend = .mps
   let actualBackend: TensorBackend = .mfa
-  typealias Real = Float32
+  typealias Real = Float16
   
 //  let R = 30
 //  let C = 30
 //  let H = 1
 //  let D = 20
-  let R = 27
-  let C = 27
-  let H = 1
+  let R = 33
+  let C = 15
+  let H = 3
   let D = 27
   let expected_Q = Tensor<Real>(
     shape: [R, H, D], randomUniform: 0..<1, backend: expectedBackend)
   let expected_K = Tensor<Real>(
-    shape: [H, D, C], randomUniform: 0..<1, backend: expectedBackend)
+    shape: [C, H, D], randomUniform: 0..<1, backend: expectedBackend)
   let expected_V = Tensor<Real>(
     shape: [C, H, D], randomUniform: 0..<1, backend: expectedBackend)
+  #if false
   var expected_O = Tensor<Real>(
     zerosLike: [R, H, D], backend: expectedBackend)
+  #else
+  var expected_O = Tensor<Real>(
+    zerosLike: [H, D, R], backend: expectedBackend)
+  #endif
   
   let actual_Q = Tensor(copying: expected_Q, backend: actualBackend)
   let actual_K = Tensor(copying: expected_K, backend: actualBackend)
@@ -75,7 +80,7 @@ func showAttentionTest() {
     _ExecutionContext.profileCommands {
       expected_O.attention(
         queries: expected_Q, keys: expected_K, values: expected_V,
-        transposeK: false, transposeO: false)
+        transposeK: true, transposeO: true)
     }
   }
   
@@ -83,12 +88,12 @@ func showAttentionTest() {
     _ExecutionContext.profileCommands {
       actual_O.attention(
         queries: actual_Q, keys: actual_K, values: actual_V,
-        transposeK: false, transposeO: false)
+        transposeK: true, transposeO: true)
     }
   }
   
   for plane in 0..<H {
-    #if true
+    #if false
     let parameters = EuclideanDistanceParameters(
       averageMagnitude: 1,//Float(D) * Float(C) * 1, // 1
       averageDeviation: 0.2,//sqrt(Float(D)), // 0.2
@@ -108,8 +113,8 @@ func showAttentionTest() {
     let plane = PythonObject(plane)
     
     MPL_showComparison(
-      actual: actual_reshaped, expected: expected_reshaped,
-      parameters: parameters, slice: plane, transpose: false)
+      actual: actual_O, expected: expected_O,
+      parameters: parameters, slice: plane, transpose: true)
     #endif
   }
 }

@@ -16,6 +16,9 @@ using namespace metal;
 #pragma clang diagnostic push
 #pragma clang diagnostic ignored "-Wunused"
 
+// Whether to disable the softmax, and just debug the GEMM part.
+#define DEBUG_DISABLE_SOFTMAX 0
+
 // Dimensions of each matrix.
 constant uint R [[function_constant(0)]];
 constant uint C [[function_constant(1)]];
@@ -32,7 +35,7 @@ constant uint K_leading_dim = K_trans ? H * D : C;
 constant uint V_leading_dim = V_trans ? C : H * D;
 constant uint O_leading_dim = O_trans ? R : H * D;
 
-// Must equal `rsqrt(float(D))`.
+// Value of `rsqrt(float(D))`.
 constant float alpha [[function_constant(20)]];
 
 constant uint Q_data_type [[function_constant(30)]];
@@ -92,39 +95,10 @@ void gemm(ushort M, ushort N, ushort K, bool accumulate,
         ushort2 b_origin(n, k);
         auto a = get_sram(A, A_leading_dim, a_origin);
         auto b = get_sram(B, B_leading_dim, b_origin);
-//        *b = simdgroup_matrix_storage<B_data_type>(1);
         
         ushort2 c_origin(n, m);
         auto c = get_sram(C, C_leading_dim, c_origin);
         c->multiply(*a, *b, accumulate);
-      }
-    }
-  }
-}
-
-template <typename A_data_type, typename B_data_type, typename C_data_type>
-void gemm_debug(ushort M, ushort N, ushort K, bool accumulate,
-          ushort A_leading_dim, thread simdgroup_matrix_storage<A_data_type>* A,
-          ushort B_leading_dim, thread simdgroup_matrix_storage<B_data_type>* B,
-          ushort C_leading_dim, thread simdgroup_matrix_storage<C_data_type>* C)
-{
-#pragma clang loop unroll(full)
-  for (ushort k = 0; k < K; k += 8) {
-#pragma clang loop unroll(full)
-    for (ushort m = 0; m < M; m += 8) {
-      ushort2 a_origin(k, m);
-#pragma clang loop unroll(full)
-      for (ushort n = 0; n < N; n += 8) {
-        ushort2 b_origin(n, k);
-        auto a = get_sram(A, A_leading_dim, a_origin);
-        auto b = get_sram(B, B_leading_dim, b_origin);
-//        *a = simdgroup_matrix_storage<A_data_type>(1);
-//        *b = simdgroup_matrix_storage<B_data_type>(1);
-        
-        ushort2 c_origin(n, m);
-        auto c = get_sram(C, C_leading_dim, c_origin);
-        c->multiply(*a, *b, accumulate);
-//        *c = simdgroup_matrix_storage<C_data_type>(1);
       }
     }
   }
@@ -325,7 +299,7 @@ void _attention_impl(device T *Q [[buffer(0)]],
           k->load(K_block, K_block_leading_dim, ushort2(c, d), K_trans);
         }
       }
-      gemm_debug(R_simd, C_simd, 8, d > 0,
+      gemm(R_simd, C_simd, 8, d > 0,
            D_simd, Q_sram + d / 8,
            C_simd, K_sram,
            C_simd, attention_matrix);
@@ -391,7 +365,7 @@ void _attention_impl(device T *Q [[buffer(0)]],
       }
     }
     
-#if 1
+#if !DEBUG_DISABLE_SOFTMAX
     // Compute softmax.
 #pragma clang loop unroll(full)
     for (ushort r = 0; r < R_simd; r += 8) {
@@ -420,14 +394,14 @@ void _attention_impl(device T *Q [[buffer(0)]],
         }
       }
       m_sram[r / 8] = m;
-      m *= -M_LOG2E_F;
+      float subtrahend = m * M_LOG2E_F;
       
       float2 _l = 0;
 #pragma clang loop unroll(full)
       for (ushort c = 0; c < C_simd; c += 8) {
         auto s = get_sram(attention_matrix, C_simd, ushort2(c, r));
         float2 p = float2(*s->thread_elements());
-        p = exp2(fma(p, alpha * M_LOG2E_F, m));
+        p = exp2(fma(p, alpha * M_LOG2E_F, -subtrahend));
         *(s->thread_elements()) = vec<T, 2>(p);
         _l += float2(*(s->thread_elements()));
       }
@@ -437,9 +411,6 @@ void _attention_impl(device T *Q [[buffer(0)]],
       l_sram[r / 8] = fma(l_sram[r / 8], correction, l);
     }
 #endif
-    
-//    attention_matrix[0] = simdgroup_matrix_storage<T>(1);
-//    attention_matrix[1] = simdgroup_matrix_storage<T>(1);
     
     // Load V block.
     threadgroup_barrier(mem_flags::mem_threadgroup);
@@ -481,10 +452,10 @@ void _attention_impl(device T *Q [[buffer(0)]],
   threadgroup_barrier(mem_flags::mem_threadgroup);
 #pragma clang loop unroll(full)
   for (ushort r = 0; r < R_simd; r += 8) {
-#if 1
-    float l = 1 / l_sram[r / 8];
-#else
+#if DEBUG_DISABLE_SOFTMAX
     float l = 1;
+#else
+    float l = 1 / l_sram[r / 8];
 #endif
 #pragma clang loop unroll(full)
     for (ushort d = 0; d < D_simd; d += 8) {
