@@ -8,8 +8,6 @@
 import Foundation
 import PythonKit
 
-
-
 // MARK: - Matplotlib Utilities
 
 func MPL_showBackends<T: TensorElement>(
@@ -127,8 +125,12 @@ fileprivate func MPL_showGraphs(
   var norm2: PythonObject?
   
   let padding: Double = 0.00
-  let vmin1 = Double(parameters.averageMagnitude) * (0.00 - padding)
-  let vmax1 = Double(parameters.averageMagnitude) * (1.00 + padding)
+  var vmin1 = Double(parameters.averageMagnitude) * (0.00 - padding)
+  var vmax1 = Double(parameters.averageMagnitude) * (1.00 + padding)
+  if let bias = parameters.bias {
+    vmin1 += .init(bias)
+    vmax1 += .init(bias)
+  }
   norm1 = mpl.colors.Normalize(vmin: vmin1, vmax: vmax1)
   cb1 = mpl.colorbar.ColorbarBase(ax1, cmap: cmap,
                                   norm: norm1,

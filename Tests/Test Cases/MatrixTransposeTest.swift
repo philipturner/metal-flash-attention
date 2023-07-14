@@ -8,7 +8,7 @@
 import Foundation
 import PythonKit
 
-func customTest() {
+func showMatrixTransposeTest() {
   let M = 100
   let N = 50
   let K = 25

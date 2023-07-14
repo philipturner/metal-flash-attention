@@ -20,10 +20,19 @@ struct EuclideanDistanceParameters {
   // `batchSize` is the first dimension of a 3D tensor.
   var batchSize: Int?
   
-  init(averageMagnitude: Float, averageDeviation: Float, batchSize: Int?) {
+  // An offset for visualizing -INFINITY in attention masks.
+  var bias: Float? = nil
+  
+  init(
+    averageMagnitude: Float,
+    averageDeviation: Float,
+    batchSize: Int?,
+    bias: Float? = nil
+  ) {
     self.averageMagnitude = averageMagnitude
     self.averageDeviation = averageDeviation
     self.batchSize = batchSize
+    self.bias = bias
   }
   
   init(matrixK: Int, batchSize: Int?) {

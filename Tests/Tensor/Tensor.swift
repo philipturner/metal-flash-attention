@@ -132,7 +132,7 @@ struct Tensor<Element: TensorElement> {
           // Generate one row, copy it to the next `blockSize` rows.
           if r % blockSize == 0 {
             for blockIndex in 0..<numBlocks {
-              let isComputed = Float.random(in: 0..<1) < sparsity
+              let isComputed = drand48() < Double(sparsity)
               let start = blockIndex * blockSize
               let end = min(start + blockSize, C)
               let value: Element = isComputed ? 0 : -.greatestFiniteMagnitude
