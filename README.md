@@ -76,7 +76,8 @@ GFLOPS during general matrix multiplication:
 
 Reference system:
 - 32-core Apple 7 GPU
-- threads/threadgroup: $ 32 \times \prod_{i=A}^{Z} $ `i_splits`
+- threads/threadgroup:
+  $$32 \times \prod_{i=A}^{Z} i_{splits} $$
 
 ### GEMM
 
@@ -172,7 +173,7 @@ Scaling by sparsity:
 | `R_splits` | TBD |
 | `R_simd` | Block R / `R_splits` |
 | `C_simd` | Block C |
-| `D_simd` | $ 8 \times \left \lceil{ \frac{D}{8} }\right \rceil $  |
+| `D_simd` | $$8 \times \left \lceil{ \frac{D}{8} }\right \rceil $$  |
 
 | Precision | D Start | D End | Block R | Block C |
 | - | - | - | - | - |
