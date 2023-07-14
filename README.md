@@ -76,7 +76,7 @@ GFLOPS during general matrix multiplication:
 
 Reference system:
 - 32-core Apple 7 GPU
-- threads/threadgroup $= 32 \times \prod_{i=A}^{Z} $ `i_splits`
+- threads/threadgroup $$= 32 \times \prod_{i=A}^{Z} $$ `i_splits`
 
 ### GEMM
 
@@ -146,14 +146,14 @@ Scaling by sequence length:
   - Sparse: triangular mask, summarized by block-sparse mask
 - Sequence length: every multiple of 2
 - Head size: 64
-- Head count: 8
+- Head count: 5
 - Batch size: 1
 
 Scaling by head size:
 - Masking: dense
 - Sequence length 4096
 - Head size: every integer
-- Head count: 1
+- Head count: 8
 - Batch size: 1
 
 Scaling by sparsity:
@@ -172,7 +172,7 @@ Scaling by sparsity:
 | `R_splits` | TBD |
 | `R_simd` | Block R / `R_splits` |
 | `C_simd` | Block C |
-| `D_simd` | $8 \times \left \lceil{ \frac{D}{8} }\right \rceil$  |
+| `D_simd` | $$8 \times \left \lceil{ \frac{D}{8} }\right \rceil$$  |
 
 | Precision | D Start | D End | Block R | Block C |
 | - | - | - | - | - |
