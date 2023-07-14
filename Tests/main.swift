@@ -13,4 +13,7 @@ import PythonKit
 _ = MetalContext.global
 _ = PythonContext.global
 
+// TODO: Before testing attention, ensure triangular and block-sparse masks look
+// correct, for both FP16 and FP32.
+
 MFATestCase.runTests(speed: .quick)

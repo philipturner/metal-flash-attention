@@ -341,8 +341,6 @@ struct Py_GEMM: GEMM, Py_Operation {
     let np = PythonContext.global.np
     if !parameters.A_trans && !parameters.B_trans {
       np.matmul(tensorA.ndarray, tensorB.ndarray, out: tensorC.ndarray)
-      // repr = "ij,jk->ik"
-      // repr = "ik,kj->ij"
     } else {
       var repr: String?
       if parameters.batched {

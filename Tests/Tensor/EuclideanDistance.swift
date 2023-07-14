@@ -17,6 +17,7 @@ struct EuclideanDistanceParameters {
   // `averageDeviation` is sqrt(K) during a matrix multiplication.
   var averageDeviation: Float
   
+  // `batchSize` is the first dimension of a 3D tensor.
   var batchSize: Int?
   
   init(averageMagnitude: Float, averageDeviation: Float, batchSize: Int?) {
@@ -29,6 +30,12 @@ struct EuclideanDistanceParameters {
     self.averageMagnitude = 0.5 * Float(matrixK)
     self.averageDeviation = sqrt(Float(matrixK))
     self.batchSize = batchSize
+  }
+  
+  init(attentionC: Int, attentionH: Int, attentionD: Int) {
+    self.averageMagnitude = 1.0
+    self.averageDeviation = 1.0
+    self.batchSize = attentionH
   }
 }
 

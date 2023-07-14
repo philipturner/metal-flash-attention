@@ -10,7 +10,16 @@ import MetalPerformanceShadersGraph
 import PythonKit
 
 protocol Attention: Operation {
+  typealias Tensors = Attention_Tensors
+  var parameters: Attention_Parameters { get set }
   
+  init(parameters: Attention_Parameters)
+}
+
+extension Attention {
+  func equals(_ other: Attention) -> Bool {
+    (type(of: self) == type(of: other)) && (parameters == other.parameters)
+  }
 }
 
 // Broadcasting only supported along the mask.
@@ -41,7 +50,7 @@ struct Attention_Tensors {
   var mask: TensorBuffer?
 }
 
-struct MFA_Attention {
+struct MFA_Attention: Attention, MFA_Operation {
   var parameters: Attention_Parameters
   
   static var functionConstants: [String: MTLConvertible] = [
@@ -231,7 +240,7 @@ struct MFA_Attention {
   }
 }
 
-struct MPS_Attention {
+struct MPS_Attention: Attention, MPS_Operation {
   var parameters: Attention_Parameters
   
   init(parameters: Attention_Parameters) {
@@ -443,7 +452,7 @@ struct MPS_Attention {
   }
 }
 
-struct Py_Attention {
+struct Py_Attention: Attention, Py_Operation {
   var parameters: Attention_Parameters
   
   init(parameters: Attention_Parameters) {
