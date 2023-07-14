@@ -9,9 +9,10 @@ import AppleGPUInfo
 import Metal
 
 final class MFA_Backend: MetalBackend {
-  typealias Resource = AsyncPipeline
+  typealias _Attention = MFA_Attention
   typealias _GEMM = MFA_GEMM
-  typealias __GEMM = MFA_GEMM
+  
+  typealias Resource = AsyncPipeline
   static let global = MFA_Backend()
   static let dynamicBatch: Bool = true
   

@@ -12,7 +12,7 @@ import QuartzCore
 // Stores state information for the backend and contains references to type
 // objects for dispatching operations.
 protocol _TensorBackend: AnyObject {
-  // associatedtype _Attention: Attention
+   associatedtype _Attention: Attention
   // associatedtype _Convolution: Convolution
   associatedtype _GEMM: GEMM
   // associatedtype _Normalization: Normalization

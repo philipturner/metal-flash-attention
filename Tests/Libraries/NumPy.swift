@@ -10,6 +10,7 @@ import PythonKit
 import QuartzCore
 
 final class Py_Backend: _TensorBackend {
+  typealias _Attention = Py_Attention
   typealias _GEMM = Py_GEMM
   static let global = Py_Backend()
   
@@ -33,7 +34,20 @@ final class Py_Backend: _TensorBackend {
 }
 
 extension Py_Backend {
-  func dispatch(parameters: GEMM_Parameters, tensors: GEMM_Tensors) {
+  func dispatch(
+    parameters: Attention_Parameters, tensors: Attention_Tensors
+  ) {
+    let operation = _Attention(parameters: parameters)
+    if context.ghost {
+      // do nothing
+    } else {
+      operation.execute(tensors: tensors)
+    }
+  }
+  
+  func dispatch(
+    parameters: GEMM_Parameters, tensors: GEMM_Tensors
+  ) {
     let operation = _GEMM(parameters: parameters)
     if context.ghost {
       // do nothing

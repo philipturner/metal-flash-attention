@@ -15,7 +15,8 @@ func MPL_showBackends<T: TensorElement>(
   mps: Tensor<T>,
   numpy: Tensor<T>,
   parameters: EuclideanDistanceParameters,
-  slice: PythonObject? = nil
+  slice: PythonObject? = nil,
+  transpose: Bool = false
 ) {
   precondition(mfa.buffer.backend == .mfa)
   precondition(mps.buffer.backend == .mps)
@@ -30,13 +31,16 @@ func MPL_showBackends<T: TensorElement>(
     ternary: ternary,
     parameters: parameters,
     slice: slice,
+    transpose: transpose,
     isComparison: false)
 }
 
 func MPL_showComparison<T: TensorElement>(
   actual: Tensor<T>, actualName: String? = nil,
   expected: Tensor<T>, expectedName: String? = nil,
-  parameters: EuclideanDistanceParameters
+  parameters: EuclideanDistanceParameters,
+  slice: PythonObject? = nil,
+  transpose: Bool = false
 ) {
   let actualBackend = actual.buffer.backend
   let expectedBackend = expected.buffer.backend
@@ -50,7 +54,8 @@ func MPL_showComparison<T: TensorElement>(
     secondary: secondary,
     ternary: ternary,
     parameters: parameters,
-    slice: nil,
+    slice: slice,
+    transpose: transpose,
     isComparison: true,
     actualName: actualName,
     expectedName: expectedName)
@@ -62,6 +67,7 @@ fileprivate func MPL_showGraphs(
   ternary _ternary: PythonObject,
   parameters: EuclideanDistanceParameters,
   slice: PythonObject?,
+  transpose: Bool,
   isComparison: Bool,
   actualName: String? = nil,
   expectedName: String? = nil
@@ -81,6 +87,11 @@ fileprivate func MPL_showGraphs(
     primary = _primary
     secondary = _secondary
     ternary = _ternary
+  }
+  if transpose {
+    primary = primary.T
+    secondary = secondary.T
+    ternary = ternary.T
   }
   
   // https://matplotlib.org/2.0.2/examples/api/colorbar_only.html
@@ -253,6 +264,7 @@ func MPL_showExamples(
     ternary: matrices[2],
     parameters: parameters,
     slice: nil,
+    transpose: false,
     isComparison: false)
 }
 

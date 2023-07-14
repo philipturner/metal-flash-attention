@@ -23,7 +23,7 @@
 		9835F47D2A4B53F40095D0D0 /* Operation.swift in Sources */ = {isa = PBXBuildFile; fileRef = 9835F47C2A4B53F40095D0D0 /* Operation.swift */; };
 		9835F47F2A4B55580095D0D0 /* TensorBuffer.swift in Sources */ = {isa = PBXBuildFile; fileRef = 9835F47E2A4B55580095D0D0 /* TensorBuffer.swift */; };
 		9835F4822A4B58530095D0D0 /* DataType.swift in Sources */ = {isa = PBXBuildFile; fileRef = 9835F4812A4B58530095D0D0 /* DataType.swift */; };
-		984279D72A619008001BBD55 /* MaskTest.swift in Sources */ = {isa = PBXBuildFile; fileRef = 984279D62A619008001BBD55 /* MaskTest.swift */; };
+		984279D72A619008001BBD55 /* AttentionTest.swift in Sources */ = {isa = PBXBuildFile; fileRef = 984279D62A619008001BBD55 /* AttentionTest.swift */; };
 		987E35DF2A45E4F400ACACE3 /* main.swift in Sources */ = {isa = PBXBuildFile; fileRef = 987E35DE2A45E4F400ACACE3 /* main.swift */; };
 		98C795182A4B730E00DB688D /* Tensor.swift in Sources */ = {isa = PBXBuildFile; fileRef = 98C795172A4B730E00DB688D /* Tensor.swift */; };
 		98C7951B2A4B73A000DB688D /* EuclideanDistance.swift in Sources */ = {isa = PBXBuildFile; fileRef = 98C7951A2A4B73A000DB688D /* EuclideanDistance.swift */; };
@@ -70,7 +70,7 @@
 		9835F47C2A4B53F40095D0D0 /* Operation.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = Operation.swift; sourceTree = "<group>"; };
 		9835F47E2A4B55580095D0D0 /* TensorBuffer.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = TensorBuffer.swift; sourceTree = "<group>"; };
 		9835F4812A4B58530095D0D0 /* DataType.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = DataType.swift; sourceTree = "<group>"; };
-		984279D62A619008001BBD55 /* MaskTest.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = MaskTest.swift; sourceTree = "<group>"; };
+		984279D62A619008001BBD55 /* AttentionTest.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = AttentionTest.swift; sourceTree = "<group>"; };
 		987E35DB2A45E4F400ACACE3 /* MetalFlashAttention */ = {isa = PBXFileReference; explicitFileType = "compiled.mach-o.executable"; includeInIndex = 0; path = MetalFlashAttention; sourceTree = BUILT_PRODUCTS_DIR; };
 		987E35DE2A45E4F400ACACE3 /* main.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = main.swift; sourceTree = "<group>"; };
 		987E36012A45E5C600ACACE3 /* LICENSE */ = {isa = PBXFileReference; fileEncoding = 4; lastKnownFileType = text; path = LICENSE; sourceTree = "<group>"; };
@@ -245,7 +245,7 @@
 				98C795272A4B95EC00DB688D /* PerformanceTests.swift */,
 				98C795312A4DC1F200DB688D /* SquareMatrixBenchmark.swift */,
 				98F2F5DC2A60978C006216F4 /* MatrixTransposeTest.swift */,
-				984279D62A619008001BBD55 /* MaskTest.swift */,
+				984279D62A619008001BBD55 /* AttentionTest.swift */,
 			);
 			path = "Test Cases";
 			sourceTree = "<group>";
@@ -358,7 +358,7 @@
 				9835F47F2A4B55580095D0D0 /* TensorBuffer.swift in Sources */,
 				98C795282A4B95EC00DB688D /* PerformanceTests.swift in Sources */,
 				98C795322A4DC1F200DB688D /* SquareMatrixBenchmark.swift in Sources */,
-				984279D72A619008001BBD55 /* MaskTest.swift in Sources */,
+				984279D72A619008001BBD55 /* AttentionTest.swift in Sources */,
 				9835F4692A4B36DB0095D0D0 /* MetalFlashAttention.swift in Sources */,
 				9835F46F2A4B37110095D0D0 /* Matplotlib.swift in Sources */,
 				9835F45E2A4A81150095D0D0 /* Normalization.metal in Sources */,

@@ -35,7 +35,6 @@ struct Attention_Parameters: Hashable, Equatable {
   var O_trans: Bool
   var batched: Bool
   var masked: Bool
-  var block_sparse: Bool
   
   // These are only needed by MPSGraph; MFA supports dynamic batch size.
   var batchDimensionsQ: [Int]?
@@ -57,6 +56,11 @@ struct MFA_Attention: Attention, MFA_Operation {
     "R_simd": UInt16(16),
     "C_simd": UInt16(64),
     "R_splits": UInt16(4),
+    
+    // TODO: Set block_sparse as a function constant here, have the async
+    // pipeline manage the underlying buffer, make batch dimensions part of the
+    // hash.
+    "block_sparse": Bool(false)
   ]
   
   init(parameters: Attention_Parameters) {
@@ -66,7 +70,6 @@ struct MFA_Attention: Attention, MFA_Operation {
   func makeAsyncResource() -> AsyncPipeline {
     let dataType = parameters.dataType
     precondition(dataType == .float || dataType == .half)
-    precondition(!parameters.block_sparse, "Block sparsity not supported yet.")
     
     let constants = MTLFunctionConstantValues()
     var pcopy = self.parameters
@@ -82,7 +85,10 @@ struct MFA_Attention: Attention, MFA_Operation {
     var dataTypeRawValue = dataType.rawValue
     constants.setConstantValue(&dataTypeRawValue, type: .uint, index: 30)
     constants.setConstantValue(&pcopy.batched, type: .bool, index: 50000)
-    constants.setConstantValue(&pcopy.block_sparse, type: .bool, index: 102)
+    
+    var block_sparse = Self.functionConstants["block_sparse"] as! Bool
+    precondition(!block_sparse, "Block sparsity not supported yet.")
+    constants.setConstantValue(&block_sparse, type: .bool, index: 102)
     
     var forward = true
     var backward = false
@@ -137,7 +143,7 @@ struct MFA_Attention: Attention, MFA_Operation {
     if parameters.masked {
       flags |= 0x2
     }
-    if parameters.block_sparse {
+    if block_sparse {
       flags |= 0x4
     }
     return AsyncPipeline(

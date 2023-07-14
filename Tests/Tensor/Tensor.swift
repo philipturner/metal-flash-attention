@@ -169,8 +169,7 @@ extension Tensor {
     queries: Tensor<Element>,
     keys: Tensor<Element>,
     values: Tensor<Element>,
-    mask: Tensor<Element>?,
-    blockMask: inout Tensor<UInt8>?,
+    mask: Tensor<Element>? = nil,
     transposeQ: Bool = false,
     transposeK: Bool = true,
     transposeV: Bool = false,
@@ -182,10 +181,6 @@ extension Tensor {
     if let mask {
       assert(self.typeAndBackendMatches(mask))
     }
-    if let blockMask {
-      assert(self.backendMatches(blockMask))
-    }
-    assert(blockMask == nil, "Block sparsity not supported yet.")
     
     let qShape = queries.shape
     let kShape = keys.shape
@@ -274,6 +269,24 @@ extension Tensor {
       preconditionFailure("D does not match.")
     }
     
+    let batched = (qShape.count > 3)
+    var parameters = Attention_Parameters(
+      dataType: Element.mtlDataType,
+      R: Q_R, C: K_C, H: Q_H, D: Q_D,
+      Q_trans: transposeQ, K_trans: transposeK,
+      V_trans: transposeV, O_trans: transposeO,
+      batched: batched, masked: mask != nil)
+    parameters.batchDimensionsQ = queries.shape.dropLast(3)
+    if let mask {
+      parameters.batchDimensionsMask = mask.shape.dropLast(3)
+    }
+    
+    let tensors = Attention_Tensors(
+      q: queries.buffer,
+      k: keys.buffer,
+      v: values.buffer,
+      o: self.buffer,
+      mask: mask?.buffer)
   }
   
   // Sets this tensor's data to the product of the inputs.
@@ -315,7 +328,6 @@ extension Tensor {
     precondition(A_K == B_K, "K does not match.")
     let K = A_K
     
-    
     var batched = false
     if aShape.count > 2 {
       precondition(cShape.count > 2)
@@ -335,10 +347,7 @@ extension Tensor {
     parameters.batchDimensionsA = aShape.dropLast(2)
     parameters.batchDimensionsB = bShape.dropLast(2)
     
-    // Make GEMM_Tensors
     let tensors = GEMM_Tensors(a: a.buffer, b: b.buffer, c: self.buffer)
-    
-    // Dispatch to the backend
     buffer.backend.dispatch(parameters: parameters, tensors: tensors)
   }
   

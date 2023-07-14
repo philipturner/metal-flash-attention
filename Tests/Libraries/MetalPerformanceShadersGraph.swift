@@ -9,9 +9,10 @@ import MetalPerformanceShadersGraph
 import QuartzCore
 
 final class MPS_Backend: MetalBackend {
-  typealias Resource = AsyncGraph
+  typealias _Attention = MPS_Attention
   typealias _GEMM = MPS_GEMM
-  typealias __GEMM = MPS_GEMM
+  
+  typealias Resource = AsyncGraph
   static let global = MPS_Backend()
   static let dynamicBatch: Bool = false
   

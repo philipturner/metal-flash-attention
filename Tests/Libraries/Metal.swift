@@ -34,6 +34,7 @@ struct MetalContext {
 
 protocol MetalBackend: _TensorBackend
 where
+_Attention: MetalOperation, _Attention.Backend == Self,
 _GEMM: MetalOperation, _GEMM.Backend == Self
 {
   associatedtype Encoder
@@ -80,10 +81,29 @@ protocol MetalOperation {
 }
 
 class OperationCache<Backend: MetalBackend> {
-  fileprivate var gemm: [GEMM_Parameters: Backend.Resource] = [:]
+  fileprivate var attention: [
+    Attention_Parameters: Backend.Resource] = [:]
+  
+  fileprivate var gemm: [
+    GEMM_Parameters: Backend.Resource] = [:]
+  
+  // TODO: Expanding Metal allocation for scratch space (e.g. block masks).
   
   func clear() {
     gemm.removeAll()
+    attention.removeAll()
+  }
+  
+  func cache(operation _operation: Backend._Attention) {
+    var reducedOperation = _operation
+    if Backend.dynamicBatch {
+      reducedOperation.parameters.batchDimensionsQ = nil
+      reducedOperation.parameters.batchDimensionsMask = nil
+    }
+    guard attention[reducedOperation.parameters] == nil else {
+      return
+    }
+    attention[reducedOperation.parameters] = _operation.makeAsyncResource()
   }
   
   func cache(operation _operation: Backend._GEMM) {
@@ -96,6 +116,22 @@ class OperationCache<Backend: MetalBackend> {
       return
     }
     gemm[reducedOperation.parameters] = _operation.makeAsyncResource()
+  }
+  
+  func encode(
+    operation _operation: Backend._Attention,
+    encoder: Backend.Encoder,
+    tensors: Attention_Tensors
+  ) {
+    var reducedOperation = _operation
+    if Backend.dynamicBatch {
+      reducedOperation.parameters.batchDimensionsQ = nil
+      reducedOperation.parameters.batchDimensionsMask = nil
+    }
+    guard let resource = attention[reducedOperation.parameters] else {
+      fatalError("Forgot ghost pass.")
+    }
+    _operation.encode(encoder: encoder, tensors: tensors, resource: resource)
   }
   
   func encode(

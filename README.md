@@ -74,10 +74,32 @@ GFLOPS during general matrix multiplication:
 
 ## Continuous Integration
 
-Setup:
-- Every square matrix size divisible by 2
+Reference system:
 - 32-core Apple 7 GPU
-- 128 threads/threadgroup (no K-splits)
+- threads/threadgroup $= 32 \times \prod_{i=A}^{Z} $ `i_splits`
+
+### GEMM
+
+Scaling by square size:
+- Matrix M: every even integer
+- Matrix N: every even integer
+- Matrix K: every even integer
+  
+| Function Constant | Value |
+| ------ | --------- |
+| `M_splits` | 2 |
+| `N_splits` | 2 |
+| `K_splits` | 1 |
+| `M_simd` | Block M / `M_splits` |
+| `N_simd` | Block N / `N_splits` |
+| `K_simd` | Block K / `K_splits` |
+  
+| Precision | Block M | Block N | Block K |
+| - | - | - | - |
+| Float32 | 32 | 32 | 32 |
+| Float32 | 48 | 48 | 24 |
+| Float16 | 32 | 32 | 32 |
+| Float16 | 48 | 48 | 32 |
 
 | Size Start | Size End | Duplicate Commands/Encoder | Trials |
 | ---------- | -------- | ---------- | ------ |
@@ -105,6 +127,67 @@ Setup:
 ### Float16 Utilization (NT, Batched)
 
 ![Float16 Utilization (NT, Batched)](./CI/float16-nt-batched-latest.png)
+
+### Attention
+
+Setup:
+- Sequence dimension:
+  - R = rows (output sequence length)
+  - C = columns (input sequence length)
+  - R = C
+- Masking:
+  - Only MFA supports block-sparse masks.
+  - For "scaling by sparsity", sparse block size equals GEMM block size.
+
+Scaling by sequence length:
+- Masking:
+  - Dense: no mask
+  - Masked: triangular mask
+  - Sparse: triangular mask, summarized by block-sparse mask
+- Sequence length: every multiple of 2
+- Head size: 64
+- Head count: 8
+- Batch size: 1
+
+Scaling by head size:
+- Masking: dense
+- Sequence length 4096
+- Head size: every integer
+- Head count: 1
+- Batch size: 1
+
+Scaling by sparsity:
+- Sparsity: every even percentage
+- Sequence length: 1024
+- Head size: 64
+- Head count: 16
+- Batch size: 64
+  
+| Function Constant | Value |
+| ------ | --------- |
+| `Q_trans` | ❌ |
+| `K_trans` | ✅ |
+| `V_trans` | ❌ |
+| `O_trans` | ❌ |
+| `R_splits` | TBD |
+| `R_simd` | Block R / `R_splits` |
+| `C_simd` | Block C |
+| `D_simd` | $8 \times \left \lceil{ \frac{D}{8} }\right \rceil$  |
+
+| Precision | D Start | D End | Block R | Block C |
+| - | - | - | - | - |
+| Float32 | TBD | TBD | TBD | TBD |
+| Float16 | TBD | TBD | TBD | TBD |
+
+### Float32 Sequence Scaling
+
+### Float16 Sequence Scaling
+
+### Float32 Head Scaling
+
+### Float16 Head Scaling
+
+### Float16 Sparsity Scaling
 
 ## Roadmap
 
