@@ -29,6 +29,8 @@ protocol _TensorBackend: AnyObject {
   
   func synchronize() -> Double
   
+  func dispatch(parameters: Attention_Parameters, tensors: Attention_Tensors)
+  
   func dispatch(parameters: GEMM_Parameters, tensors: GEMM_Tensors)
 }
 
@@ -193,7 +195,15 @@ enum TensorBackend {
     }
   }
   
-  func dispatch(parameters: GEMM_Parameters, tensors: GEMM_Tensors) {
+  func dispatch(
+    parameters: Attention_Parameters, tensors: Attention_Tensors
+  ) {
+    self.backendObject.dispatch(parameters: parameters, tensors: tensors)
+  }
+  
+  func dispatch(
+    parameters: GEMM_Parameters, tensors: GEMM_Tensors
+  ) {
     self.backendObject.dispatch(parameters: parameters, tensors: tensors)
   }
 }

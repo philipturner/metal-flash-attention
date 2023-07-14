@@ -40,6 +40,21 @@ struct Tensor<Element: TensorElement> {
     memset(buffer.pointer, 0, buffer.allocatedSize)
   }
   
+  init(copying other: Tensor, backend: TensorBackend = .default) {
+    self.init(unsafeUninitializedShape: other.shape, backend: backend)
+    memcpy(buffer.pointer, other.buffer.pointer, buffer.allocatedSize)
+  }
+  
+  init(
+    shape: [Int],
+    reshaping other: Tensor,
+    backend: TensorBackend = .default
+  ) {
+    self.init(unsafeUninitializedShape: shape, backend: backend)
+    assert(self.shape.reduce(1, *) == other.shape.reduce(1, *))
+    memcpy(buffer.pointer, other.buffer.pointer, buffer.allocatedSize)
+  }
+  
   init(shape: [Int], mask: AttentionMask, backend: TensorBackend = .default)
   where Element: TensorFloatingPoint {
     self.init(unsafeUninitializedShape: shape, backend: backend)
@@ -146,11 +161,6 @@ struct Tensor<Element: TensorElement> {
         }
       }
     }
-  }
-  
-  init(copying other: Tensor, backend: TensorBackend = .default) {
-    self.init(unsafeUninitializedShape: other.shape, backend: backend)
-    memcpy(buffer.pointer, other.buffer.pointer, buffer.allocatedSize)
   }
 }
 
@@ -287,6 +297,7 @@ extension Tensor {
       v: values.buffer,
       o: self.buffer,
       mask: mask?.buffer)
+    buffer.backend.dispatch(parameters: parameters, tensors: tensors)
   }
   
   // Sets this tensor's data to the product of the inputs.

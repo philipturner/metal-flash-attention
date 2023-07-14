@@ -41,9 +41,9 @@ struct EuclideanDistanceParameters {
     self.batchSize = batchSize
   }
   
-  init(attentionC: Int, attentionH: Int, attentionD: Int) {
+  init(attentionC: Int, attentionH: Int?, attentionD: Int) {
     self.averageMagnitude = 1.0
-    self.averageDeviation = 1.0
+    self.averageDeviation = 0.2
     self.batchSize = attentionH
   }
 }

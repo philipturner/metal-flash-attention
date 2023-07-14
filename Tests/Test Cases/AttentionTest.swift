@@ -46,22 +46,25 @@ func showMaskTest() {
 
 func showAttentionTest() {
   let expectedBackend: TensorBackend = .numpy
-  let actualBackend: TensorBackend = .mps
+  let actualBackend: TensorBackend = .mfa
   typealias Real = Float32
   
-  // After getting this to work, try H=2, which will have 2 planes.
-  let R = 5
-  let C = 4
+//  let R = 30
+//  let C = 30
+//  let H = 1
+//  let D = 20
+  let R = 27
+  let C = 27
   let H = 1
-  let D = 7
+  let D = 27
   let expected_Q = Tensor<Real>(
     shape: [R, H, D], randomUniform: 0..<1, backend: expectedBackend)
   let expected_K = Tensor<Real>(
-    shape: [C, H, D], randomUniform: 0..<1, backend: expectedBackend)
+    shape: [H, D, C], randomUniform: 0..<1, backend: expectedBackend)
   let expected_V = Tensor<Real>(
     shape: [C, H, D], randomUniform: 0..<1, backend: expectedBackend)
   var expected_O = Tensor<Real>(
-    zerosLike: [H, D, R], backend: expectedBackend)
+    zerosLike: [R, H, D], backend: expectedBackend)
   
   let actual_Q = Tensor(copying: expected_Q, backend: actualBackend)
   let actual_K = Tensor(copying: expected_K, backend: actualBackend)
@@ -72,7 +75,7 @@ func showAttentionTest() {
     _ExecutionContext.profileCommands {
       expected_O.attention(
         queries: expected_Q, keys: expected_K, values: expected_V,
-        transposeO: true)
+        transposeK: false, transposeO: false)
     }
   }
   
@@ -80,16 +83,33 @@ func showAttentionTest() {
     _ExecutionContext.profileCommands {
       actual_O.attention(
         queries: actual_Q, keys: actual_K, values: actual_V,
-        transposeO: true)
+        transposeK: false, transposeO: false)
     }
   }
   
   for plane in 0..<H {
+    #if true
+    let parameters = EuclideanDistanceParameters(
+      averageMagnitude: 1,//Float(D) * Float(C) * 1, // 1
+      averageDeviation: 0.2,//sqrt(Float(D)), // 0.2
+      batchSize: nil)
+    let plane = PythonObject(plane)
+    
+    let actual_reshaped = Tensor(
+      shape: [R, D], reshaping: actual_O, backend: actualBackend)
+    let expected_reshaped = Tensor(
+      shape: [R, D], reshaping: expected_O, backend: expectedBackend)
+    MPL_showComparison(
+      actual: actual_reshaped, expected: expected_reshaped,
+      parameters: parameters)
+    #else
     let parameters = EuclideanDistanceParameters(
       attentionC: C, attentionH: H, attentionD: D)
     let plane = PythonObject(plane)
+    
     MPL_showComparison(
-      actual: actual_O, expected: expected_O, parameters: parameters,
-      slice: plane, transpose: true)
+      actual: actual_reshaped, expected: expected_reshaped,
+      parameters: parameters, slice: plane, transpose: false)
+    #endif
   }
 }

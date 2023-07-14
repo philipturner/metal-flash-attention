@@ -48,7 +48,20 @@ _GEMM: MetalOperation, _GEMM.Backend == Self
 }
 
 extension MetalBackend {
-  func dispatch(parameters: GEMM_Parameters, tensors: GEMM_Tensors) {
+  func dispatch(
+    parameters: Attention_Parameters, tensors: Attention_Tensors
+  ) {
+    let operation = _Attention(parameters: parameters)
+    if context.ghost {
+      cache.cache(operation: operation)
+    } else {
+      cache.encode(operation: operation, encoder: encoder, tensors: tensors)
+    }
+  }
+  
+  func dispatch(
+    parameters: GEMM_Parameters, tensors: GEMM_Tensors
+  ) {
     let operation = _GEMM(parameters: parameters)
     if context.ghost {
       cache.cache(operation: operation)
