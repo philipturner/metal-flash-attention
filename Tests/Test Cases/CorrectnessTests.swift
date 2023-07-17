@@ -7,6 +7,7 @@
 
 import Metal
 import QuartzCore
+import PythonKit
 
 class CorrectnessTests: MFATestCase {
   override class func typeDescription() -> String {
@@ -20,6 +21,7 @@ class CorrectnessTests: MFATestCase {
   }
   
   func testRandomGEMM(logProgress: Bool) {
+    print()
     let start = CACurrentMediaTime()
     
     //  0 - 15: batch 1, NN
@@ -143,11 +145,13 @@ class CorrectnessTests: MFATestCase {
         if logProgress {
           var shapeRepr: String
           if let batchSize {
-            shapeRepr = "\(batchSize)x\(M)x\(N)x\(K)"
+            shapeRepr = "\(batchSize)x\(M)x\(N)x\(K)x\(DTypeRepr)"
           } else {
-            shapeRepr = "\(M)x\(N)x\(K)"
+            shapeRepr = "\(M)x\(N)x\(K)x\(DTypeRepr)"
           }
-          print("Passed test: \(shapeRepr)x\(DTypeRepr) (\(transRepr))")
+          let dist = mfa_C.euclideanDistance(to: mps_C)
+          let distRepr = "- \(String(format: "%.3f", dist))"
+          print("Passed test: \(shapeRepr) (\(transRepr)) \(distRepr)")
         }
       }
     }
@@ -165,13 +169,293 @@ class CorrectnessTests: MFATestCase {
   }
   
   func testRandomAttention(logProgress: Bool) {
+    print()
     let start = CACurrentMediaTime()
+    
+    let testExtension: Int = 1
     
     //  0 - 15: batch 1, K^T
     // 15 - 30: batch 1, all transposes
     // 30 - 45: batch 2-8
-    // 45 - 60: batch 2-8, dense mask
-    // 60 - 90: batch 2-8, sparse mask
+    // 45 - 60: batch 2-8, triangular mask
+    // 60 - 75: batch 2-8, block-sparse mask, not matching block size
+    // 75 - 90: batch 2-8, block-sparse mask, matching block size
+    let numNonTransposedTrials = 15 * testExtension
+    let numNonBatchedTrials = 30 * testExtension
+    let triangularMaskedStart = 45 * testExtension
+    let blockSparseMaskedStart = 60 * testExtension
+    let numTrials = blockSparseMaskedStart + 15 * testExtension
+    
+    // Create a biased random distribution that favors smaller numbers. Take the
+    // uniform distribution, then cube the results.
+    let allRandomInts: [SIMD4<Int>] = (0..<numTrials).map { i in
+      let maxMatrixDimension = (i < numNonBatchedTrials) ? 500 : 250
+      
+      var randomVecFloat = SIMD3<Float>.random(in: 0..<1)
+      randomVecFloat = randomVecFloat * randomVecFloat * randomVecFloat
+      if i >= triangularMaskedStart && i < blockSparseMaskedStart {
+        let rms = sqrt(randomVecFloat[0] * randomVecFloat[1])
+        randomVecFloat[0] = rms
+        randomVecFloat[1] = rms
+      }
+      randomVecFloat *= Float(maxMatrixDimension)
+      
+      let numHeads =  Int.random(in: Bool.random() ? 1...2 : 3...8)
+      randomVecFloat[2] /= Float(numHeads)
+      
+      var randomInts = SIMD4(
+        Int(randomVecFloat[0]),
+        Int(randomVecFloat[1]),
+        numHeads,
+        Int(randomVecFloat[2]))
+      
+      // WARNING: This threshold must change to match the block sizes.
+      let threshold = (Real.self == Float.self) ? 128 : 256
+      while randomInts[3] > threshold {
+        randomInts[3] /= 2
+        randomInts[2] *= 2
+      }
+      randomInts[2] = min(randomInts[2], 8)
+      randomInts.replace(with: .one, where: randomInts .== .zero)
+      
+//      randomInts[1] = 1
+//      if i >= triangularMaskedStart && i < blockSparseMaskedStart {
+//        randomInts[0] = 1
+//      }
+      
+      return randomInts
+    }
+    
+    let allRandomTransposes: [SIMD4<UInt8>] = (0..<numTrials).map { i in
+      if i < numNonTransposedTrials {
+        return SIMD4(0, 1, 0, 0)
+      } else {
+        let mask = UInt8.random(in: 0b0000...0b1111)
+        return SIMD4(mask >> 0, mask >> 1, mask >> 2, mask >> 3) & 0b1
+      }
+    }
+    
+    let allRandomB: [Int?] = (0..<numTrials).map { i in
+      if i < numNonBatchedTrials {
+        return nil
+      } else {
+        return Int.random(in: 2...8)
+      }
+    }
+    
+    let allRandomMasks: [AttentionMask?] = (0..<numTrials).map { i in
+      if i < triangularMaskedStart {
+        return nil
+      } else if i < blockSparseMaskedStart {
+        return .upperTriangular
+      } else {
+        var blockSize: Int
+        switch Int.random(in: 0..<3) {
+        case 0:
+          blockSize = Int.random(in: 1...5)
+        case 1:
+          blockSize = Int.random(in: 6...20)
+        case 2:
+          blockSize = Int.random(in: 21...100)
+        default:
+          fatalError()
+        }
+        return .blockSparse(blockSize, Float.random(in: 0.1...0.9))
+      }
+    }
+    
+    func testRandomSize(index: Int, ghost: Bool) {
+      let randomInts = allRandomInts[index]
+      let randomTransposes = allRandomTransposes[index]
+      let batchSize = allRandomB[index]
+      let randomMask = allRandomMasks[index]
+      
+      let R = randomInts[0]
+      let C = randomInts[1]
+      let H = randomInts[2]
+      let D = randomInts[3]
+      
+      let Q_trans = randomTransposes[0] == 1
+      let K_trans = randomTransposes[1] == 1
+      let V_trans = randomTransposes[2] == 1
+      let O_trans = randomTransposes[3] == 1
+      
+      let DTypeRepr = (Real.self == Float.self) ? "f32" : "f16"
+      let transRepr = [Q_trans, K_trans, V_trans, O_trans].reduce("") {
+        $0 + ($1 ? "T" : "N")
+      }
+      
+      var shapeQ = Q_trans ? [H, D, R] : [R, H, D]
+      var shapeK = K_trans ? [C, H, D] : [H, D, C]
+      var shapeV = V_trans ? [H, D, C] : [C, H, D]
+      var shapeO = O_trans ? [H, D, R] : [R, H, D]
+      var shapeMask = [1, R, C]
+      
+      if let batchSize {
+        shapeQ = [batchSize] + shapeQ
+        shapeK = [batchSize] + shapeK
+        shapeV = [batchSize] + shapeV
+        shapeO = [batchSize] + shapeO
+        if index % 2 == 0 {
+          shapeMask = [1] + shapeMask
+        } else {
+          shapeMask = [batchSize] + shapeMask
+        }
+      }
+      
+      let mps_Q = Tensor<Real>(
+        shape: shapeQ, randomUniform: 0..<1, backend: .mps)
+      let mps_K = Tensor<Real>(
+        shape: shapeK, randomUniform: 0..<1, backend: .mps)
+      let mps_V = Tensor<Real>(
+        shape: shapeV, randomUniform: 0..<1, backend: .mps)
+      var mps_O = Tensor<Real>(
+        zerosLike: shapeO, backend: .mps)
+      var mps_mask: Tensor<Real>?
+      if let randomMask {
+        mps_mask = Tensor<Real>(
+          shape: shapeMask, mask: randomMask, backend: .mps)
+      }
+      
+      let mfa_Q = Tensor(copying: mps_Q, backend: .mfa)
+      let mfa_K = Tensor(copying: mps_K, backend: .mfa)
+      let mfa_V = Tensor(copying: mps_V, backend: .mfa)
+      var mfa_O = Tensor(copying: mps_O, backend: .mfa)
+      var mfa_mask: Tensor<Real>?
+      if let mps_mask {
+        mfa_mask = Tensor(copying: mps_mask, backend: .mfa)
+      }
+      
+      func act(
+        _ Q: Tensor<Real>,
+        _ K: Tensor<Real>,
+        _ V: Tensor<Real>,
+        _ O: inout Tensor<Real>,
+        _ mask: Tensor<Real>?
+      ) {
+        O.attention(
+          queries: Q, keys: K, values: V, mask: mask,
+          transposeQ: Q_trans, transposeK: K_trans,
+          transposeV: V_trans, transposeO: O_trans)
+      }
+      
+      if ghost {
+        _ExecutionContext.withDefaultBackend(.mps) {
+          TensorBackend.default.withGhostExecution {
+            TensorBackend.default.markFirstCommand()
+            act(mps_Q, mps_K, mps_V, &mps_O, mps_mask)
+            TensorBackend.default.markLastCommand()
+            _ = TensorBackend.default.synchronize()
+          }
+        }
+        _ExecutionContext.withDefaultBackend(.mfa) {
+          TensorBackend.default.withGhostExecution {
+            TensorBackend.default.markFirstCommand()
+            act(mfa_Q, mfa_K, mfa_V, &mfa_O, mfa_mask)
+            TensorBackend.default.markLastCommand()
+            _ = TensorBackend.default.synchronize()
+          }
+        }
+      } else {
+        _ExecutionContext.withDefaultBackend(.mps) {
+          TensorBackend.default.markFirstCommand()
+          act(mps_Q, mps_K, mps_V, &mps_O, mps_mask)
+          TensorBackend.default.markLastCommand()
+          _ = TensorBackend.default.synchronize()
+        }
+        _ExecutionContext.withDefaultBackend(.mfa) {
+          TensorBackend.default.markFirstCommand()
+          act(mfa_Q, mfa_K, mfa_V, &mfa_O, mfa_mask)
+          TensorBackend.default.markLastCommand()
+          _ = TensorBackend.default.synchronize()
+        }
+        
+        let params = EuclideanDistanceParameters(
+          averageMagnitude: 1.0,
+          averageDeviation: 0.2,
+          batchSize: H * (batchSize ?? 1))
+        let failed = !mfa_O.isApproximatelyEqual(to: mps_O, parameters: params)
+        if logProgress {
+          var shapeRepr: String
+          if let batchSize {
+            shapeRepr = "\(batchSize)x\(R)x\(C)x\(H)x\(D)x\(DTypeRepr)"
+          } else {
+            shapeRepr = "\(R)x\(C)x\(H)x\(D)x\(DTypeRepr)"
+          }
+          var detailsRepr = transRepr
+          switch randomMask {
+          case .none:
+            break
+          case .upperTriangular:
+            detailsRepr += ", triangular"
+          case .blockSparse(let blockSize, _):
+            let blockRepr = "\(blockSize)x\(blockSize)"
+            detailsRepr += ", \(blockRepr) sparse"
+          }
+          let dist = mfa_O.euclideanDistance(to: mps_O)
+          let distRepr = "- \(String(format: "%.3f", dist))"
+          
+          let passRer = failed ? "Failed test" : "Passed test"
+          print("\(passRer): \(shapeRepr) (\(detailsRepr)) \(distRepr)")
+          
+          if failed {
+            if mfa_O.hasNaN() {
+              print(" - MFA has NaN")
+            }
+            if mps_O.hasNaN() {
+              print(" - MPS has NaN")
+            }
+            
+            switch randomMask {
+            case .blockSparse(_, let sparsity):
+              let percentRepr = String(format: "%.0f", sparsity * 100)
+              print(" - Sparsity: \(percentRepr)%")
+            default:
+              break
+            }
+            
+            if let mfa_mask {
+              print(" - Mask dims: \(mfa_mask.shape)")
+            }
+          }
+        }
+        
+        if !mfa_O.isApproximatelyEqual(to: mps_O, parameters: params) {
+          if let batchSize {
+            for batchIndex in 0..<batchSize {
+              for slice in 0..<H {
+                let prefix = "(\(batchIndex), \(slice))"
+                let sliceObj = PythonObject(tupleOf: batchIndex, slice)
+                MPL_showComparison(
+                  actual: mfa_O, actualName: "\(prefix) MFA",
+                  expected: mps_O, expectedName: "\(prefix) MPS",
+                  parameters: params, slice: sliceObj,
+                  transpose: O_trans)
+              }
+            }
+          } else {
+            for slice in 0..<H {
+              let prefix = "(\(slice))"
+              MPL_showComparison(
+                actual: mfa_O, actualName: "\(prefix) MFA",
+                expected: mps_O, expectedName: "\(prefix) MPS",
+                parameters: params, slice: PythonObject(slice),
+                transpose: O_trans)
+            }
+            fatalError("Tensors did not match.")
+          }
+
+        }
+        
+      }
+    }
+    
+    for i in 0..<numTrials {
+      testRandomSize(index: i, ghost: true)
+    }
+    for i in 0..<numTrials {
+      testRandomSize(index: i, ghost: false)
+    }
     
     let end = CACurrentMediaTime()
     let repr = String(format: "%.3f", end - start)

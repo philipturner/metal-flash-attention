@@ -57,9 +57,8 @@ struct MFA_Attention: Attention, MFA_Operation {
     "C_simd": UInt16(64), // 64
     "R_splits": UInt16(4), // 4
     
-    // TODO: Set block_sparse as a function constant here, have the async
-    // pipeline manage the underlying buffer, make batch dimensions part of the
-    // hash.
+    // TODO: Set block_sparse as a function constant here, allocate an
+    // exponentially expanding scratch buffer on the backend.
     "block_sparse": Bool(false)
   ]
   
@@ -390,16 +389,24 @@ struct MPS_Attention: Attention, MPS_Operation {
       primary: contiguousQ,
       secondary: postTransposeK,
       name: "QK")
+    if dataType == .half {
+      attentionMatrix = graph.cast(
+        attentionMatrix, to: .float32, name: "QK_f32")
+    }
     let alpha = graph.constant(
       rsqrt(Double(parameters.D)),
-      dataType: dataType.mps)
+      dataType: .float32)
     attentionMatrix = graph.multiplication(
       attentionMatrix,
       alpha,
       name: "QK/sqrt(D)")
-    
+
     var zeroMask: MPSGraphTensor?
-    if let originalMask {
+    if var originalMask {
+      if dataType == .half {
+        originalMask = graph.cast(
+          originalMask, to: .float32, name: "mask_f32")
+      }
       attentionMatrix = graph.addition(
         attentionMatrix,
         originalMask,
@@ -407,21 +414,17 @@ struct MPS_Attention: Attention, MPS_Operation {
       
       var value: Double
       if dataType == .float {
-        value = Double(-Float.greatestFiniteMagnitude)
+        value = Double(-Float.greatestFiniteMagnitude / 2)
       } else {
-        value = Double(-Float16.greatestFiniteMagnitude)
+        value = Double(-Float16.greatestFiniteMagnitude / 2)
       }
       let scalar = graph.constant(
         value,
-        dataType: dataType.mps)
+        dataType: .float32)
       zeroMask = graph.lessThanOrEqualTo(
         attentionMatrix,
         scalar,
         name: "zero_mask")
-    }
-    if dataType == .half {
-      attentionMatrix = graph.cast(
-        attentionMatrix, to: .float32, name: "QK_f32")
     }
     if let zeroMask {
       let lastAxes = [NSNumber(value: qShape.count - 1)]
@@ -439,7 +442,7 @@ struct MPS_Attention: Attention, MPS_Operation {
       
       let zero = graph.constant(
         0,
-        dataType: dataType.mps)
+        dataType: .float32)
       attentionMatrix = graph.select(
         predicate: zeroMask,
         trueTensor: zero,
@@ -561,16 +564,26 @@ struct Py_Attention: Attention, Py_Operation {
     // [R, H, D] * [H, D, C] -> [H, R, C]
     var attentionMatrix = np.einsum(
       "...ijk,...jkl->...jil", postTransposeQ, postTransposeK)
+    if tensors.q.dataType == .half {
+      attentionMatrix = attentionMatrix.astype(np.float32)
+    }
     attentionMatrix *= PythonObject(rsqrt(Double(parameters.D)))
     
     // Apply explicit mask.
     var zeroMask: PythonObject?
     if let tensorMask {
       np.add(attentionMatrix, tensorMask.ndarray, out: attentionMatrix)
-      zeroMask = np.less_equal(attentionMatrix, -Float.greatestFiniteMagnitude)
+      if tensors.q.dataType == .float {
+        zeroMask = np.less_equal(
+          attentionMatrix, -Float.greatestFiniteMagnitude / 2)
+      } else {
+        zeroMask = np.less_equal(
+          attentionMatrix, Float(-Float16.greatestFiniteMagnitude / 2))
+      }
     }
     
     // Perform softmax.
+#if true
     let lastAxis = PythonObject(tensorQ.shape.count - 1)
     var summary = np[dynamicMember: "max"](
       attentionMatrix, axis: lastAxis, keepdims: true)
@@ -590,17 +603,33 @@ struct Py_Attention: Attention, Py_Operation {
     } else {
       np.divide(attentionMatrix, summary, out: attentionMatrix)
     }
+#endif
     
     // Multiply P * V.
     // [H, R, C] * [C, H, D] -> [R, H, D]
-    if parameters.O_trans {
-      np.einsum(
-        "...ijk,...kil->...ilj",
-        attentionMatrix, postTransposeV, out: tensorO.ndarray)
+    if tensors.q.dataType == .half {
+      var O_f32: PythonObject
+      if parameters.O_trans {
+        O_f32 = np.einsum(
+          "...ijk,...kil->...ilj",
+          attentionMatrix, postTransposeV)
+      } else {
+        O_f32 = np.einsum(
+          "...ijk,...kil->...jil",
+          attentionMatrix, postTransposeV)
+      }
+      let O_f16 = O_f32.astype(np.float16)
+      np.add(O_f16, 0, out: tensorO.ndarray)
     } else {
-      np.einsum(
-        "...ijk,...kil->...jil",
-        attentionMatrix, postTransposeV, out: tensorO.ndarray)
+      if parameters.O_trans {
+        np.einsum(
+          "...ijk,...kil->...ilj",
+          attentionMatrix, postTransposeV, out: tensorO.ndarray)
+      } else {
+        np.einsum(
+          "...ijk,...kil->...jil",
+          attentionMatrix, postTransposeV, out: tensorO.ndarray)
+      }
     }
   }
 }

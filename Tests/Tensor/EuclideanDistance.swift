@@ -49,6 +49,31 @@ struct EuclideanDistanceParameters {
 }
 
 extension Tensor {
+  func hasNaN() -> Bool {
+    // WARNING: The current implementation is very slow in debug mode. Only use
+    // it after detecting an error.
+    let elements = shape.reduce(1, *)
+    switch Element.mtlDataType {
+    case .float:
+      let ptr = buffer.pointer.assumingMemoryBound(to: Float32.self)
+      for i in 0..<elements {
+        if ptr[i].isNaN {
+          return true
+        }
+      }
+    case .half:
+      let ptr = buffer.pointer.assumingMemoryBound(to: Float16.self)
+      for i in 0..<elements {
+        if ptr[i].isNaN {
+          return true
+        }
+      }
+    default:
+      fatalError()
+    }
+    return false
+  }
+  
   func euclideanDistance(to other: Tensor<Element>) -> Float {
     buffer.euclideanDistance(to: other.buffer)
   }

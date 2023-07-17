@@ -46,6 +46,37 @@ struct Tensor<Element: TensorElement> {
   }
   
   init(
+    slicing other: Tensor,
+    indices: [Int],
+    lastSlicedDim: Int,
+    backend: TensorBackend = .default
+  ) {
+    precondition(indices.count == lastSlicedDim + 1)
+    var sliceIndex = 0
+    var stride = 1
+    let otherShape = other.shape
+    for i in (0..<lastSlicedDim).reversed() {
+      sliceIndex += indices[i] * stride
+      stride *= otherShape[i]
+    }
+    let newShape = Array(otherShape[(lastSlicedDim + 1)...])
+    self.init(unsafeUninitializedShape: newShape, backend: backend)
+    
+    let byteStride = newShape.reduce(1, *) * Element.mtlDataType.size
+    let src = other.buffer.pointer + sliceIndex * byteStride
+    memcpy(buffer.pointer, src, buffer.allocatedSize)
+  }
+  
+  init(
+    assumingShape shape: [Int],
+    copying other: Tensor,
+    backend: TensorBackend = .default
+  ) {
+    self.init(unsafeUninitializedShape: shape, backend: backend)
+    memcpy(buffer.pointer, other.buffer.pointer, buffer.allocatedSize)
+  }
+  
+  init(
     shape: [Int],
     reshaping other: Tensor,
     backend: TensorBackend = .default
@@ -291,6 +322,13 @@ extension Tensor {
     parameters.batchDimensionsQ = queries.shape.dropLast(3)
     if let mask {
       parameters.batchDimensionsMask = mask.shape.dropLast(3)
+      if batched {
+        precondition(mask.shape.count == 4)
+        precondition(parameters.batchDimensionsMask!.count == 1)
+      } else {
+        precondition(mask.shape.count == 3)
+        precondition(parameters.batchDimensionsMask!.count == 0)
+      }
     }
     
     let tensors = Attention_Tensors(

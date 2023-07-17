@@ -66,9 +66,7 @@ constant ushort O_block_leading_dim = (O_trans ? R_group : D_simd);
 template <typename T>
 METAL_FUNC device T* apply_batch_offset(device T *pointer, ulong offset) {
   if (batched) {
-    auto casted = (device uchar*)pointer;
-    casted += offset;
-    return (device T*)casted;
+    return pointer + offset;
   } else {
     return pointer;
   }
