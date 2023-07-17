@@ -5,13 +5,13 @@
 //  Created by Philip Turner on 7/14/23.
 //
 
-import Foundation
+import Metal
 import PythonKit
 
 func showMaskTest() {
   let maskIsTriangular = Float.random(in: 0..<1) < 2 // suppress warning
   let maskPlane = 2
-  typealias Real = Float16
+  typealias Real = Float32
   srand48(79)
   
   var mask: AttentionMask
@@ -45,24 +45,31 @@ func showMaskTest() {
 }
 
 func showAttentionTest() {
-  let expectedBackend: TensorBackend = .mps
+  let expectedBackend: TensorBackend = .numpy
   let actualBackend: TensorBackend = .mfa
-  typealias Real = Float16
+  typealias Real = Float32
   
-//  let R = 30
-//  let C = 30
-//  let H = 1
-//  let D = 20
-  let R = 33
-  let C = 15
-  let H = 3
-  let D = 27
+//  let R = 33
+//  let C = 33 // 15, 33
+//  let H = 3
+//  let D = 27
+//  R_simd = 16
+//  C_simd = 64
+//  R_splits = 4
+  
+  let R = 8
+  let C = 8
+  let H = 1
+  let D = 8
   let expected_Q = Tensor<Real>(
     shape: [R, H, D], randomUniform: 0..<1, backend: expectedBackend)
   let expected_K = Tensor<Real>(
     shape: [C, H, D], randomUniform: 0..<1, backend: expectedBackend)
   let expected_V = Tensor<Real>(
     shape: [C, H, D], randomUniform: 0..<1, backend: expectedBackend)
+  let expected_mask = Tensor<Real>(shape: [1, R, C], mask:
+//      .upperTriangular)
+      .blockSparse(2, 0.2))
   #if false
   var expected_O = Tensor<Real>(
     zerosLike: [R, H, D], backend: expectedBackend)
@@ -75,21 +82,38 @@ func showAttentionTest() {
   let actual_K = Tensor(copying: expected_K, backend: actualBackend)
   let actual_V = Tensor(copying: expected_V, backend: actualBackend)
   var actual_O = Tensor(copying: expected_O, backend: actualBackend)
+  let actual_mask = Tensor(copying: expected_mask, backend: actualBackend)
   
   _ExecutionContext.withDefaultBackend(expectedBackend) {
     _ExecutionContext.profileCommands {
       expected_O.attention(
         queries: expected_Q, keys: expected_K, values: expected_V,
+        mask: expected_mask,
         transposeK: true, transposeO: true)
     }
   }
-  
+//  
+//  let manager = MTLCaptureManager.shared()
+//  let desc = MTLCaptureDescriptor()
+//  desc.captureObject = MetalContext.global.device
+//  try! manager.startCapture(with: desc)
   _ExecutionContext.withDefaultBackend(actualBackend) {
     _ExecutionContext.profileCommands {
       actual_O.attention(
         queries: actual_Q, keys: actual_K, values: actual_V,
+        mask: actual_mask,
         transposeK: true, transposeO: true)
     }
+  }
+//  manager.stopCapture()
+  
+  let numElements = actual_O.shape.reduce(1, *)
+  let expected_pointer = expected_O.buffer.pointer
+    .assumingMemoryBound(to: Real.self)
+  let actual_pointer = actual_O.buffer.pointer
+    .assumingMemoryBound(to: Real.self)
+  for i in 0..<min(10, numElements) {
+    print(expected_pointer[i], actual_pointer[i])
   }
   
   for plane in 0..<H {

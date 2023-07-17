@@ -71,7 +71,7 @@ struct Tensor<Element: TensorElement> {
     var pointer = buffer.pointer.assumingMemoryBound(to: Element.self)
     switch mask {
     case .upperTriangular:
-      for i in 0..<R {
+      for i in 0..<R - 1 {
         defer {
           pointer += C
         }
@@ -99,7 +99,7 @@ struct Tensor<Element: TensorElement> {
           }
         }
         for j in lowerRangeEnd..<min(lowerRangeEnd + 2, C) {
-          if j < i {
+          if j <= i {
             pointer[j] = 0
           } else {
             pointer[j] = -.greatestFiniteMagnitude
@@ -123,6 +123,8 @@ struct Tensor<Element: TensorElement> {
           pointer[j] = -.greatestFiniteMagnitude
         }
       }
+      memset(pointer, 0, C * Element.mtlDataType.size)
+      pointer += C
       pointer -= R * C
       
       // Generate one plane, then copy it to `B` planes.

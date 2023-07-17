@@ -13,5 +13,6 @@ import PythonKit
 _ = MetalContext.global
 _ = PythonContext.global
 
-// Now, compare FP32 attention between MPS and NumPy.
 showAttentionTest()
+
+//MFATestCase.runTests(speed: .quick)

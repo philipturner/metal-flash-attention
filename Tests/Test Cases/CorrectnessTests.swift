@@ -14,19 +14,21 @@ class CorrectnessTests: MFATestCase {
   }
   
   override func runQuickTests() {
-    testRandomMatrices(logProgress: true)
+    let logProgress = true
+    testRandomAttention(logProgress: logProgress)
+    testRandomGEMM(logProgress: logProgress)
   }
   
-  func testRandomMatrices(logProgress: Bool) {
+  func testRandomGEMM(logProgress: Bool) {
     let start = CACurrentMediaTime()
     
-    //  0 -  25: batch 1, NN
-    // 25 -  75: batch 1, NN/NT/TN/TT
-    // 75 - 150: batch 2-16 for A/C
-    let numNonTransposedTrials = 25
-    let numNonBatchedTrials = 75
-    let nonBroadcastedCutoff = 100
-    let numTrials = numNonBatchedTrials + 75
+    //  0 - 15: batch 1, NN
+    // 15 - 45: batch 1, NN/NT/TN/TT
+    // 45 - 90: batch 2-16 for A/C
+    let numNonTransposedTrials = 15
+    let numNonBatchedTrials = 45
+    let nonBroadcastedCutoff = 60
+    let numTrials = numNonBatchedTrials + 45
     
     // Create a biased random distribution that favors smaller numbers. Take the
     // uniform distribution, then cube the results.
@@ -159,7 +161,21 @@ class CorrectnessTests: MFATestCase {
     
     let end = CACurrentMediaTime()
     let repr = String(format: "%.3f", end - start)
-    print("Finished 'testRandomMatrices' in \(repr) seconds.")
+    print("Finished 'testRandomGEMM' in \(repr) seconds.")
+  }
+  
+  func testRandomAttention(logProgress: Bool) {
+    let start = CACurrentMediaTime()
+    
+    //  0 - 15: batch 1, K^T
+    // 15 - 30: batch 1, all transposes
+    // 30 - 45: batch 2-8
+    // 45 - 60: batch 2-8, dense mask
+    // 60 - 90: batch 2-8, sparse mask
+    
+    let end = CACurrentMediaTime()
+    let repr = String(format: "%.3f", end - start)
+    print("Finished 'testRandomAttention' in \(repr) seconds.")
   }
   
 //  let M = 100

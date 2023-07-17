@@ -53,9 +53,9 @@ struct MFA_Attention: Attention, MFA_Operation {
   var parameters: Attention_Parameters
   
   static var functionConstants: [String: MTLConvertible] = [
-    "R_simd": UInt16(16), // 16
-    "C_simd": UInt16(64), // 64
-    "R_splits": UInt16(4), // 4
+    "R_simd": UInt16(8), // 16
+    "C_simd": UInt16(8), // 64
+    "R_splits": UInt16(1), // 4
     
     // TODO: Set block_sparse as a function constant here, have the async
     // pipeline manage the underlying buffer, make batch dimensions part of the
@@ -87,7 +87,8 @@ struct MFA_Attention: Attention, MFA_Operation {
     
     var dataTypeRawValue = dataType.rawValue
     constants.setConstantValue(&dataTypeRawValue, type: .uint, index: 30)
-    constants.setConstantValue(&pcopy.batched, type: .bool, index: 50000)
+    constants.setConstantValue(&pcopy.batched, type: .bool, index: 100)
+    constants.setConstantValue(&pcopy.masked, type: .bool, index: 50000)
     
     var block_sparse = Self.functionConstants["block_sparse"] as! Bool
     precondition(!block_sparse, "Block sparsity not supported yet.")
@@ -307,6 +308,9 @@ struct MPS_Attention: Attention, MPS_Operation {
     if parameters.O_trans {
       oShapeTranspose = qBatch + [parameters.H, parameters.D, parameters.R]
     }
+    _ = oShape
+    _ = oShapeTranspose
+    
     let graph = MPSGraph()
     func shape(_ shape: [Int]?) -> [Int] {
       shape!
@@ -410,18 +414,15 @@ struct MPS_Attention: Attention, MPS_Operation {
     }
     
     var originalO: MPSGraphTensor
-//    var shapedTypeO: MPSGraphShapedType
     var postTransposeO: MPSGraphTensor
     if parameters.O_trans {
       originalO = transpose(
         contiguousO, "O_trans", batchDims: qBatch, permutation: [1, 0, 2])
-//      shapedTypeO = shapedType(oShapeTranspose)
       postTransposeO = transpose(
         originalO, "O", batchDims: qBatch, permutation: [1, 2, 0])
     } else {
       originalO = transpose(
         contiguousO, "O", batchDims: qBatch, permutation: [1, 0, 2])
-//      shapedTypeO = shapedType(oShape)
       postTransposeO = originalO
     }
     var feeds: [MPSGraphTensor: MPSGraphShapedType] = [

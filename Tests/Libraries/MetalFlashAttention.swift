@@ -78,7 +78,7 @@ class AsyncPipeline: AsyncResource {
   ) {
     self._semaphore = DispatchSemaphore(value: 0)
     
-    self.flags = 0x1
+    self.flags = flags
     self.threadgroupMemoryLength = threadgroupMemoryLength
     self.gridSize = gridSize
     self.groupSize = groupSize

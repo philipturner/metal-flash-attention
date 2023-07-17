@@ -320,7 +320,7 @@ void _attention_impl(device T *Q [[buffer(0)]],
         simdgroup_event::wait(1, &event);
       }
       auto mask_offset = ushort2(0, sidx * R_simd) + offset_in_simd;
-      auto mask_block = simdgroup_matrix_storage<T>::apply_offset(threadgroup_block, C, mask_offset);
+      auto mask_block = simdgroup_matrix_storage<T>::apply_offset(threadgroup_block, C_simd, mask_offset);
       
       threadgroup_barrier(mem_flags::mem_threadgroup);
 #pragma clang loop unroll(full)
@@ -456,6 +456,9 @@ void _attention_impl(device T *Q [[buffer(0)]],
     float l = 1;
 #else
     float l = 1 / l_sram[r / 8];
+    if (masked && isinf(l)) {
+      l = copysign(numeric_limits<float>::max(), l);
+    }
 #endif
 #pragma clang loop unroll(full)
     for (ushort d = 0; d < D_simd; d += 8) {
