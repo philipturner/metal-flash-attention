@@ -384,7 +384,7 @@ void _attention_impl(device T *Q [[buffer(0)]],
       m = max(m, simd_shuffle_xor(m, 8));
       
       constexpr T threshold = -numeric_limits<T>::max() / 2;
-      if (masked && !block_sparse && m <= float(threshold)) {
+      if (masked && !block_sparse && m <= threshold) {
         for (ushort c = 0; c < C_simd; c += 8) {
           auto s = get_sram(attention_matrix, C_simd, ushort2(c, r));
           *(s->thread_elements()) = vec<T, 2>(0);

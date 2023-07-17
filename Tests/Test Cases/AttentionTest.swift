@@ -29,7 +29,7 @@ func showMaskTest() {
     
     mask = .blockSparse(2, 0.2)
     R = 33
-    C = 33
+    C = 15
   }
   
   let shape: [Int] = [B, R, C]
@@ -49,7 +49,7 @@ func showMaskTest() {
 }
 
 func showAttentionTest() {
-  let expectedBackend: TensorBackend = .numpy
+  let expectedBackend: TensorBackend = .mps
   let actualBackend: TensorBackend = .mfa
   typealias Real = Float32
   
@@ -71,9 +71,8 @@ func showAttentionTest() {
     shape: [C, H, D], randomUniform: 0..<1, backend: expectedBackend)
   let expected_V = Tensor<Real>(
     shape: [C, H, D], randomUniform: 0..<1, backend: expectedBackend)
-  let expected_mask = Tensor<Real>(shape: [1, R, C], mask:
-//      .upperTriangular)
-      .blockSparse(2, 0.2))
+  let expected_mask = Tensor<Real>(
+    shape: [1, R, C], mask: .blockSparse(2, 0.2), backend: expectedBackend)
   #if false
   var expected_O = Tensor<Real>(
     zerosLike: [R, H, D], backend: expectedBackend)
@@ -96,11 +95,7 @@ func showAttentionTest() {
         transposeK: true, transposeO: true)
     }
   }
-//  
-//  let manager = MTLCaptureManager.shared()
-//  let desc = MTLCaptureDescriptor()
-//  desc.captureObject = MetalContext.global.device
-//  try! manager.startCapture(with: desc)
+  
   _ExecutionContext.withDefaultBackend(actualBackend) {
     _ExecutionContext.profileCommands {
       actual_O.attention(
@@ -109,7 +104,6 @@ func showAttentionTest() {
         transposeK: true, transposeO: true)
     }
   }
-//  manager.stopCapture()
   
   let numElements = actual_O.shape.reduce(1, *)
   let expected_pointer = expected_O.buffer.pointer

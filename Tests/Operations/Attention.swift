@@ -53,9 +53,9 @@ struct MFA_Attention: Attention, MFA_Operation {
   var parameters: Attention_Parameters
   
   static var functionConstants: [String: MTLConvertible] = [
-    "R_simd": UInt16(8), // 16
-    "C_simd": UInt16(8), // 64
-    "R_splits": UInt16(1), // 4
+    "R_simd": UInt16(16), // 16
+    "C_simd": UInt16(64), // 64
+    "R_splits": UInt16(4), // 4
     
     // TODO: Set block_sparse as a function constant here, have the async
     // pipeline manage the underlying buffer, make batch dimensions part of the
@@ -387,30 +387,91 @@ struct MPS_Attention: Attention, MPS_Operation {
     let contiguousQ = transpose(
       postTransposeQ, "Q_contiguous", batchDims: qBatch, permutation: [1, 0, 2])
     var attentionMatrix = graph.matrixMultiplication(
-      primary: contiguousQ, secondary: postTransposeK, name: "QK")
+      primary: contiguousQ,
+      secondary: postTransposeK,
+      name: "QK")
     let alpha = graph.constant(
-      rsqrt(Double(parameters.D)), dataType: dataType.mps)
+      rsqrt(Double(parameters.D)),
+      dataType: dataType.mps)
     attentionMatrix = graph.multiplication(
-      attentionMatrix, alpha, name: "QK/sqrt(D)")
+      attentionMatrix,
+      alpha,
+      name: "QK/sqrt(D)")
     
+    var zeroMask: MPSGraphTensor?
     if let originalMask {
       attentionMatrix = graph.addition(
-        attentionMatrix, originalMask, name: "mask(QK/sqrt(D))")
+        attentionMatrix,
+        originalMask,
+        name: "mask(QK/sqrt(D))")
+      
+      var value: Double
+      if dataType == .float {
+        value = Double(-Float.greatestFiniteMagnitude)
+      } else {
+        value = Double(-Float16.greatestFiniteMagnitude)
+      }
+      let scalar = graph.constant(
+        value,
+        dataType: dataType.mps)
+      zeroMask = graph.lessThanOrEqualTo(
+        attentionMatrix,
+        scalar,
+        name: "zero_mask")
     }
     if dataType == .half {
       attentionMatrix = graph.cast(
         attentionMatrix, to: .float32, name: "QK_f32")
     }
-    attentionMatrix = graph.softMax(
-      with: attentionMatrix, axis: qShape.count - 1, name: "sm(QK)")
+    if let zeroMask {
+      let lastAxes = [NSNumber(value: qShape.count - 1)]
+      var summary = graph.reductionMaximum(
+        with: attentionMatrix,
+        axes: lastAxes,
+        name: "m")
+      attentionMatrix = graph.subtraction(
+        attentionMatrix,
+        summary,
+        name: "QK - m")
+      attentionMatrix = graph.exponent(
+        with: attentionMatrix,
+        name: "exp(QK - m)")
+      
+      let zero = graph.constant(
+        0,
+        dataType: dataType.mps)
+      attentionMatrix = graph.select(
+        predicate: zeroMask,
+        trueTensor: zero,
+        falseTensor: attentionMatrix,
+        name: "exp(QK - m)")
+      
+      summary = graph.reductionSum(
+        with: attentionMatrix,
+        axes: lastAxes,
+        name: "l")
+      attentionMatrix = graph.divisionNoNaN(
+        attentionMatrix,
+        summary, name:
+          "sm(QK)")
+    } else {
+      attentionMatrix = graph.softMax(
+        with: attentionMatrix,
+        axis: qShape.count - 1,
+        name: "sm(QK)")
+    }
     
     let contiguousV = transpose(
       postTransposeV, "V_contiguous", batchDims: qBatch, permutation: [1, 0, 2])
     var contiguousO = graph.matrixMultiplication(
-      primary: attentionMatrix, secondary: contiguousV, name: "O_contiguous")
+      primary: attentionMatrix,
+      secondary: contiguousV,
+      name: "O_contiguous")
     if dataType == .half {
       contiguousO = graph.cast(
-        contiguousO, to: .float16, name: "O_contiguous_f16")
+        contiguousO,
+        to: .float16,
+        name: "O_contiguous_f16")
     }
     
     var originalO: MPSGraphTensor
@@ -500,23 +561,35 @@ struct Py_Attention: Attention, Py_Operation {
     // [R, H, D] * [H, D, C] -> [H, R, C]
     var attentionMatrix = np.einsum(
       "...ijk,...jkl->...jil", postTransposeQ, postTransposeK)
-                                   
     attentionMatrix *= PythonObject(rsqrt(Double(parameters.D)))
     
     // Apply explicit mask.
+    var zeroMask: PythonObject?
     if let tensorMask {
       np.add(attentionMatrix, tensorMask.ndarray, out: attentionMatrix)
+      zeroMask = np.less_equal(attentionMatrix, -Float.greatestFiniteMagnitude)
     }
     
     // Perform softmax.
     let lastAxis = PythonObject(tensorQ.shape.count - 1)
-    let summary = np[dynamicMember: "max"](
+    var summary = np[dynamicMember: "max"](
       attentionMatrix, axis: lastAxis, keepdims: true)
     np.subtract(attentionMatrix, summary, out: attentionMatrix)
     np.exp(attentionMatrix, out: attentionMatrix)
+    if let zeroMask {
+      attentionMatrix[zeroMask] = 0
+    }
+    
     np.sum(
       attentionMatrix, axis: lastAxis, keepdims: true, out: summary)
-    np.divide(attentionMatrix, summary, out: attentionMatrix)
+    if parameters.masked {
+      let zeroMask = np.equal(summary, 0)
+      summary[zeroMask] = PythonObject(Float.leastNormalMagnitude)
+      summary = 1 / summary
+      np.multiply(attentionMatrix, summary, out: attentionMatrix)
+    } else {
+      np.divide(attentionMatrix, summary, out: attentionMatrix)
+    }
     
     // Multiply P * V.
     // [H, R, C] * [C, H, D] -> [R, H, D]
