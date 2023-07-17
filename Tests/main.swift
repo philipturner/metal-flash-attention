@@ -13,6 +13,7 @@ import PythonKit
 _ = MetalContext.global
 _ = PythonContext.global
 
+//showMaskTest()
 showAttentionTest()
 
 //MFATestCase.runTests(speed: .quick)

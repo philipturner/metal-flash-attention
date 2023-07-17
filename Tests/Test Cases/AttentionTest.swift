@@ -9,10 +9,10 @@ import Metal
 import PythonKit
 
 func showMaskTest() {
-  let maskIsTriangular = Float.random(in: 0..<1) < 2 // suppress warning
-  let maskPlane = 2
+  let maskIsTriangular = Float.random(in: 0..<1) < -2 // suppress warning
+  let maskPlane = 0//2
   typealias Real = Float32
-  srand48(79)
+//  srand48(79)
   
   var mask: AttentionMask
   var R: Int
@@ -23,9 +23,13 @@ func showMaskTest() {
     R = 13
     C = 13
   } else {
-    mask = .blockSparse(3, 0.2)
-    R = 16
-    C = 20
+//    mask = .blockSparse(3, 0.2)
+//    R = 16
+//    C = 20
+    
+    mask = .blockSparse(2, 0.2)
+    R = 33
+    C = 33
   }
   
   let shape: [Int] = [B, R, C]
@@ -57,10 +61,10 @@ func showAttentionTest() {
 //  C_simd = 64
 //  R_splits = 4
   
-  let R = 8
-  let C = 8
-  let H = 1
-  let D = 8
+  let R = 33
+  let C = 33
+  let H = 3
+  let D = 27
   let expected_Q = Tensor<Real>(
     shape: [R, H, D], randomUniform: 0..<1, backend: expectedBackend)
   let expected_K = Tensor<Real>(

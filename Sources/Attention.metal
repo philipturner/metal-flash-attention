@@ -236,8 +236,8 @@ void _attention_impl(device T *Q [[buffer(0)]],
       auto o = get_sram(O_sram, D_simd, ushort2(d, r));
       *o = simdgroup_matrix_storage<float>(0);
     }
-    l_sram[r / 8] = 0;
-    m_sram[r / 8] = -numeric_limits<T>::max();
+    l_sram[r / 8] = numeric_limits<float>::denorm_min();
+    m_sram[r / 8] = -numeric_limits<float>::max();
   }
   auto Q_offset = ushort2(0, sidx * R_simd) + offset_in_simd;
   auto Q_block = simdgroup_matrix_storage<T>::apply_offset(threadgroup_block, Q_block_leading_dim, Q_offset, Q_trans);
@@ -382,33 +382,42 @@ void _attention_impl(device T *Q [[buffer(0)]],
       float m = max(_m[0], _m[1]);
       m = max(m, simd_shuffle_xor(m, 1));
       m = max(m, simd_shuffle_xor(m, 8));
-      m *= alpha;
       
-      m = max(m, m_sram[r / 8]);
-      float correction = exp2(M_LOG2E_F * (m_sram[r / 8] - m));
-      if (m > m_sram[r / 8]) {
-#pragma clang loop unroll(full)
-        for (ushort d = 0; d < D_simd; d += 8) {
-          auto o = get_sram(O_sram, D_simd, ushort2(d, r));
-          *(o->thread_elements()) *= correction;
+      constexpr T threshold = -numeric_limits<T>::max() / 2;
+      if (masked && !block_sparse && m <= float(threshold)) {
+        for (ushort c = 0; c < C_simd; c += 8) {
+          auto s = get_sram(attention_matrix, C_simd, ushort2(c, r));
+          *(s->thread_elements()) = vec<T, 2>(0);
         }
-      }
-      m_sram[r / 8] = m;
-      float subtrahend = m * M_LOG2E_F;
-      
-      float2 _l = 0;
+      } else {
+        m *= alpha;
+        m = max(m, m_sram[r / 8]);
+        
+        float correction = exp2(M_LOG2E_F * (m_sram[r / 8] - m));
+        if (m > m_sram[r / 8]) {
 #pragma clang loop unroll(full)
-      for (ushort c = 0; c < C_simd; c += 8) {
-        auto s = get_sram(attention_matrix, C_simd, ushort2(c, r));
-        float2 p = float2(*s->thread_elements());
-        p = exp2(fma(p, alpha * M_LOG2E_F, -subtrahend));
-        *(s->thread_elements()) = vec<T, 2>(p);
-        _l += float2(*(s->thread_elements()));
+          for (ushort d = 0; d < D_simd; d += 8) {
+            auto o = get_sram(O_sram, D_simd, ushort2(d, r));
+            *(o->thread_elements()) *= correction;
+          }
+        }
+        m_sram[r / 8] = m;
+        float subtrahend = m * M_LOG2E_F;
+        
+        float2 _l = 0;
+#pragma clang loop unroll(full)
+        for (ushort c = 0; c < C_simd; c += 8) {
+          auto s = get_sram(attention_matrix, C_simd, ushort2(c, r));
+          float2 p = float2(*s->thread_elements());
+          p = exp2(fma(p, alpha * M_LOG2E_F, -subtrahend));
+          *(s->thread_elements()) = vec<T, 2>(p);
+          _l += float2(*(s->thread_elements()));
+        }
+        float l = _l[0] + _l[1];
+        l += simd_shuffle_xor(l, 1);
+        l += simd_shuffle_xor(l, 8);
+        l_sram[r / 8] = fma(l_sram[r / 8], correction, l);
       }
-      float l = _l[0] + _l[1];
-      l += simd_shuffle_xor(l, 1);
-      l += simd_shuffle_xor(l, 8);
-      l_sram[r / 8] = fma(l_sram[r / 8], correction, l);
     }
 #endif
     
@@ -456,9 +465,6 @@ void _attention_impl(device T *Q [[buffer(0)]],
     float l = 1;
 #else
     float l = 1 / l_sram[r / 8];
-    if (masked && isinf(l)) {
-      l = copysign(numeric_limits<float>::max(), l);
-    }
 #endif
 #pragma clang loop unroll(full)
     for (ushort d = 0; d < D_simd; d += 8) {
