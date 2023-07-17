@@ -35,6 +35,22 @@ func SquareMatrixBenchmark_configure(
   }
 }
 
+func SquareMatrixBenchmark_configure_2(
+  _ iterations: inout Int, _ trials: inout Int, ref: Int
+) {
+  // Try to keep test time constant across devices.
+  let cores = MetalContext.global.infoDevice.coreCount
+  trials = cores / (32 / ref)
+  if trials > 16 {
+    trials = 16
+  } else if trials < 2 {
+    if iterations >= 4 {
+      iterations /= 2
+    }
+    trials = 2
+  }
+}
+
 struct SquareMatrixBenchmark<T: TensorElement> {
   var range: Range<Int>
   var iterations: Int

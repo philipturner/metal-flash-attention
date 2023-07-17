@@ -240,12 +240,12 @@
 		98C7952D2A4C714700DB688D /* Test Cases */ = {
 			isa = PBXGroup;
 			children = (
+				984279D62A619008001BBD55 /* AttentionTest.swift */,
 				980EDCFC2A4E10A100BC9BF0 /* CorrectnessTests.swift */,
+				98F2F5DC2A60978C006216F4 /* MatrixTransposeTest.swift */,
 				98C795292A4B962B00DB688D /* MFATestCase.swift */,
 				98C795272A4B95EC00DB688D /* PerformanceTests.swift */,
 				98C795312A4DC1F200DB688D /* SquareMatrixBenchmark.swift */,
-				98F2F5DC2A60978C006216F4 /* MatrixTransposeTest.swift */,
-				984279D62A619008001BBD55 /* AttentionTest.swift */,
 			);
 			path = "Test Cases";
 			sourceTree = "<group>";
