@@ -32,8 +32,9 @@ class MFATestCase {
   
   static func runTests(speed: TestSpeed) {
     let testCases: [MFATestCase] = [
-      CorrectnessTests(),
-      PerformanceTests(),
+//      CorrectnessTests(),
+      AttentionPerfTests(),
+//      GEMMPerfTests(),
     ]
     
     for testCase in testCases {

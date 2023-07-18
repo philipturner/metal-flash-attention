@@ -8,9 +8,9 @@
 import Metal
 import QuartzCore
 
-class PerformanceTests: MFATestCase {
+class GEMMPerfTests: MFATestCase {
   override class func typeDescription() -> String {
-    "PerformanceTests"
+    "GEMMPerfTests"
   }
   
   override func runVeryLongTests() {
@@ -19,8 +19,8 @@ class PerformanceTests: MFATestCase {
     testGEMMSpeed(
       granularity: 2, trialsExtension: 2, B_trans: true, batchSize: 2)
     
-//    testGEMMSpeed(
-//      granularity: 16, trialsExtension: 1, B_trans: true, batchSize: 2)
+    //    testGEMMSpeed(
+    //      granularity: 16, trialsExtension: 1, B_trans: true, batchSize: 2)
   }
   
   // Covers the entire range of square matrix sizes, as well as differences
@@ -364,196 +364,16 @@ class PerformanceTests: MFATestCase {
     if let batchSize {
       configRepr += ", Batched, \(batchSize)xA"
     }
-    #if DEBUG
+#if DEBUG
     let debugWarning = "(NOT USABLE FOR CI)"
-    #else
+#else
     let debugWarning = ""
-    #endif
+#endif
     if Real.self == Float.self {
       plt.title("Float32 Utilization (\(configRepr)) \(debugWarning)")
     } else {
       plt.title("Float16 Utilization (\(configRepr)) \(debugWarning)")
     }
     plt.show()
-  }
-  
-  struct AttentionConfig: Equatable, Comparable, Hashable {
-    var B: Int
-    var R: Int
-    var C: Int
-    var H: Int
-    var D: Int
-    var sparsityPercent: Int
-    
-    static func + (
-      lhs: AttentionConfig,
-      rhs: AttentionConfig
-    ) -> AttentionConfig {
-      var out = lhs
-      out.B += rhs.B
-      out.R += rhs.R
-      out.C += rhs.C
-      out.H += rhs.H
-      out.D += rhs.D
-      out.sparsityPercent += rhs.sparsityPercent
-      return out
-    }
-    
-    static func < (lhs: AttentionConfig, rhs: AttentionConfig) -> Bool {
-      if lhs.B < rhs.B {
-        return true
-      }
-      if lhs.R < rhs.R {
-        return true
-      }
-      if lhs.C < rhs.C {
-        return true
-      }
-      if lhs.H < rhs.H {
-        return true
-      }
-      if lhs.D < rhs.D {
-        return true
-      }
-      if lhs.sparsityPercent < rhs.sparsityPercent {
-        return true
-      }
-      return false
-    }
-  }
-  
-  enum AttentionBackend: Int {
-    case mps
-    case mpsMasked
-    case mfa
-    case mfaTriangular
-    case mfaBlockSparse
-  }
-  
-  struct AttentionData {
-    var gflops: [AttentionBackend: [AttentionConfig: Float]]
-    
-    static func + (
-      lhs: AttentionData,
-      rhs: AttentionData
-    ) -> AttentionData {
-      var out = lhs
-      for backend in lhs.gflops.keys {
-        var previousLHS = lhs.gflops[backend]!
-        let previousRHS = rhs.gflops[backend]!
-        for config in previousRHS.keys {
-          assert(previousLHS[config] == nil)
-          previousLHS[config] = previousRHS[config]!
-        }
-        out.gflops[backend] = previousLHS
-      }
-      return out
-    }
-    
-    func sorted() -> [AttentionBackend: [(AttentionConfig, Float)]] {
-      var out: [AttentionBackend: [(AttentionConfig, Float)]] = [:]
-      for backend in gflops.keys {
-        let previous = gflops[backend]!
-        var previousConfigs = Array(previous.keys)
-        previousConfigs.sort(by: <)
-        
-        var current: [(AttentionConfig, Float)] = []
-        for config in previousConfigs {
-          let gflops = previous[config]!
-          current.append((config, gflops))
-        }
-        out[backend] = current
-      }
-      return out
-    }
-  }
-  
-  struct AttentionRange: Equatable, Hashable {
-    var start: AttentionConfig
-    var exclusiveEnd: AttentionConfig
-    var stride: AttentionConfig
-    var testsPerContextSwitch: Int
-    
-    var commandsPerEncoder: Int
-    var trials: Int
-  }
-  
-  struct Duration {
-    var granularity: Int
-    var length: Int
-  }
-  
-  func testSequenceScaling(duration: Duration, isLarge: Bool) {
-    let granularity = duration.granularity
-    let backends: [AttentionBackend] = [.mps, .mfa]
-    
-    var parameters: [SIMD4<Int>]
-    if isLarge {
-      precondition(duration.granularity == 2)
-      parameters = [
-        SIMD4(granularity, 192, 256 * duration.length, 8),
-        SIMD4(192, 256, 128 * duration.length, 8),
-        SIMD4(256, 384, 64 * duration.length, 8),
-        SIMD4(384, 512, 32 * duration.length, 8),
-        SIMD4(512, 768, 16 * duration.length, 8),
-        SIMD4(768, 1024, 8 * duration.length, 8)
-      ]
-      if Real.self == Float.self {
-        parameters.append(SIMD4(1024, 1537, 4 * duration.length, 8))
-      } else {
-        parameters.append(SIMD4(1024, 1536, 4 * duration.length, 8))
-        parameters.append(SIMD4(1536, 2049, 2 * duration.length, 8))
-      }
-    } else {
-      precondition(granularity >= 16, "Granularity is too small.")
-      precondition(
-        Real.self == Float16.self,
-        "Large sequences are only compatible with FP16.")
-      parameters = [
-        SIMD4(2048, 3072, 2 * duration.length, 8),
-        SIMD4(3072, 4096, 1 * duration.length, 8),
-        SIMD4(4096, 6144, duration.length, 4),
-        SIMD4(6144, 8192, duration.length, 2),
-        SIMD4(8192, 12288, duration.length / 2, 2),
-        SIMD4(12288, 16384, duration.length / 4, 2),
-      ]
-    }
-    
-    let ranges: [AttentionRange] = parameters.map { parameter in
-      let start = AttentionConfig(
-        B: 1,
-        R: parameter[0],
-        C: parameter[0],
-        H: 5,
-        D: 64,
-        sparsityPercent: 0)
-      let end = AttentionConfig(
-        B: 1,
-        R: parameter[1],
-        C: parameter[1],
-        H: 5,
-        D: 64,
-        sparsityPercent: 0)
-      let stride = AttentionConfig(
-        B: 0,
-        R: granularity,
-        C: granularity,
-        H: 0,
-        D: 0,
-        sparsityPercent: 0)
-      
-      var iterations = max(1, parameter[2])
-      var trials = 0
-      let ref = parameter[3]
-      SquareMatrixBenchmark_configure_2(&iterations, &trials, ref: ref)
-      
-      return AttentionRange(
-        start: start,
-        exclusiveEnd: end,
-        stride: stride,
-        testsPerContextSwitch: 16,
-        commandsPerEncoder: iterations,
-        trials: trials)
-    }
   }
 }

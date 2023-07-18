@@ -68,4 +68,4 @@ _ = PythonContext.global
  Passed test: 6x  4x1x7x 1xf16 (NNNN, 2x2 sparse) - 0.000
  */
 
-MFATestCase.runTests(speed: .quick)
+MFATestCase.runTests(speed: .veryLong)

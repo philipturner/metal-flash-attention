@@ -149,7 +149,9 @@ Scaling by sequence length:
   - Small sequences: every even integer
   - Large sequences: every multiple of 64
 - Head size: 64
-- Head count: 5
+- Head count:
+  - Small sequences: 10
+  - Large sequences: 5
 - Batch size: 1
 
 Scaling by head size:
@@ -186,11 +188,17 @@ Scaling by sparsity:
 
 ### Float16 Sequence Scaling (Small)
 
+Dense: Stable Diffusion XL outermost attention layer @ 512x512 (sequence length = 1024)
+
 ### Float16 Sequence Scaling (Large)
+
+Dense: Stable Diffusion 2 outermost attention layer @ 512x512 (sequence length = 4096)
 
 ### Float32 Head Scaling
 
 ### Float16 Head Scaling
+
+Dense: Stable Diffusion 1 outermost attention layer @ 512x512 (head size = 40)
 
 ### Float16 Sparsity Scaling
 
