@@ -418,7 +418,6 @@ class AttentionPerfTests: MFATestCase {
         print(" - Distance: \(String(format: "%.3f", dist))")
         print(" - Cannot visualize because O_trans not true.")
       }
-      print("Verified results for config \(config)")
     }
     
     var data = AttentionData(backends: backends)
@@ -479,7 +478,6 @@ class AttentionPerfTests: MFATestCase {
             }
           }
           
-          // TODO: Dry run, just adding samples to the console.
           for (config, gflops) in samples {
             let backendRepr = backend.description
             let configRepr = config.description

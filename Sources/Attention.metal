@@ -107,6 +107,52 @@ void gemm(ushort M, ushort N, ushort K, bool accumulate,
   }
 }
 
+template <typename T>
+void apply_mask(ushort r, bool mask_in_bounds, bool2 mask_load,
+                device T *mask_src,
+                thread simdgroup_matrix_storage<T>* attention_matrix)
+{
+#define LOAD_MASK(LOAD) \
+ushort2 origin(c, r); \
+simdgroup_matrix_storage<T> mask; \
+\
+if (C % 2 == 0) { \
+if (bool2(LOAD)[1]) { \
+mask.load(mask_src, C, origin); \
+} \
+} else { \
+if (bool2(LOAD)[0]) { \
+mask.load_first(mask_src, C, origin); \
+} \
+origin.x += 1; \
+if (bool2(LOAD)[1]) { \
+mask.load_second(mask_src, C, origin); \
+} \
+} \
+\
+auto s = get_sram(attention_matrix, C_simd, origin); \
+*(s->thread_elements()) += *(mask.thread_elements()); \
+
+  ushort C_edge = (C % C_simd == 0) ? C_simd : (C % C_simd);
+  ushort C_floor = C_edge / 8 * 8;
+#pragma clang loop unroll(full)
+  for (ushort c = 0; c < C_floor; c += 8) {
+    LOAD_MASK(true)
+  }
+  
+  if (C_edge > 0) {
+    if (mask_in_bounds) {
+#pragma clang loop unroll(full)
+      for (ushort c = C_floor; c < C_simd; c += 8) {
+        LOAD_MASK(true)
+      }
+    } else {
+      ushort c = C_floor;
+      LOAD_MASK(mask_load)
+    }
+  }
+}
+
 // MARK: - Kernels
 
 template <typename T>
@@ -230,12 +276,12 @@ void _attention_impl(device T *Q [[buffer(0)]],
   ushort R_floor = R_edge / 8 * 8;
   ushort R_modulo = R_edge - R_floor;
   
-  bool2 QO_write = false;
+  bool2 QO_load_store = false;
   if (D != D_simd) {
     if (D % 2 == 1) {
-      QO_write[0] = (offset_in_simd.x + 1 <= D_modulo);
+      QO_load_store[0] = (offset_in_simd.x + 1 <= D_modulo);
     }
-    QO_write[1] = (offset_in_simd.x + 2 <= D_modulo);
+    QO_load_store[1] = (offset_in_simd.x + 2 <= D_modulo);
   }
   uint2 QO_offset = uint2(0, gid.x * R_group + sidx * R_simd);
   bool QO_in_bounds = QO_offset.y + R_simd <= R;
@@ -247,7 +293,7 @@ void _attention_impl(device T *Q [[buffer(0)]],
   
 #define LOAD_QUERIES \
 for (ushort d = 0; d <= D_floor; d += 8) { \
-bool2 write = (d == D_floor) ? QO_write : bool2(true); \
+bool2 load = (d == D_floor) ? QO_load_store : bool2(true); \
 ushort2 origin(d, r); \
 auto q = get_sram(Q_sram, D_simd, origin); \
 \
@@ -256,15 +302,15 @@ if (D_simd != D && d == D_floor) {\
 } \
 \
 if (D % 2 == 0) { \
-if (write[1]) { \
+if (load[1]) { \
 q->load(Q_src, Q_leading_dim, origin, Q_trans); \
 } \
 } else { \
-if (write[0]) { \
+if (load[0]) { \
 q->load_first(Q_src, Q_leading_dim, origin, Q_trans); \
 } \
 origin.x += 1; \
-if (write[1]) { \
+if (load[1]) { \
 q->load_second(Q_src, Q_leading_dim, origin, Q_trans); \
 } \
 } \
@@ -284,12 +330,10 @@ q->load_second(Q_src, Q_leading_dim, origin, Q_trans); \
 #pragma clang loop unroll(full)
         LOAD_QUERIES
       }
-    } else {
-      if (offset_in_simd.y < R_modulo) {
-        ushort r = R_floor;
+    } else if (offset_in_simd.y < R_modulo) {
+      ushort r = R_floor;
 #pragma clang loop unroll(full)
-        LOAD_QUERIES
-      }
+      LOAD_QUERIES
     }
   }
   
@@ -391,6 +435,42 @@ q->load_second(Q_src, Q_leading_dim, origin, Q_trans); \
     
     // Apply explicit mask.
     if (masked && flags == 2) {
+#if DIRECT_LOAD_STORE
+      ushort C_edge = (C % C_simd == 0) ? C_simd : (C % C_simd);
+      ushort C_floor = C_edge / 8 * 8;
+      ushort C_modulo = C_edge - C_floor;
+      
+      bool2 load = false;
+      if (C != C_simd) {
+        if (C % 2 == 1) {
+          load[0] = (offset_in_simd.x + 1 <= C_modulo);
+        }
+        load[1] = (offset_in_simd.x + 2 <= C_modulo);
+      }
+      uint2 mask_offset(j_block * C_simd, QO_offset.y);
+      bool in_bounds = mask_offset.x + C_simd <= C;
+      mask_offset.x += offset_in_simd.x;
+      auto mask_src = simdgroup_matrix_storage<T>::apply_offset(mask, C, mask_offset);
+      
+#pragma clang loop unroll(full)
+      for (ushort r = 0; r < R_floor; r += 8) {
+        apply_mask(r, in_bounds, load, mask_src, attention_matrix);
+      }
+      
+      if (R_edge > 0) {
+        if (QO_in_bounds) {
+    #pragma clang loop unroll(full)
+          for (ushort r = R_floor; r < R_simd; r += 8) {
+            apply_mask(r, in_bounds, load, mask_src, attention_matrix);
+          }
+        } else {
+          if (offset_in_simd.y < R_modulo) {
+            apply_mask(R_floor, in_bounds, load, mask_src, attention_matrix);
+          }
+        }
+      }
+      
+#else
       threadgroup_barrier(mem_flags::mem_threadgroup);
       if (sidx == 0) {
         uint2 mask_offset(j_block * C_simd, gid.x * R_group);
@@ -419,6 +499,7 @@ q->load_second(Q_src, Q_leading_dim, origin, Q_trans); \
           *(s->thread_elements()) += *(mask.thread_elements());
         }
       }
+#endif
     }
     
     // Apply edge mask.
@@ -564,7 +645,7 @@ q->load_second(Q_src, Q_leading_dim, origin, Q_trans); \
   
 #define STORE_OUTPUT \
 for (ushort d = 0; d <= D_floor; d += 8) { \
-bool2 write = (d == D_floor) ? QO_write : bool2(true); \
+bool2 write = (d == D_floor) ? QO_load_store : bool2(true); \
 ushort2 origin(d, r); \
 auto o = get_sram(output_matrix, D_simd, origin); \
 \
@@ -596,12 +677,10 @@ o->store_second(O_dst, O_leading_dim, origin, O_trans); \
 #pragma clang loop unroll(full)
         STORE_OUTPUT
       }
-    } else {
-      if (offset_in_simd.y < R_modulo) {
-        ushort r = R_floor;
+    } else if (offset_in_simd.y < R_modulo) {
+      ushort r = R_floor;
 #pragma clang loop unroll(full)
-        STORE_OUTPUT
-      }
+      STORE_OUTPUT
     }
   }
 #else

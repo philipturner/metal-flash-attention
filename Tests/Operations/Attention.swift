@@ -54,7 +54,7 @@ struct MFA_Attention: Attention, MFA_Operation {
   var parameters: Attention_Parameters
   
   static var functionConstants: [String: MTLConvertible] = [
-    "R_simd": UInt16(16), // 16
+    "R_simd": UInt16(8), // 16
     "C_simd": UInt16(64), // 64
     "R_splits": UInt16(4), // 4
   ]
@@ -109,18 +109,18 @@ struct MFA_Attention: Attention, MFA_Operation {
     
     let D_simd = UInt16(pcopy.D + 7) / 8 * 8
     let R_group = R_simd * R_splits
-    let Q_block_length = R_group * D_simd
+//    let Q_block_length = R_group * D_simd
     let K_block_length = D_simd * C_simd
     let V_block_length = C_simd * D_simd
-    let O_block_length = R_group * D_simd
+//    let O_block_length = R_group * D_simd
     
-    var blockElements = max(Q_block_length, K_block_length)
-    blockElements = max(blockElements, V_block_length)
-    blockElements = max(blockElements, O_block_length)
-    if pcopy.masked {
-      let mask_block_length = R_group * C_simd
-      blockElements = max(blockElements, mask_block_length)
-    }
+    var blockElements = max(K_block_length, V_block_length)
+//    blockElements = max(blockElements, Q_block_length)
+//    blockElements = max(blockElements, O_block_length)
+//    if pcopy.masked {
+//      let mask_block_length = R_group * C_simd
+//      blockElements = max(blockElements, mask_block_length)
+//    }
     let blockBytes = blockElements * UInt16(dataType.size)
     
     func ceilDivide(target: Int, granularity: UInt16) -> Int {

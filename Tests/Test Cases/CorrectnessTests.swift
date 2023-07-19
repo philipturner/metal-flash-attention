@@ -217,7 +217,6 @@ class CorrectnessTests: MFATestCase {
       }
       randomInts[2] = min(randomInts[2], 8)
       randomInts.replace(with: .one, where: randomInts .== .zero)
-      
       return randomInts
     }
     
@@ -417,15 +416,29 @@ class CorrectnessTests: MFATestCase {
         
         if !mfa_O.isApproximatelyEqual(to: mps_O, parameters: params) {
           if let batchSize {
-            for batchIndex in 0..<batchSize {
-              for slice in 0..<H {
-                let prefix = "(\(batchIndex), \(slice))"
-                let sliceObj = PythonObject(tupleOf: batchIndex, slice)
-                MPL_showComparison(
-                  actual: mfa_O, actualName: "\(prefix) MFA",
-                  expected: mps_O, expectedName: "\(prefix) MPS",
-                  parameters: params, slice: sliceObj,
-                  transpose: O_trans)
+            if !O_trans {
+              print("Can't render this matrix because O not transposed.")
+            } else {
+              for batchIndex in 0..<batchSize {
+                var _mfa_O = Tensor(
+                  slicing: mfa_O,
+                  indices: [batchIndex],
+                  lastSlicedDim: 0,
+                  backend: .mfa)
+                var _mps_O = Tensor(
+                  slicing: mps_O,
+                  indices: [batchIndex],
+                  lastSlicedDim: 0,
+                  backend: .mps)
+                
+                for slice in 0..<H {
+                  let prefix = "(\(batchIndex), \(slice))"
+                  MPL_showComparison(
+                    actual: _mfa_O, actualName: "\(prefix) MFA",
+                    expected: _mps_O, expectedName: "\(prefix) MPS",
+                    parameters: params, slice: PythonObject(slice),
+                    transpose: O_trans)
+                }
               }
             }
           } else {
