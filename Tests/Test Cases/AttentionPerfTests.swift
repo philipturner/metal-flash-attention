@@ -289,15 +289,53 @@ class AttentionPerfTests: MFATestCase {
   }
   
 #if DEBUG
-static let verifyResults = true
+  static let verifyResults = false
 #else
-static let verifyResults = false
+  static let verifyResults = false
 #endif
   
   func testAttention(
     ranges: [AttentionRange],
     backends: [AttentionBackend]
   ) -> AttentionData {
+    struct Tensors {
+      var q: Tensor<Real>
+      var k: Tensor<Real>
+      var v: Tensor<Real>
+      var o: Tensor<Real>
+      var mask: Tensor<Real>?
+      
+      init(config: AttentionConfig) {
+        var B: [Int] = []
+        if config.B > 1 {
+          B += [config.B]
+        }
+        
+        let R = config.R
+        let C = config.C
+        let H = config.H
+        let D = config.D
+        let shapeQ = B + [R, H, D]
+        let shapeK = B + [C, H, D]
+        let shapeV = B + [C, H, D]
+        let shapeO = B + [R, H, D]
+        self.q = Tensor(shape: shapeQ, randomUniform: 0..<1)
+        self.k = Tensor(shape: shapeK, randomUniform: 0..<1)
+        self.v = Tensor(shape: shapeV, randomUniform: 0..<1)
+        self.o = Tensor(zerosLike: shapeO)
+        self.mask = nil
+      }
+      
+      init(_ other: Tensors, backend: TensorBackend) {
+        self.q = Tensor(copying: other.q, backend: backend)
+        self.k = Tensor(copying: other.k, backend: backend)
+        self.v = Tensor(copying: other.v, backend: backend)
+        self.o = Tensor(copying: other.o, backend: backend)
+        if let mask = other.mask {
+          self.mask = Tensor(copying: mask, backend: backend)
+        }
+      }
+    }
     
     @discardableResult
     func runAttention(
@@ -305,18 +343,73 @@ static let verifyResults = false
       trials: Int,
       iterations: Int
     ) -> Float {
+      var tensors = Tensors(config: config)
+      var minTime: Double = .infinity
       let backend = TensorBackend.default
-      backend.markFirstCommand()
-      backend.markLastCommand()
-      _ = backend.synchronize()
-      return 0
+      for _ in 0..<trials {
+        backend.markFirstCommand()
+        for _ in 0..<iterations {
+          tensors.o.attention(
+            queries: tensors.q,
+            keys: tensors.k,
+            values: tensors.v,
+            transposeK: true)
+        }
+        backend.markLastCommand()
+        minTime = min(minTime, backend.synchronize())
+      }
+      
+      var floatOps = config.B
+      floatOps *= config.R
+      floatOps *= config.C
+      floatOps *= config.H
+      floatOps *= (4 * config.D + 10)
+      floatOps *= iterations
+      
+      let flops = Double(floatOps) / minTime
+      return Float(flops / 1e9)
     }
     
     func verifyResults(
       config: AttentionConfig,
       backendMPS: AttentionBackend
     ) {
+      var mfaTensors = Tensors(config: config)
+      let mps = backendMPS.tensorBackend
+      var mpsTensors = Tensors(mfaTensors, backend: mps)
       
+      _ExecutionContext.profileCommands {
+        mfaTensors.o.attention(
+          queries: mfaTensors.q,
+          keys: mfaTensors.k,
+          values: mfaTensors.v,
+          transposeK: true)
+      }
+      
+      _ExecutionContext.withDefaultBackend(mps) {
+        _ExecutionContext.profileCommands {
+          mpsTensors.o.attention(
+            queries: mpsTensors.q,
+            keys: mpsTensors.k,
+            values: mpsTensors.v,
+            transposeK: true)
+        }
+      }
+      
+      let params = EuclideanDistanceParameters(
+        averageMagnitude: 1.0,
+        averageDeviation: 0.2,
+        batchSize: config.B * config.H)
+      let failed = !mfaTensors.o.isApproximatelyEqual(
+        to: mpsTensors.o, parameters: params)
+      if failed {
+        print("Failure: \(config.description)")
+        
+        let dist = mfaTensors.o.euclideanDistance(to: mpsTensors.o)
+        print(" - Distance: \(String(format: "%.3f", dist))")
+        print(" - Cannot visualize because O_trans not true.")
+      }
+      print("Verified results for config \(config)")
     }
     
     var data = AttentionData(backends: backends)
@@ -351,7 +444,6 @@ static let verifyResults = false
                 verifyResults(
                   config: config,
                   backendMPS: backend.equivalentMPS)
-                print("Verified results for config \(config)")
               }
             }
             
@@ -383,7 +475,7 @@ static let verifyResults = false
             let backendRepr = backend.description
             let configRepr = config.description
             let gflopsRepr = Int(round(gflops))
-            print("(\(backendRepr)) \(configRepr) - \(gflopsRepr)")
+            print("(\(backendRepr)) \(configRepr) - \(gflopsRepr) GFLOPS")
           }
           
           data.append(backend: backend, data: samples)
