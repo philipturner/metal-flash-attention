@@ -217,6 +217,7 @@ class CorrectnessTests: MFATestCase {
       }
       randomInts[2] = min(randomInts[2], 8)
       randomInts.replace(with: .one, where: randomInts .== .zero)
+      
       return randomInts
     }
     

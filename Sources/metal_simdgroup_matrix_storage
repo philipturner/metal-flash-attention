@@ -70,7 +70,7 @@ namespace metal
       if (transpose_matrix) {
         *(thread_elements()) = vec<T, 2>(src[ulong(matrix_origin.x * elements_per_row) + matrix_origin.y], src[ulong((matrix_origin.x + 1) * elements_per_row) + matrix_origin.y]);
       } else {
-        *(thread_elements()) = *reinterpret_cast<device vec<T, 2>*>(src + ulong(matrix_origin.y * elements_per_row) + matrix_origin.x);
+        *(thread_elements()) = *reinterpret_cast<const device vec<T, 2>*>(src + ulong(matrix_origin.y * elements_per_row) + matrix_origin.x);
       }
     }
     
@@ -82,7 +82,7 @@ namespace metal
       }
     }
     
-    METAL_FUNC void load_first(const threadgroup T *src, ushort elements_per_row, ushort2 matrix_origin, bool transpose_matrix = false) {
+    METAL_FUNC void load_first(const device T *src, ushort elements_per_row, ushort2 matrix_origin, bool transpose_matrix = false) {
       if (transpose_matrix) {
         thread_elements()[0][0] = src[matrix_origin.x * elements_per_row + matrix_origin.y];
       } else {
@@ -90,7 +90,7 @@ namespace metal
       }
     }
     
-    METAL_FUNC void load_second(const threadgroup T *src, ushort elements_per_row, ushort2 matrix_origin, bool transpose_matrix = false) {
+    METAL_FUNC void load_second(const device T *src, ushort elements_per_row, ushort2 matrix_origin, bool transpose_matrix = false) {
       if (transpose_matrix) {
         thread_elements()[0][1] = src[matrix_origin.x * elements_per_row + matrix_origin.y];
       } else {

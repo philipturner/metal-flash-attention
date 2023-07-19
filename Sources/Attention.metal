@@ -223,6 +223,77 @@ void _attention_impl(device T *Q [[buffer(0)]],
   float m_sram[128];
   
   // Load Q block.
+#if DIRECT_LOAD_STORE
+  ushort D_floor = D / 8 * 8;
+  ushort D_modulo = D - D_floor;
+  ushort R_edge = (R % R_simd == 0) ? R_simd : (R % R_simd);
+  ushort R_floor = R_edge / 8 * 8;
+  ushort R_modulo = R_edge - R_floor;
+  
+  bool2 QO_write = false;
+  if (D != D_simd) {
+    if (D % 2 == 1) {
+      QO_write[0] = (offset_in_simd.x + 1 <= D_modulo);
+    }
+    QO_write[1] = (offset_in_simd.x + 2 <= D_modulo);
+  }
+  uint2 QO_offset = uint2(0, gid.x * R_group + sidx * R_simd);
+  bool QO_in_bounds = QO_offset.y + R_simd <= R;
+  QO_offset += uint2(offset_in_simd);
+  
+  auto Q_src = simdgroup_matrix_storage<T>::apply_offset(Q, Q_leading_dim, QO_offset, Q_trans);
+  Q_src += head_offsets[3] * (Q_trans ? D * R : D);
+  Q_src = apply_batch_offset(Q_src, gid.z * R * H * D);
+  
+#define LOAD_QUERIES \
+for (ushort d = 0; d <= D_floor; d += 8) { \
+bool2 write = (d == D_floor) ? QO_write : bool2(true); \
+ushort2 origin(d, r); \
+auto q = get_sram(Q_sram, D_simd, origin); \
+\
+if (D_simd != D && d == D_floor) {\
+*q = simdgroup_matrix_storage<T>(0); \
+} \
+\
+if (D % 2 == 0) { \
+if (write[1]) { \
+q->load(Q_src, Q_leading_dim, origin, Q_trans); \
+} \
+} else { \
+if (write[0]) { \
+q->load_first(Q_src, Q_leading_dim, origin, Q_trans); \
+} \
+origin.x += 1; \
+if (write[1]) { \
+q->load_second(Q_src, Q_leading_dim, origin, Q_trans); \
+} \
+} \
+} \
+
+#if DIRECT_LOAD_STORE
+#pragma clang loop unroll(full)
+  for (ushort r = 0; r < R_floor; r += 8) {
+#pragma clang loop unroll(full)
+    LOAD_QUERIES
+  }
+  
+  if (R_edge > 0) {
+    if (QO_in_bounds) {
+#pragma clang loop unroll(full)
+      for (ushort r = R_floor; r < R_simd; r += 8) {
+#pragma clang loop unroll(full)
+        LOAD_QUERIES
+      }
+    } else {
+      if (offset_in_simd.y < R_modulo) {
+        ushort r = R_floor;
+#pragma clang loop unroll(full)
+        LOAD_QUERIES
+      }
+    }
+  }
+  
+#else
   if (sidx == 0) {
     uint2 Q_offset(0, gid.x * R_group);
     ushort2 src_tile(D, min(uint(R_group), R - Q_offset.y));
@@ -236,6 +307,7 @@ void _attention_impl(device T *Q [[buffer(0)]],
     event.async_copy(threadgroup_block, Q_block_leading_dim, dst_tile, Q_src, Q_leading_dim, src_tile, Q_trans);
     simdgroup_event::wait(1, &event);
   }
+#endif
   
   // Initialize O, l, m.
 #pragma clang loop unroll(full)
@@ -248,6 +320,8 @@ void _attention_impl(device T *Q [[buffer(0)]],
     l_sram[r / 8] = numeric_limits<float>::denorm_min();
     m_sram[r / 8] = -numeric_limits<float>::max();
   }
+  
+#else
   auto Q_offset = ushort2(0, sidx * R_simd) + offset_in_simd;
   auto Q_block = simdgroup_matrix_storage<T>::apply_offset(threadgroup_block, Q_block_leading_dim, Q_offset, Q_trans);
   
@@ -261,6 +335,7 @@ void _attention_impl(device T *Q [[buffer(0)]],
       q->load(Q_block, Q_block_leading_dim, origin, Q_trans);
     }
   }
+#endif
   
   uint j_block_max = (C + C_simd - 1) / C_simd;
   for (uint j_block = 0; j_block < j_block_max; j_block += 1) {
@@ -482,23 +557,6 @@ void _attention_impl(device T *Q [[buffer(0)]],
       *get_sram(output_matrix, D_simd, origin) = o;
     }
   }
-  
-  ushort D_floor = D / 8 * 8;
-  ushort D_modulo = D - D_floor;
-  ushort R_edge = (R % R_simd == 0) ? R_simd : (R % R_simd);
-  ushort R_floor = R_edge / 8 * 8;
-  ushort R_modulo = R_edge - R_floor;
-  
-  bool2 QO_write = false;
-  if (D != D_simd) {
-    if (D % 2 == 1) {
-      QO_write[0] = (offset_in_simd.x + 1 <= D_modulo);
-    }
-    QO_write[1] = (offset_in_simd.x + 2 <= D_modulo);
-  }
-  uint2 QO_offset = uint2(0, gid.x * R_group + sidx * R_simd);
-  bool QO_in_bounds = QO_offset.y + R_simd <= R;
-  QO_offset += uint2(offset_in_simd);
   
   auto O_dst = simdgroup_matrix_storage<T>::apply_offset(O, O_leading_dim, QO_offset, O_trans);
   O_dst += head_offsets[3] * (O_trans ? D * R : D);
