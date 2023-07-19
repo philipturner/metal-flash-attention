@@ -14,9 +14,15 @@ class AttentionPerfTests: MFATestCase {
   }
   
   override func runVeryLongTests() {
-    let duration = Duration(granularity: 8, length: 1)
-    let ranges = rangeSequenceScaling(duration: duration, isLarge: false)
-    _ = testAttention(ranges: ranges, backends: [.mps, .mfa])
+    print()
+    
+    // 8 for small, 128 for large, length 1 while prototyping
+    // 4 for small, 64 for large, length 2 for production
+    let duration = Duration(granularity: 64, length: 2)
+    let (domain, ranges) = rangeSequenceScaling(
+      duration: duration, isLarge: true)
+    testAttention(
+      domain: domain, ranges: ranges, backends: [.mps, .mfa])
   }
   
   struct AttentionConfig: Equatable, Hashable {
@@ -88,11 +94,11 @@ class AttentionPerfTests: MFATestCase {
   }
   
   enum AttentionBackend: Int {
-    case mps
-    case mpsMasked
-    case mfa
-    case mfaTriangular
-    case mfaBlockSparse
+    case mps = 0
+    case mpsMasked = 1
+    case mfa = 2
+    case mfaTriangular = 3
+    case mfaBlockSparse = 4
     
     var tensorBackend: TensorBackend {
       switch self {
@@ -191,9 +197,6 @@ class AttentionPerfTests: MFATestCase {
       cursor.less(than: exclusiveEnd, axes: stride)
     }
     
-    // Duplicate the first test (all trials), discard the sample.
-    // Then duplicate the last test (all trials), discard the sample.
-    // Finally, start the trials.
     var testsPerContextSwitch: Int
     var commandsPerEncoder: Int
     var trials: Int
@@ -224,11 +227,13 @@ class AttentionPerfTests: MFATestCase {
   
   func rangeSequenceScaling(
     duration: Duration, isLarge: Bool
-  ) -> [AttentionRange] {
+  ) -> (ClosedRange<Int>, [AttentionRange]) {
     let granularity = duration.granularity
     
+    var domain: ClosedRange<Int>
     var parameters: [SIMD4<Int>]
     if !isLarge {
+      domain = 0...2048
       parameters = [
         SIMD4(granularity, 192, 256, 8),
         SIMD4( 192,  256, 128, 8),
@@ -241,16 +246,17 @@ class AttentionPerfTests: MFATestCase {
       ]
     } else {
       precondition(granularity >= 16, "Granularity is too small.")
+      domain = 2048...8192
       parameters = [
         SIMD4(2048, 3072, 16, 8),
         SIMD4(3072, 4096,  8, 8),
         SIMD4(4096, 6144,  4, 8),
-        SIMD4(6144, 8192,  2, 8),
+        SIMD4(6144, 8193,  2, 8),
       ]
     }
     
     let headCount = isLarge ? 5 : 10
-    return parameters.map { parameter in
+    return (domain, parameters.map { parameter in
       let start = AttentionConfig(
         B: 1,
         R: parameter[0],
@@ -294,7 +300,7 @@ class AttentionPerfTests: MFATestCase {
         trials: trials,
         commandsPerEncoderMPS: iterationsMPS,
         trialsMPS: trialsMPS)
-    }
+    })
   }
   
 #if DEBUG
@@ -304,9 +310,10 @@ class AttentionPerfTests: MFATestCase {
 #endif
   
   func testAttention(
+    domain: ClosedRange<Int>,
     ranges: [AttentionRange],
     backends: [AttentionBackend]
-  ) -> AttentionData {
+  ) {
     struct Tensors {
       var q: Tensor<Real>
       var k: Tensor<Real>
@@ -470,8 +477,6 @@ class AttentionPerfTests: MFATestCase {
                 trials: range.getTrials(backend: backend),
                 iterations: range.getIterations(backend: backend))
               
-              // TODO: Allow certain ranges to be blacklisted for MPS, so we can
-              // represent "error" as 0 GFLOPS.
               if record {
                 samples[index] = (config, gflops)
               }
@@ -491,8 +496,50 @@ class AttentionPerfTests: MFATestCase {
       }
     }
     
-    return data
+    let H = ranges.first!.exclusiveEnd.H
+    let D = ranges.first!.exclusiveEnd.D
+    let title = "H=\(H), D=\(D)"
+    graph(
+      data: data,
+      axis: \.R,
+      domain: domain,
+      independentVariable: "Sequence Length",
+      title: title)
   }
   
-  // TODO: Function to graph data in Matplotlib along one axis.
+  func graph(
+    data: AttentionData,
+    axis: KeyPath<AttentionConfig, Int>,
+    domain: ClosedRange<Int>,
+    independentVariable: String,
+    title: String
+  ) {
+    let plt = PythonContext.global.plt
+    for key in data.gflops.keys.sorted(by: { $0.rawValue < $1.rawValue }) {
+      let value = data.gflops[key]!
+      let label = key.description
+      let sizeArray = value.map { $0.0[keyPath: axis] }
+      
+      let gflopsArray = value.map { $0.1 }
+      let style = key.mplColor
+      plt.plot(sizeArray, gflopsArray, style, label: label)
+    }
+    plt.legend(loc: "upper left")
+    plt.xlim(domain.lowerBound, domain.upperBound)
+    plt.ylim(0, MetalContext.global.infoDevice.flops / 1e9)
+    plt.xlabel(independentVariable)
+    plt.ylabel("GFLOPS")
+    
+#if DEBUG
+    let debugWarning = " (NOT USABLE FOR CI)"
+#else
+    let debugWarning = ""
+#endif
+    if Real.self == Float.self {
+      plt.title("FlashAttention (F32, \(title))\(debugWarning)")
+    } else {
+      plt.title("FlashAttention (F16, \(title))\(debugWarning)")
+    }
+    plt.show()
+  }
 }

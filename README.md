@@ -4,7 +4,7 @@ A faster alternative to Metal Performance Shaders, a reference implementation of
 
 Algorithms:
 - [ ] Attention
-  - [ ] Dense
+  - [x] Dense (87.0% ALU)
   - [ ] Block-Sparse
   - [ ] Grouped-Query
 - [ ] Convolution
@@ -182,18 +182,24 @@ Scaling by sparsity:
 
 | Precision | D Start | D End | Block R | Block C |
 | - | - | - | - | - |
-| Float32 | TBD | TBD | TBD | TBD |
-| Float16 | TBD | TBD | TBD | TBD |
+| Float32 | 64 | 64 | 32 | 32 |
+| Float16 | 64 | 64 | 32 | 48 |
 
 ### Float32 Sequence Scaling (Small)
+
+![FlashAttention (F32, H=10, D=64)](./CI/float32-small-sequences-latest.png)
 
 ### Float16 Sequence Scaling (Small)
 
 Dense: Stable Diffusion XL outermost attention layer @ 512x512 (sequence length = 1024)
 
+![FlashAttention (F16, H=10, D=64)](./CI/float16-small-sequences-latest.png)
+
 ### Float16 Sequence Scaling (Large)
 
 Dense: Stable Diffusion 2 outermost attention layer @ 512x512 (sequence length = 4096)
+
+![FlashAttention (F16, H=5, D=64)](./CI/float16-large-sequences-latest.png)
 
 ### Float32 Head Scaling
 

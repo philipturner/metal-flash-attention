@@ -21,7 +21,7 @@ using namespace metal;
 
 // Whether to bypass threadgroup memory and write the accumulator directly to
 // device memory. This allows more flexibility in threadgroup block sizes.
-#define DIRECT_LOAD_STORE 1
+#define DIRECT_LOAD_STORE 0
 
 // Dimensions of each matrix.
 constant uint R [[function_constant(0)]];
@@ -316,7 +316,6 @@ q->load_second(Q_src, Q_leading_dim, origin, Q_trans); \
 } \
 } \
 
-#if DIRECT_LOAD_STORE
 #pragma clang loop unroll(full)
   for (ushort r = 0; r < R_floor; r += 8) {
 #pragma clang loop unroll(full)
@@ -365,7 +364,7 @@ q->load_second(Q_src, Q_leading_dim, origin, Q_trans); \
     m_sram[r / 8] = -numeric_limits<float>::max();
   }
   
-#else
+#if !DIRECT_LOAD_STORE
   auto Q_offset = ushort2(0, sidx * R_simd) + offset_in_simd;
   auto Q_block = simdgroup_matrix_storage<T>::apply_offset(threadgroup_block, Q_block_leading_dim, Q_offset, Q_trans);
   

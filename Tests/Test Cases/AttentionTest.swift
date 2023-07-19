@@ -9,7 +9,8 @@ import Metal
 import PythonKit
 
 func showMaskTest() {
-  let maskIsTriangular = false//Float.random(in: 0..<1) < -2 // suppress warning
+  //  let maskIsTriangular = false
+  let maskIsTriangular = Float.random(in: 0..<1) < -2 // suppress warning
   let maskPlane = 0//2
   #if arch(arm64)
   typealias Real = Float16

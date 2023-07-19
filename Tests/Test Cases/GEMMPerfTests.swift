@@ -364,14 +364,14 @@ class GEMMPerfTests: MFATestCase {
       configRepr += ", Batched, \(batchSize)xA"
     }
 #if DEBUG
-    let debugWarning = "(NOT USABLE FOR CI)"
+    let debugWarning = " (NOT USABLE FOR CI)"
 #else
     let debugWarning = ""
 #endif
     if Real.self == Float.self {
-      plt.title("Float32 Utilization (\(configRepr)) \(debugWarning)")
+      plt.title("Float32 Utilization (\(configRepr))\(debugWarning)")
     } else {
-      plt.title("Float16 Utilization (\(configRepr)) \(debugWarning)")
+      plt.title("Float16 Utilization (\(configRepr))\(debugWarning)")
     }
     plt.show()
   }

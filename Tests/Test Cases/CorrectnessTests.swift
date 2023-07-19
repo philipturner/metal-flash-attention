@@ -420,12 +420,12 @@ class CorrectnessTests: MFATestCase {
               print("Can't render this matrix because O not transposed.")
             } else {
               for batchIndex in 0..<batchSize {
-                var _mfa_O = Tensor(
+                let _mfa_O = Tensor(
                   slicing: mfa_O,
                   indices: [batchIndex],
                   lastSlicedDim: 0,
                   backend: .mfa)
-                var _mps_O = Tensor(
+                let _mps_O = Tensor(
                   slicing: mps_O,
                   indices: [batchIndex],
                   lastSlicedDim: 0,
