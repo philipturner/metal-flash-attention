@@ -21,7 +21,7 @@ using namespace metal;
 
 // Whether to bypass threadgroup memory and write the accumulator directly to
 // device memory. This allows more flexibility in threadgroup block sizes.
-#define DIRECT_STORE 1
+#define DIRECT_LOAD_STORE 1
 
 // Dimensions of each matrix.
 constant uint R [[function_constant(0)]];
@@ -103,60 +103,6 @@ void gemm(ushort M, ushort N, ushort K, bool accumulate,
         auto c = get_sram(C, C_leading_dim, c_origin);
         c->multiply(*a, *b, accumulate);
       }
-    }
-  }
-}
-
-template <typename T>
-void load_queries(ushort r, bool2 write,
-                       device T *O_dst, thread float *l_sram,
-                       thread simdgroup_matrix_storage<T>* O_sram)
-{
-  
-}
-
-template <typename T>
-void store_output(ushort r, bool2 write,
-                       device T *O_dst, thread float *l_sram,
-                       thread simdgroup_matrix_storage<float>* O_sram)
-{
-#if DEBUG_DISABLE_SOFTMAX
-  float l = 1;
-#else
-  float l = 1 / l_sram[r / 8];
-#endif
-  
-  ushort D_floor = D / 8 * 8;
-#pragma clang loop unroll(full)
-  for (ushort d = 0; d < D_floor; d += 8) {
-    ushort2 origin(d, r);
-    auto o_elements = get_sram(O_sram, D_simd, origin)->thread_elements();
-    simdgroup_matrix_storage<T> o(vec<T, 2>(*o_elements * l));
-    
-    if (D % 2 == 0) {
-      o.store(O_dst, O_leading_dim, origin, O_trans);
-    } else {
-      o.store_first(O_dst, O_leading_dim, origin, O_trans);
-      origin.x += 1;
-      o.store_second(O_dst, O_leading_dim, origin, O_trans);
-    }
-  }
-  
-  ushort2 origin(D_floor, r);
-  auto o_elements = get_sram(O_sram, D_simd, origin)->thread_elements();
-  simdgroup_matrix_storage<T> o(vec<T, 2>(*o_elements * l));
-  
-  if (D % 2 == 0) {
-    if (write[1]) {
-      o.store(O_dst, O_leading_dim, origin, O_trans);
-    }
-  } else {
-    if (write[0]) {
-      o.store_first(O_dst, O_leading_dim, origin, O_trans);
-    }
-    origin.x += 1;
-    if (write[1]) {
-      o.store_second(O_dst, O_leading_dim, origin, O_trans);
     }
   }
 }
@@ -519,46 +465,84 @@ void _attention_impl(device T *Q [[buffer(0)]],
   }
   
   // Write O block.
-#if DIRECT_STORE
-  uint2 O_offset = uint2(0, gid.x * R_group + sidx * R_simd);
-  bool in_bounds = O_offset.y + R_simd <= R;
-  O_offset += uint2(offset_in_simd);
-  
-  auto O_dst = simdgroup_matrix_storage<T>::apply_offset(O, O_leading_dim, O_offset, O_trans);
-  O_dst += head_offsets[3] * (O_trans ? D * R : D);
-  O_dst = apply_batch_offset(O_dst, gid.z * R * H * D);
+#if DIRECT_LOAD_STORE
+  simdgroup_matrix_storage<T> output_matrix[128];
+#pragma clang loop unroll(full)
+  for (ushort r = 0; r < R_simd; r += 8) {
+#if DEBUG_DISABLE_SOFTMAX
+    float l = 1;
+#else
+    float l = 1 / l_sram[r / 8];
+#endif
+#pragma clang loop unroll(full)
+    for (ushort d = 0; d < D_simd; d += 8) {
+      ushort2 origin(d, r);
+      auto o_elements = get_sram(O_sram, D_simd, origin)->thread_elements();
+      simdgroup_matrix_storage<T> o(vec<T, 2>(*o_elements * l));
+      *get_sram(output_matrix, D_simd, origin) = o;
+    }
+  }
   
   ushort D_floor = D / 8 * 8;
   ushort D_modulo = D - D_floor;
-  bool2 write;
-  if (D == D_simd) {
-    write[0] = false;
-    write[1] = false;
-  } else if (D % 2 == 0) {
-    write[0] = false;
-    write[1] = (offset_in_simd.x + 2 <= D_modulo);
-  } else {
-    write[0] = (offset_in_simd.x + 1 <= D_modulo);
-    write[1] = (offset_in_simd.x + 2 <= D_modulo);
-  }
-  
   ushort R_edge = (R % R_simd == 0) ? R_simd : (R % R_simd);
   ushort R_floor = R_edge / 8 * 8;
   ushort R_modulo = R_edge - R_floor;
+  
+  bool2 QO_write = false;
+  if (D != D_simd) {
+    if (D % 2 == 1) {
+      QO_write[0] = (offset_in_simd.x + 1 <= D_modulo);
+    }
+    QO_write[1] = (offset_in_simd.x + 2 <= D_modulo);
+  }
+  uint2 QO_offset = uint2(0, gid.x * R_group + sidx * R_simd);
+  bool QO_in_bounds = QO_offset.y + R_simd <= R;
+  QO_offset += uint2(offset_in_simd);
+  
+  auto O_dst = simdgroup_matrix_storage<T>::apply_offset(O, O_leading_dim, QO_offset, O_trans);
+  O_dst += head_offsets[3] * (O_trans ? D * R : D);
+  O_dst = apply_batch_offset(O_dst, gid.z * R * H * D);
+  
+#define STORE_OUTPUT \
+for (ushort d = 0; d <= D_floor; d += 8) { \
+bool2 write = (d == D_floor) ? QO_write : bool2(true); \
+ushort2 origin(d, r); \
+auto o = get_sram(output_matrix, D_simd, origin); \
+\
+if (D % 2 == 0) { \
+if (write[1]) { \
+o->store(O_dst, O_leading_dim, origin, O_trans); \
+} \
+} else { \
+if (write[0]) { \
+o->store_first(O_dst, O_leading_dim, origin, O_trans); \
+} \
+origin.x += 1; \
+if (write[1]) { \
+o->store_second(O_dst, O_leading_dim, origin, O_trans); \
+} \
+} \
+} \
+  
 #pragma clang loop unroll(full)
   for (ushort r = 0; r < R_floor; r += 8) {
-    store_output(r, write, O_dst, l_sram, O_sram);
+#pragma clang loop unroll(full)
+    STORE_OUTPUT
   }
   
   if (R_edge > 0) {
-    if (in_bounds) {
+    if (QO_in_bounds) {
 #pragma clang loop unroll(full)
       for (ushort r = R_floor; r < R_simd; r += 8) {
-        store_output(r, write, O_dst, l_sram, O_sram);
+#pragma clang loop unroll(full)
+        STORE_OUTPUT
       }
     } else {
       if (offset_in_simd.y < R_modulo) {
-        store_output(R_floor, write, O_dst, l_sram, O_sram);
+        ushort r = R_floor;
+#pragma clang loop unroll(full)
+        STORE_OUTPUT
       }
     }
   }
