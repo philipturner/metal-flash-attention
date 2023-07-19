@@ -11,7 +11,11 @@ import PythonKit
 func showMaskTest() {
   let maskIsTriangular = false//Float.random(in: 0..<1) < -2 // suppress warning
   let maskPlane = 0//2
+  #if arch(arm64)
   typealias Real = Float16
+  #else
+  typealias Real = Float32
+  #endif
 //  srand48(79)
   
   var mask: AttentionMask
@@ -51,7 +55,11 @@ func showMaskTest() {
 func showAttentionTest() {
   let expectedBackend: TensorBackend = .mps
   let actualBackend: TensorBackend = .mfa
+  #if arch(arm64)
   typealias Real = Float16
+  #else
+  typealias Real = Float32
+  #endif
   
 //  let R = 33
 //  let C = 15

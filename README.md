@@ -147,7 +147,7 @@ Scaling by sequence length:
   - Masked: triangular mask
   - Sparse: triangular mask, summarized by block-sparse mask
 - Sequence length:
-  - Small sequences: every even integer
+  - Small sequences: every multiple of 4
   - Large sequences: every multiple of 64
 - Head size: 64
 - Head count:

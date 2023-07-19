@@ -14,7 +14,7 @@ class AttentionPerfTests: MFATestCase {
   }
   
   override func runVeryLongTests() {
-    let duration = Duration(granularity: 2, length: 1)
+    let duration = Duration(granularity: 8, length: 1)
     let ranges = rangeSequenceScaling(duration: duration, isLarge: false)
     _ = testAttention(ranges: ranges, backends: [.mps, .mfa])
   }
@@ -142,6 +142,16 @@ class AttentionPerfTests: MFATestCase {
       default: return false
       }
     }
+    
+    var mplColor: String {
+      switch self {
+      case .mps: return "-r"
+      case .mpsMasked: return "-y"
+      case .mfa: return "-b"
+      case .mfaTriangular: return "-g"
+      case .mfaBlockSparse: return "-k"
+      }
+    }
   }
   
   struct AttentionData {
@@ -219,7 +229,6 @@ class AttentionPerfTests: MFATestCase {
     
     var parameters: [SIMD4<Int>]
     if !isLarge {
-      precondition(duration.granularity == 2)
       parameters = [
         SIMD4(granularity, 192, 256, 8),
         SIMD4( 192,  256, 128, 8),
@@ -289,7 +298,7 @@ class AttentionPerfTests: MFATestCase {
   }
   
 #if DEBUG
-  static let verifyResults = false
+  static let verifyResults = true
 #else
   static let verifyResults = false
 #endif

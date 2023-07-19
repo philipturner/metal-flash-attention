@@ -82,12 +82,44 @@ namespace metal
       }
     }
     
+    METAL_FUNC void load_first(const threadgroup T *src, ushort elements_per_row, ushort2 matrix_origin, bool transpose_matrix = false) {
+      if (transpose_matrix) {
+        thread_elements()[0][0] = src[matrix_origin.x * elements_per_row + matrix_origin.y];
+      } else {
+        thread_elements()[0][0] = src[matrix_origin.y * elements_per_row + matrix_origin.x];
+      }
+    }
+    
+    METAL_FUNC void load_second(const threadgroup T *src, ushort elements_per_row, ushort2 matrix_origin, bool transpose_matrix = false) {
+      if (transpose_matrix) {
+        thread_elements()[0][1] = src[matrix_origin.x * elements_per_row + matrix_origin.y];
+      } else {
+        thread_elements()[0][1] = src[matrix_origin.y * elements_per_row + matrix_origin.x];
+      }
+    }
+    
     METAL_FUNC void store(device T *dst, uint elements_per_row, ushort2 matrix_origin, bool transpose_matrix = false) {
       if (transpose_matrix) {
         dst[ulong(matrix_origin.x * elements_per_row) + matrix_origin.y] = thread_elements()[0][0];
         dst[ulong((matrix_origin.x + 1) * elements_per_row) + matrix_origin.y] = thread_elements()[0][1];
       } else {
         *reinterpret_cast<device vec<T, 2>*>(dst + matrix_origin.y * elements_per_row + matrix_origin.x) = *(thread_elements());
+      }
+    }
+    
+    METAL_FUNC void store_first(device T *dst, uint elements_per_row, ushort2 matrix_origin, bool transpose_matrix = false) {
+      if (transpose_matrix) {
+        dst[ulong(matrix_origin.x * elements_per_row) + matrix_origin.y] = thread_elements()[0][0];
+      } else {
+        dst[matrix_origin.y * elements_per_row + matrix_origin.x] = thread_elements()[0][0];
+      }
+    }
+    
+    METAL_FUNC void store_second(device T *dst, uint elements_per_row, ushort2 matrix_origin, bool transpose_matrix = false) {
+      if (transpose_matrix) {
+        dst[ulong(matrix_origin.x * elements_per_row) + matrix_origin.y] = thread_elements()[0][1];
+      } else {
+        dst[matrix_origin.y * elements_per_row + matrix_origin.x] = thread_elements()[0][1];
       }
     }
     

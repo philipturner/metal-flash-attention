@@ -62,7 +62,11 @@ extension Tensor {
         }
       }
     case .half:
+      #if arch(arm64)
       let ptr = buffer.pointer.assumingMemoryBound(to: Float16.self)
+      #else
+      let ptr = buffer.pointer.assumingMemoryBound(to: Float32.self)
+      #endif
       for i in 0..<elements {
         if ptr[i].isNaN {
           return true

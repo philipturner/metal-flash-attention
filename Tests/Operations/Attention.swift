@@ -57,10 +57,6 @@ struct MFA_Attention: Attention, MFA_Operation {
     "R_simd": UInt16(16), // 16
     "C_simd": UInt16(64), // 64
     "R_splits": UInt16(4), // 4
-    
-    // TODO: Set block_sparse as a function constant here, allocate an
-    // exponentially expanding scratch buffer on the backend.
-    "block_sparse": Bool(false)
   ]
   
   init(parameters: Attention_Parameters) {
@@ -89,10 +85,7 @@ struct MFA_Attention: Attention, MFA_Operation {
     constants.setConstantValue(&dataTypeRawValue, type: .uint, index: 30)
     constants.setConstantValue(&pcopy.batched, type: .bool, index: 100)
     constants.setConstantValue(&pcopy.masked, type: .bool, index: 50000)
-    
-    var block_sparse = Self.functionConstants["block_sparse"] as! Bool
-    precondition(!block_sparse, "Block sparsity not supported yet.")
-    constants.setConstantValue(&block_sparse, type: .bool, index: 102)
+    constants.setConstantValue(&pcopy.blockSparse, type: .bool, index: 102)
     
     var forward = true
     var backward = false
@@ -149,7 +142,7 @@ struct MFA_Attention: Attention, MFA_Operation {
     if parameters.masked {
       flags |= 0x2
     }
-    if block_sparse {
+    if parameters.blockSparse {
       flags |= 0x4
     }
     return AsyncPipeline(
@@ -419,7 +412,11 @@ struct MPS_Attention: Attention, MPS_Operation {
       if dataType == .float {
         value = Double(-Float.greatestFiniteMagnitude / 2)
       } else {
+        #if arch(arm64)
         value = Double(-Float16.greatestFiniteMagnitude / 2)
+        #else
+        value = Double(-Float.greatestFiniteMagnitude / 2)
+        #endif
       }
       let scalar = graph.constant(
         value,
@@ -580,8 +577,12 @@ struct Py_Attention: Attention, Py_Operation {
         zeroMask = np.less_equal(
           attentionMatrix, -Float.greatestFiniteMagnitude / 2)
       } else {
+        #if arch(arm64)
         zeroMask = np.less_equal(
           attentionMatrix, Float(-Float16.greatestFiniteMagnitude / 2))
+        #else
+        fatalError()
+        #endif
       }
     }
     
