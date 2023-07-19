@@ -110,7 +110,6 @@ class GEMMPerfTests: MFATestCase {
         self.currentConfig = nil
       }
       
-      // If initial, this will run a ghost pass.
       mutating func _profile(
         sizes: Range<Int>, granularity: Int,
         trialsExtension: Int, isInitial: Bool,

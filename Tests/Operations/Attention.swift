@@ -35,6 +35,7 @@ struct Attention_Parameters: Hashable, Equatable {
   var O_trans: Bool
   var batched: Bool
   var masked: Bool
+  var blockSparse: Bool
   
   // These are only needed by MPSGraph; MFA supports dynamic batch size.
   var batchDimensionsQ: [Int]?
@@ -96,9 +97,11 @@ struct MFA_Attention: Attention, MFA_Operation {
     var forward = true
     var backward = false
     var generateBlockMask = false
+    var groupedQuery = false
     constants.setConstantValue(&forward, type: .bool, index: 103)
     constants.setConstantValue(&backward, type: .bool, index: 104)
     constants.setConstantValue(&generateBlockMask, type: .bool, index: 105)
+    constants.setConstantValue(&groupedQuery, type: .bool, index: 106)
     
     var R_simd = Self.functionConstants["R_simd"] as! UInt16
     var C_simd = Self.functionConstants["C_simd"] as! UInt16
@@ -239,7 +242,7 @@ struct MFA_Attention: Attention, MFA_Operation {
       let tensorMask = tensors.mask! as! MFA_TensorBuffer
       let maskShape = tensors.mask!.shape
       assert(maskShape[maskShape.count - 3] == 1)
-      encoder.setBuffer(tensorMask.buffer, offset: 0, index: 11)
+      encoder.setBuffer(tensorMask.buffer, offset: 0, index: 12)
     }
     
     var gridSize = resource.gridSize

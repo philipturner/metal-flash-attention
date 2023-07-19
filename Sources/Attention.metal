@@ -46,6 +46,7 @@ constant bool block_sparse [[function_constant(102)]];
 constant bool forward [[function_constant(103)]];
 constant bool backward [[function_constant(104)]];
 constant bool generate_block_mask [[function_constant(105)]];
+constant bool grouped_query [[function_constant(106)]];
 
 constant ushort R_simd [[function_constant(200)]];
 constant ushort C_simd [[function_constant(201)]];
@@ -191,8 +192,9 @@ void _attention_impl(device T *Q [[buffer(0)]],
                      device T *O [[buffer(3)]],
                      
                      threadgroup T *threadgroup_block [[threadgroup(0)]],
-                     device T *mask [[buffer(11), function_constant(masked)]],
-                     device uchar *block_mask [[buffer(12), function_constant(block_sparse)]],
+                     constant uint4 *query_offsets [[buffer(11), function_constant(grouped_query)]],
+                     device T *mask [[buffer(12), function_constant(masked)]],
+                     device uchar *block_mask [[buffer(13), function_constant(block_sparse)]],
                      
                      uint3 gid [[threadgroup_position_in_grid]],
                      ushort sidx [[simdgroup_index_in_threadgroup]],
@@ -206,6 +208,11 @@ void _attention_impl(device T *Q [[buffer(0)]],
   }
   
   ushort2 offset_in_simd = simdgroup_matrix_storage<T>::offset(lane_id);
+  uint4 head_offsets = gid.y;
+  if (grouped_query) {
+    head_offsets = query_offsets[gid.y];
+  }
+  
   simdgroup_matrix_storage<T> Q_sram[128];
   simdgroup_matrix_storage<float> O_sram[128];
   float l_sram[128];
@@ -218,7 +225,7 @@ void _attention_impl(device T *Q [[buffer(0)]],
     ushort2 dst_tile(D_simd, src_tile.y);
     
     auto Q_src = simdgroup_matrix_storage<T>::apply_offset(Q, Q_leading_dim, Q_offset, Q_trans);
-    Q_src += gid.y * (Q_trans ? D * R : D);
+    Q_src += head_offsets[0] * (Q_trans ? D * R : D);
     Q_src = apply_batch_offset(Q_src, gid.z * R * H * D);
     
     simdgroup_event event;
@@ -269,7 +276,7 @@ void _attention_impl(device T *Q [[buffer(0)]],
       ushort2 dst_tile(src_tile.x, D);
       
       auto K_src = simdgroup_matrix_storage<T>::apply_offset(K, K_leading_dim, K_offset, K_trans);
-      K_src += gid.y * (K_trans ? D : D * C);
+      K_src += head_offsets[1] * (K_trans ? D : D * C);
       K_src = apply_batch_offset(K_src, gid.z * C * H * D);
       
       simdgroup_event event;
@@ -427,7 +434,7 @@ void _attention_impl(device T *Q [[buffer(0)]],
       ushort2 dst_tile(D, C_simd);
       
       auto V_src = simdgroup_matrix_storage<T>::apply_offset(V, V_leading_dim, V_offset, V_trans);
-      V_src += gid.y * (V_trans ? D * C : D);
+      V_src += head_offsets[2] * (V_trans ? D * C : D);
       V_src = apply_batch_offset(V_src, gid.z * C * H * D);
       
       simdgroup_event event;
@@ -479,7 +486,7 @@ void _attention_impl(device T *Q [[buffer(0)]],
     ushort2 tile(D, min(uint(R_group), R - O_offset.y));
     
     auto O_dst = simdgroup_matrix_storage<T>::apply_offset(O, O_leading_dim, O_offset, O_trans);
-    O_dst += gid.y * (O_trans ? D * R : D);
+    O_dst += head_offsets[3] * (O_trans ? D * R : D);
     O_dst = apply_batch_offset(O_dst, gid.z * R * H * D);
     
     simdgroup_event event;
@@ -494,8 +501,9 @@ kernel void attention(device void *Q [[buffer(0)]],
                       
                       threadgroup void *threadgroup_block [[threadgroup(0)]],
                       constant ulong4 *matrix_offsets [[buffer(10), function_constant(batched)]],
-                      device void *mask [[buffer(11), function_constant(masked)]],
-                      device uchar *block_mask [[buffer(12), function_constant(block_sparse)]],
+                      constant uint4 *query_offsets [[buffer(11), function_constant(grouped_query)]],
+                      device void *mask [[buffer(12), function_constant(masked)]],
+                      device uchar *block_mask [[buffer(13), function_constant(block_sparse)]],
                       
                       uint3 gid [[threadgroup_position_in_grid]],
                       ushort sidx [[simdgroup_index_in_threadgroup]],
@@ -518,9 +526,9 @@ kernel void attention(device void *Q [[buffer(0)]],
     }
   } else if (forward) {
     if (Q_data_type == MTLDataTypeFloat) {
-      _attention_impl((device float*)Q, (device float*)K, (device float*)V, (device float*)O, (threadgroup float*)threadgroup_block, (device float*)mask, block_mask, gid, sidx, lane_id);
+      _attention_impl((device float*)Q, (device float*)K, (device float*)V, (device float*)O, (threadgroup float*)threadgroup_block, query_offsets, (device float*)mask, block_mask, gid, sidx, lane_id);
     } else if (Q_data_type == MTLDataTypeHalf) {
-      _attention_impl((device half*)Q, (device half*)K, (device half*)V, (device half*)O, (threadgroup half*)threadgroup_block, (device half*)mask, block_mask, gid, sidx, lane_id);
+      _attention_impl((device half*)Q, (device half*)K, (device half*)V, (device half*)O, (threadgroup half*)threadgroup_block, query_offsets, (device half*)mask, block_mask, gid, sidx, lane_id);
     }
   }
 }

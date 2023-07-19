@@ -109,6 +109,39 @@ class AttentionPerfTests: MFATestCase {
       default: fatalError("Attention backend not supported yet.")
       }
     }
+    
+    var isMPS: Bool {
+      switch self {
+      case .mps: return true
+      case .mfa: return false
+      default: fatalError("Attention backend not supported yet.")
+      }
+    }
+    
+    var equivalentMPS: AttentionBackend {
+      switch self {
+      case .mps: fatalError("Is MPS.")
+      case .mpsMasked: fatalError("Is MPS.")
+      case .mfa: return .mps
+      case .mfaTriangular: return .mpsMasked
+      case .mfaBlockSparse: return .mpsMasked
+      }
+    }
+    
+    var isTriangularMasked: Bool {
+      switch self {
+      case .mps: return false
+      case .mfa: return false
+      default: return true
+      }
+    }
+    
+    var isBlockSparse: Bool {
+      switch self {
+      case .mfaBlockSparse: return true
+      default: return false
+      }
+    }
   }
   
   struct AttentionData {
@@ -154,6 +187,24 @@ class AttentionPerfTests: MFATestCase {
     var testsPerContextSwitch: Int
     var commandsPerEncoder: Int
     var trials: Int
+    var commandsPerEncoderMPS: Int
+    var trialsMPS: Int
+    
+    func getIterations(backend: AttentionBackend) -> Int {
+      if backend.isMPS {
+        return commandsPerEncoderMPS
+      } else {
+        return commandsPerEncoder
+      }
+    }
+    
+    func getTrials(backend: AttentionBackend) -> Int {
+      if backend.isMPS {
+        return trialsMPS
+      } else {
+        return trials
+      }
+    }
   }
   
   struct Duration {
@@ -170,22 +221,22 @@ class AttentionPerfTests: MFATestCase {
     if !isLarge {
       precondition(duration.granularity == 2)
       parameters = [
-        SIMD4(granularity, 192, 256 * duration.length, 8),
-        SIMD4(192, 256, 128 * duration.length, 8),
-        SIMD4(256, 384, 64 * duration.length, 8),
-        SIMD4(384, 512, 32 * duration.length, 8),
-        SIMD4(512, 768, 16 * duration.length, 8),
-        SIMD4(768, 1024, 8 * duration.length, 8),
-        SIMD4(1024, 1536, 4 * duration.length, 8),
-        SIMD4(1536, 2049, 2 * duration.length, 8),
+        SIMD4(granularity, 192, 256, 8),
+        SIMD4( 192,  256, 128, 8),
+        SIMD4( 256,  384,  64, 8),
+        SIMD4( 384,  512,  32, 8),
+        SIMD4( 512,  768,  16, 8),
+        SIMD4( 768, 1024,   8, 8),
+        SIMD4(1024, 1536,   4, 8),
+        SIMD4(1536, 2049,   2, 8),
       ]
     } else {
       precondition(granularity >= 16, "Granularity is too small.")
       parameters = [
-        SIMD4(2048, 3072, 16 * duration.length, 8),
-        SIMD4(3072, 4096, 8 * duration.length, 8),
-        SIMD4(4096, 6144, 4 * duration.length, 8),
-        SIMD4(6144, 8192, 2 * duration.length, 8),
+        SIMD4(2048, 3072, 16, 8),
+        SIMD4(3072, 4096,  8, 8),
+        SIMD4(4096, 6144,  4, 8),
+        SIMD4(6144, 8192,  2, 8),
       ]
     }
     
@@ -211,12 +262,19 @@ class AttentionPerfTests: MFATestCase {
         C: granularity,
         H: 0,
         D: 0,
-        sparsityPercent: -1)
+        sparsityPercent: 0)
       
       var iterations = max(1, parameter[2])
       var trials = 0
-      let ref = parameter[3]
-      SquareMatrixBenchmark_configure_2(&iterations, &trials, ref: ref)
+      let ref = parameter[3] * duration.length
+      SquareMatrixBenchmark_configure_2(
+        &iterations, &trials, ref: ref)
+      
+      var iterationsMPS = max(1, min(32, parameter[2]))
+      var trialsMPS = 0
+      let refMPS = parameter[3]
+      SquareMatrixBenchmark_configure_2(
+        &iterationsMPS, &trialsMPS, ref: refMPS)
       
       return AttentionRange(
         cursor: start,
@@ -224,14 +282,23 @@ class AttentionPerfTests: MFATestCase {
         stride: stride,
         testsPerContextSwitch: 16,
         commandsPerEncoder: iterations,
-        trials: trials)
+        trials: trials,
+        commandsPerEncoderMPS: iterationsMPS,
+        trialsMPS: trialsMPS)
     }
   }
+  
+#if DEBUG
+static let verifyResults = true
+#else
+static let verifyResults = false
+#endif
   
   func testAttention(
     ranges: [AttentionRange],
     backends: [AttentionBackend]
   ) -> AttentionData {
+    
     @discardableResult
     func runAttention(
       config: AttentionConfig,
@@ -243,6 +310,13 @@ class AttentionPerfTests: MFATestCase {
       backend.markLastCommand()
       _ = backend.synchronize()
       return 0
+    }
+    
+    func verifyResults(
+      config: AttentionConfig,
+      backendMPS: AttentionBackend
+    ) {
+      
     }
     
     var data = AttentionData(backends: backends)
@@ -272,6 +346,14 @@ class AttentionPerfTests: MFATestCase {
                 range.cursor = range.cursor + range.stride
               }
             }
+            if Self.verifyResults, !backend.isMPS {
+              for (config, _) in samples {
+                verifyResults(
+                  config: config,
+                  backendMPS: backend.equivalentMPS)
+                print("Verified results for config \(config)")
+              }
+            }
             
             var iterations: [(Int, Bool)] = [
               (0, false),
@@ -285,8 +367,8 @@ class AttentionPerfTests: MFATestCase {
               let config = samples[index].0
               let gflops = runAttention(
                 config: config,
-                trials: range.trials,
-                iterations: range.commandsPerEncoder)
+                trials: range.getTrials(backend: backend),
+                iterations: range.getIterations(backend: backend))
               
               // TODO: Allow certain ranges to be blacklisted for MPS, so we can
               // represent "error" as 0 GFLOPS.

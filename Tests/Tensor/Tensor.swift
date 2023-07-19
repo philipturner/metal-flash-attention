@@ -216,7 +216,8 @@ extension Tensor {
     transposeQ: Bool = false,
     transposeK: Bool = true,
     transposeV: Bool = false,
-    transposeO: Bool = false
+    transposeO: Bool = false,
+    blockSparse: Bool = false
   ) {
     assert(self.typeAndBackendMatches(queries))
     assert(self.typeAndBackendMatches(keys))
@@ -255,7 +256,6 @@ extension Tensor {
     var K_D: Int
     var V_D: Int
     var O_D: Int
-    // TODO: Check the mask/blockMask shapes match Q/K/V/O rows, cols, H=1
     
     let leadingDimIndex = qShape.endIndex - 1
     if transposeQ {
@@ -318,7 +318,8 @@ extension Tensor {
       R: Q_R, C: K_C, H: Q_H, D: Q_D,
       Q_trans: transposeQ, K_trans: transposeK,
       V_trans: transposeV, O_trans: transposeO,
-      batched: batched, masked: mask != nil)
+      batched: batched, masked: mask != nil,
+      blockSparse: blockSparse)
     parameters.batchDimensionsQ = queries.shape.dropLast(3)
     if let mask {
       parameters.batchDimensionsMask = mask.shape.dropLast(3)
