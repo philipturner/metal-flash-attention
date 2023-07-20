@@ -30,15 +30,17 @@ class AttentionPerfTests: MFATestCase {
     //   2 (causal), 4 (small), 64 (large)
     // Length:
     //   2
-    let duration = Duration(granularity: 1, length: 2)
+    let duration = Duration(granularity: 64, length: 2)
     let (domain, ranges) = rangeSequenceScaling(
-      duration: duration, type: .causal)
+      duration: duration, type: .large)
+    
+    var backends = SequenceType.large.backends
+    backends = backends.compactMap {
+      if $0.isMPS { return nil }
+      return $0
+    }
     testAttention(
-      domain: domain, ranges: ranges,
-      backends: SequenceType.causal.backends.compactMap {
-        if $0.isMPS { return nil }
-        return $0
-      })
+      domain: domain, ranges: ranges, backends: backends)
   }
   
   struct AttentionConfig: Equatable, Hashable {

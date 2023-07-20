@@ -409,14 +409,14 @@ void _attention_impl(device T *Q [[buffer(0)]],
     
     // Apply edge mask.
     if ((C % C_simd > 0) && (j_next > C)) {
-      const ushort c_modulo = C % C_simd;
-      const ushort c_floor = c_modulo - (c_modulo % 8);
-      const ushort c_edge_thread = c_modulo - c_floor;
-      ushort c = c_floor;
+      ushort C_modulo = C % C_simd;
+      ushort C_floor = C_modulo - (C_modulo % 8);
+      ushort C_edge_thread = C_modulo - C_floor;
+      ushort c = C_floor;
       
 #pragma clang loop unroll(full)
       for (ushort index = 0; index < 2; index += 1) {
-        if (offset_in_simd.x + index >= c_edge_thread) {
+        if (offset_in_simd.x + index >= C_edge_thread) {
 #pragma clang loop unroll(full)
           for (ushort r = 0; r < R_simd; r += 8) {
             auto s = get_sram(attention_matrix, C_simd, ushort2(c, r));
@@ -493,8 +493,9 @@ void _attention_impl(device T *Q [[buffer(0)]],
     threadgroup_barrier(mem_flags::mem_threadgroup);
     if (sidx == 0) {
       uint2 V_offset(0, j_block * C_simd);
+      uint C_ceil = (C + 7) / 8 * 8;
       ushort2 src_tile(D, min(uint(C_simd), C - V_offset.y));
-      ushort2 dst_tile(D, C_simd);
+      ushort2 dst_tile(D, (C >= 2560) ? C_simd : min(uint(C_simd), C_ceil - V_offset.y));
       
       auto V_src = simdgroup_matrix_storage<T>::apply_offset(V, V_leading_dim, V_offset, V_trans);
       V_src += head_offsets[2] * (V_trans ? D * C : D);
@@ -508,8 +509,10 @@ void _attention_impl(device T *Q [[buffer(0)]],
     
     // Multiply P * V.
     threadgroup_barrier(mem_flags::mem_threadgroup);
+    ushort C_edge = (C % C_simd == 0) ? C_simd : (C % C_simd);
+    ushort C_ceil = (C >= 2560) ? C_simd : (C_edge + 7) / 8 * 8;
 #pragma clang loop unroll(full)
-    for (ushort c = 0; c < C_simd; c += 8) {
+    for (ushort c = 0; c < C_ceil; c += 8) {
       simdgroup_matrix_storage<T> V_sram[128];
 #pragma clang loop unroll(full)
       for (ushort d = 0; d < D_simd; d += 8) {
@@ -520,6 +523,22 @@ void _attention_impl(device T *Q [[buffer(0)]],
            C_simd, attention_matrix + c / 8,
            D_simd, V_sram,
            D_simd, O_sram);
+    }
+    
+    if ((C % C_simd > 0) && (j_next < C)) {
+#pragma clang loop unroll(full)
+      for (ushort c = C_ceil; c < C_simd; c += 8) {
+        simdgroup_matrix_storage<T> V_sram[128];
+#pragma clang loop unroll(full)
+        for (ushort d = 0; d < D_simd; d += 8) {
+          auto v = get_sram(V_sram, 8, ushort2(d, 0));
+          v->load(V_block, V_block_leading_dim, ushort2(d, c), V_trans);
+        }
+        gemm(R_simd, D_simd, 8, true,
+             C_simd, attention_matrix + c / 8,
+             D_simd, V_sram,
+             D_simd, O_sram);
+      }
     }
   }
   
