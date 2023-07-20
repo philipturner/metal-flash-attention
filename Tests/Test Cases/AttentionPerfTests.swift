@@ -16,13 +16,29 @@ class AttentionPerfTests: MFATestCase {
   override func runVeryLongTests() {
     print()
     
-    // 8 for small, 128 for large, length 1 while prototyping
-    // 4 for small, 64 for large, length 2 for production
-    let duration = Duration(granularity: 64, length: 2)
+    // Prototyping:
+    // Granularity:
+    //   1 (causal), 8 (small), 128 (large)
+    // Length:
+    //   2 (non-causal), 1 (small), 1 (large)
+    // For causal:
+    //   remove the non-MFA backends
+    //   narrow the range from 0...1024 to 512...1024
+    //
+    // Production:
+    // Granularity:
+    //   2 (causal), 4 (small), 64 (large)
+    // Length:
+    //   2
+    let duration = Duration(granularity: 1, length: 2)
     let (domain, ranges) = rangeSequenceScaling(
-      duration: duration, isLarge: true)
+      duration: duration, type: .causal)
     testAttention(
-      domain: domain, ranges: ranges, backends: [.mps, .mfa])
+      domain: domain, ranges: ranges,
+      backends: SequenceType.causal.backends.compactMap {
+        if $0.isMPS { return nil }
+        return $0
+      })
   }
   
   struct AttentionConfig: Equatable, Hashable {
@@ -95,67 +111,55 @@ class AttentionPerfTests: MFATestCase {
   
   enum AttentionBackend: Int {
     case mps = 0
-    case mpsMasked = 1
+    case mpsCausal = 1
     case mfa = 2
-    case mfaTriangular = 3
-    case mfaBlockSparse = 4
+    case mfaCausal = 3
     
     var tensorBackend: TensorBackend {
       switch self {
-      case .mps: return .mps
-      case .mfa: return .mfa
-      default: fatalError("Attention backend not supported yet.")
+      case .mps, .mpsCausal: return .mps
+      case .mfa, .mfaCausal: return .mfa
       }
     }
     
     var description: String {
       switch self {
       case .mps: return "MPS"
+      case .mpsCausal: return "MPS (Causal)"
       case .mfa: return "MFA"
-      default: fatalError("Attention backend not supported yet.")
+      case .mfaCausal: return "MFA (Causal, Dense)"
       }
     }
     
     var isMPS: Bool {
       switch self {
-      case .mps: return true
-      case .mfa: return false
-      default: fatalError("Attention backend not supported yet.")
+      case .mps, .mpsCausal: return true
+      case .mfa, .mfaCausal: return false
       }
     }
     
     var equivalentMPS: AttentionBackend {
       switch self {
       case .mps: fatalError("Is MPS.")
-      case .mpsMasked: fatalError("Is MPS.")
+      case .mpsCausal: fatalError("Is MPS.")
       case .mfa: return .mps
-      case .mfaTriangular: return .mpsMasked
-      case .mfaBlockSparse: return .mpsMasked
+      case .mfaCausal: return .mpsCausal
       }
     }
     
-    var isTriangularMasked: Bool {
+    var isCausal: Bool {
       switch self {
-      case .mps: return false
-      case .mfa: return false
-      default: return true
-      }
-    }
-    
-    var isBlockSparse: Bool {
-      switch self {
-      case .mfaBlockSparse: return true
-      default: return false
+      case .mps, .mfa: return false
+      case .mpsCausal, .mfaCausal: return true
       }
     }
     
     var mplColor: String {
       switch self {
       case .mps: return "-r"
-      case .mpsMasked: return "-y"
+      case .mpsCausal: return "-y"
       case .mfa: return "-b"
-      case .mfaTriangular: return "-g"
-      case .mfaBlockSparse: return "-k"
+      case .mfaCausal: return "-g"
       }
     }
   }
@@ -225,14 +229,39 @@ class AttentionPerfTests: MFATestCase {
     var length: Int
   }
   
+  enum SequenceType {
+    case small
+    case large
+    case causal
+    
+    var backends: [AttentionBackend] {
+      switch self {
+      case .small, .large:
+        return [.mps, .mfa]
+      case .causal:
+        return [.mps, .mpsCausal, .mfa, .mfaCausal]
+      }
+    }
+  }
+  
   func rangeSequenceScaling(
-    duration: Duration, isLarge: Bool
+    duration: Duration, type: SequenceType
   ) -> (ClosedRange<Int>, [AttentionRange]) {
     let granularity = duration.granularity
     
     var domain: ClosedRange<Int>
     var parameters: [SIMD4<Int>]
-    if !isLarge {
+    if type == .causal {
+      domain = 512...1024
+      parameters = [
+//        SIMD4(granularity, 192, 256, 8),
+//        SIMD4( 192,  256, 128, 8),
+//        SIMD4( 256,  384,  64, 8),
+//        SIMD4( 384,  512,  32, 8),
+        SIMD4( 512,  768,  16, 8),
+        SIMD4( 768, 1025,   8, 8),
+      ]
+    } else if type == .small {
       domain = 0...2048
       parameters = [
         SIMD4(granularity, 192, 256, 8),
@@ -255,7 +284,12 @@ class AttentionPerfTests: MFATestCase {
       ]
     }
     
-    let headCount = isLarge ? 5 : 10
+    var headCount: Int
+    if type == .large {
+      headCount = 5
+    } else {
+      headCount = 10
+    }
     return (domain, parameters.map { parameter in
       let start = AttentionConfig(
         B: 1,
@@ -321,7 +355,7 @@ class AttentionPerfTests: MFATestCase {
       var o: Tensor<Real>
       var mask: Tensor<Real>?
       
-      init(config: AttentionConfig) {
+      init(config: AttentionConfig, backend: AttentionBackend) {
         var B: [Int] = []
         if config.B > 1 {
           B += [config.B]
@@ -339,7 +373,11 @@ class AttentionPerfTests: MFATestCase {
         self.k = Tensor(shape: shapeK, randomUniform: 0..<1)
         self.v = Tensor(shape: shapeV, randomUniform: 0..<1)
         self.o = Tensor(zerosLike: shapeO)
-        self.mask = nil
+        
+        if backend.isCausal {
+          let shapeMask = B + [1, R, C]
+          self.mask = Tensor(shape: shapeMask, mask: .upperTriangular)
+        }
       }
       
       init(_ other: Tensors, backend: TensorBackend) {
@@ -356,10 +394,11 @@ class AttentionPerfTests: MFATestCase {
     @discardableResult
     func runAttention(
       config: AttentionConfig,
+      backend: AttentionBackend,
       trials: Int,
       iterations: Int
     ) -> Float {
-      var tensors = Tensors(config: config)
+      var tensors = Tensors(config: config, backend: backend)
       var minTime: Double = .infinity
       let backend = TensorBackend.default
       for _ in 0..<trials {
@@ -369,6 +408,7 @@ class AttentionPerfTests: MFATestCase {
             queries: tensors.q,
             keys: tensors.k,
             values: tensors.v,
+            mask: tensors.mask,
             transposeK: true)
         }
         backend.markLastCommand()
@@ -388,10 +428,11 @@ class AttentionPerfTests: MFATestCase {
     
     func verifyResults(
       config: AttentionConfig,
-      backendMPS: AttentionBackend
+      backend: AttentionBackend
     ) {
-      var mfaTensors = Tensors(config: config)
-      let mps = backendMPS.tensorBackend
+      precondition(!backend.isMPS)
+      var mfaTensors = Tensors(config: config, backend: backend)
+      let mps = backend.equivalentMPS.tensorBackend
       var mpsTensors = Tensors(mfaTensors, backend: mps)
       
       _ExecutionContext.profileCommands {
@@ -399,6 +440,7 @@ class AttentionPerfTests: MFATestCase {
           queries: mfaTensors.q,
           keys: mfaTensors.k,
           values: mfaTensors.v,
+          mask: mfaTensors.mask,
           transposeK: true)
       }
       
@@ -408,6 +450,7 @@ class AttentionPerfTests: MFATestCase {
             queries: mpsTensors.q,
             keys: mpsTensors.k,
             values: mpsTensors.v,
+            mask: mpsTensors.mask,
             transposeK: true)
         }
       }
@@ -449,16 +492,33 @@ class AttentionPerfTests: MFATestCase {
                 samples.append((range.cursor, 0))
                 runAttention(
                   config: range.cursor,
+                  backend: backend,
                   trials: 1,
                   iterations: 1)
                 range.cursor = range.cursor + range.stride
+              }
+              if range.cursor.less(
+                than: range.exclusiveEnd, axes: range.stride
+              ) {
+                if !(range.cursor + range.stride).less(
+                  than: range.exclusiveEnd, axes: range.stride
+                ) {
+                  // Add one more sample.
+                  samples.append((range.cursor, 0))
+                  runAttention(
+                    config: range.cursor,
+                    backend: backend,
+                    trials: 1,
+                    iterations: 1)
+                  range.cursor = range.cursor + range.stride
+                }
               }
             }
             if Self.verifyResults, !backend.isMPS {
               for (config, _) in samples {
                 verifyResults(
                   config: config,
-                  backendMPS: backend.equivalentMPS)
+                  backend: backend)
               }
             }
             
@@ -474,6 +534,7 @@ class AttentionPerfTests: MFATestCase {
               let config = samples[index].0
               let gflops = runAttention(
                 config: config,
+                backend: backend,
                 trials: range.getTrials(backend: backend),
                 iterations: range.getIterations(backend: backend))
               
@@ -526,6 +587,8 @@ class AttentionPerfTests: MFATestCase {
     }
     plt.legend(loc: "upper left")
     plt.xlim(domain.lowerBound, domain.upperBound)
+    
+    // TODO: If the backends contain MFA causal, extend to 2x FLOPS.
     plt.ylim(0, MetalContext.global.infoDevice.flops / 1e9)
     plt.xlabel(independentVariable)
     plt.ylabel("GFLOPS")

@@ -125,7 +125,6 @@ METAL_FUNC void multiply_accumulate(thread simdgroup_matrix_storage<T> *sram,
                                     const threadgroup T *B_block,
                                     bool accumulate = true)
 {
-  // TODO: Load in a way that minimizes bank conflicts.
 #pragma clang loop unroll(full)
   for (ushort m = 0; m < M_padded; m += 8) {
     ushort2 origin(0, m);

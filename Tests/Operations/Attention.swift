@@ -110,12 +110,12 @@ struct MFA_Attention: Attention, MFA_Operation {
     
     let D_simd = UInt16(pcopy.D + 7) / 8 * 8
     let R_group = R_simd * R_splits
-    let Q_block_length = R_group * D_simd
     let K_block_length = D_simd * C_simd
     let V_block_length = C_simd * D_simd
-    let O_block_length = R_group * D_simd
-    
     var blockElements = max(K_block_length, V_block_length)
+    
+    let Q_block_length = R_group * D_simd
+    let O_block_length = R_group * D_simd
     blockElements = max(blockElements, Q_block_length)
     blockElements = max(blockElements, O_block_length)
     if pcopy.masked {

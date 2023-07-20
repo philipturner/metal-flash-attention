@@ -16,13 +16,6 @@ using namespace metal;
 #pragma clang diagnostic push
 #pragma clang diagnostic ignored "-Wunused"
 
-// Whether to disable the softmax, and just debug the GEMM part.
-#define DEBUG_DISABLE_SOFTMAX 0
-
-// Whether to bypass threadgroup memory and write the accumulator directly to
-// device memory. This allows more flexibility in threadgroup block sizes.
-#define DIRECT_LOAD_STORE 0
-
 // Dimensions of each matrix.
 constant uint R [[function_constant(0)]];
 constant uint C [[function_constant(1)]];
@@ -135,21 +128,33 @@ auto s = get_sram(attention_matrix, C_simd, origin); \
 
   ushort C_edge = (C % C_simd == 0) ? C_simd : (C % C_simd);
   ushort C_floor = C_edge / 8 * 8;
-#pragma clang loop unroll(full)
-  for (ushort c = 0; c < C_floor; c += 8) {
-    LOAD_MASK(true)
-  }
   
-  if (C_edge > 0) {
-    if (mask_in_bounds) {
+  if (C % 8 == 0) {
 #pragma clang loop unroll(full)
-      for (ushort c = C_floor; c < C_simd; c += 8) {
-        LOAD_MASK(true)
-      }
-    } else {
-      ushort c = C_floor;
-      LOAD_MASK(mask_load)
+    for (ushort c = 0; c < C_floor; c += 8) {
+      LOAD_MASK(true)
     }
+    
+    if (C_edge > 0) {
+      if (mask_in_bounds) {
+#pragma clang loop unroll(full)
+        for (ushort c = C_floor; c < C_simd; c += 8) {
+          LOAD_MASK(true)
+        }
+      }
+    }
+  } else if (mask_in_bounds) {
+#pragma clang loop unroll(full)
+    for (ushort c = 0; c < C_simd; c += 8) {
+      LOAD_MASK(true)
+    }
+  } else {
+#pragma clang loop unroll(full)
+    for (ushort c = 0; c < C_floor; c += 8) {
+      LOAD_MASK(true)
+    }
+    ushort c = C_floor;
+    LOAD_MASK(mask_load)
   }
 }
 
@@ -262,6 +267,11 @@ void _attention_impl(device T *Q [[buffer(0)]],
   if (grouped_query) {
     head_offsets = query_offsets[gid.y];
   }
+  ushort D_floor = D / 8 * 8;
+  ushort D_modulo = D - D_floor;
+  ushort R_edge = (R % R_simd == 0) ? R_simd : (R % R_simd);
+  ushort R_floor = R_edge / 8 * 8;
+  ushort R_modulo = R_edge - R_floor;
   
   simdgroup_matrix_storage<T> Q_sram[128];
   simdgroup_matrix_storage<float> O_sram[128];
@@ -269,13 +279,7 @@ void _attention_impl(device T *Q [[buffer(0)]],
   float m_sram[128];
   
   // Load Q block.
-#if DIRECT_LOAD_STORE
-  ushort D_floor = D / 8 * 8;
-  ushort D_modulo = D - D_floor;
-  ushort R_edge = (R % R_simd == 0) ? R_simd : (R % R_simd);
-  ushort R_floor = R_edge / 8 * 8;
-  ushort R_modulo = R_edge - R_floor;
-  
+  // TODO: Recycle Q_offset.y between mask loads and use it for the Q prefetch.
   bool2 QO_load_store = false;
   if (D != D_simd) {
     if (D % 2 == 1) {
@@ -287,56 +291,6 @@ void _attention_impl(device T *Q [[buffer(0)]],
   bool QO_in_bounds = QO_offset.y + R_simd <= R;
   QO_offset += uint2(offset_in_simd);
   
-  auto Q_src = simdgroup_matrix_storage<T>::apply_offset(Q, Q_leading_dim, QO_offset, Q_trans);
-  Q_src += head_offsets[3] * (Q_trans ? D * R : D);
-  Q_src = apply_batch_offset(Q_src, gid.z * R * H * D);
-  
-#define LOAD_QUERIES \
-for (ushort d = 0; d <= D_floor; d += 8) { \
-bool2 load = (d == D_floor) ? QO_load_store : bool2(true); \
-ushort2 origin(d, r); \
-auto q = get_sram(Q_sram, D_simd, origin); \
-\
-if (D_simd != D && d == D_floor) {\
-*q = simdgroup_matrix_storage<T>(0); \
-} \
-\
-if (D % 2 == 0) { \
-if (load[1]) { \
-q->load(Q_src, Q_leading_dim, origin, Q_trans); \
-} \
-} else { \
-if (load[0]) { \
-q->load_first(Q_src, Q_leading_dim, origin, Q_trans); \
-} \
-origin.x += 1; \
-if (load[1]) { \
-q->load_second(Q_src, Q_leading_dim, origin, Q_trans); \
-} \
-} \
-} \
-
-#pragma clang loop unroll(full)
-  for (ushort r = 0; r < R_floor; r += 8) {
-#pragma clang loop unroll(full)
-    LOAD_QUERIES
-  }
-  
-  if (R_edge > 0) {
-    if (QO_in_bounds) {
-#pragma clang loop unroll(full)
-      for (ushort r = R_floor; r < R_simd; r += 8) {
-#pragma clang loop unroll(full)
-        LOAD_QUERIES
-      }
-    } else if (offset_in_simd.y < R_modulo) {
-      ushort r = R_floor;
-#pragma clang loop unroll(full)
-      LOAD_QUERIES
-    }
-  }
-  
-#else
   if (sidx == 0) {
     uint2 Q_offset(0, gid.x * R_group);
     ushort2 src_tile(D, min(uint(R_group), R - Q_offset.y));
@@ -350,7 +304,6 @@ q->load_second(Q_src, Q_leading_dim, origin, Q_trans); \
     event.async_copy(threadgroup_block, Q_block_leading_dim, dst_tile, Q_src, Q_leading_dim, src_tile, Q_trans);
     simdgroup_event::wait(1, &event);
   }
-#endif
   
   // Initialize O, l, m.
 #pragma clang loop unroll(full)
@@ -364,7 +317,6 @@ q->load_second(Q_src, Q_leading_dim, origin, Q_trans); \
     m_sram[r / 8] = -numeric_limits<float>::max();
   }
   
-#if !DIRECT_LOAD_STORE
   auto Q_offset = ushort2(0, sidx * R_simd) + offset_in_simd;
   auto Q_block = simdgroup_matrix_storage<T>::apply_offset(threadgroup_block, Q_block_leading_dim, Q_offset, Q_trans);
   
@@ -378,7 +330,6 @@ q->load_second(Q_src, Q_leading_dim, origin, Q_trans); \
       q->load(Q_block, Q_block_leading_dim, origin, Q_trans);
     }
   }
-#endif
   
   uint j_block_max = (C + C_simd - 1) / C_simd;
   for (uint j_block = 0; j_block < j_block_max; j_block += 1) {
@@ -434,7 +385,6 @@ q->load_second(Q_src, Q_leading_dim, origin, Q_trans); \
     
     // Apply explicit mask.
     if (masked && flags == 2) {
-#if DIRECT_LOAD_STORE
       ushort C_edge = (C % C_simd == 0) ? C_simd : (C % C_simd);
       ushort C_floor = C_edge / 8 * 8;
       ushort C_modulo = C_edge - C_floor;
@@ -447,6 +397,8 @@ q->load_second(Q_src, Q_leading_dim, origin, Q_trans); \
         load[1] = (offset_in_simd.x + 2 <= C_modulo);
       }
       uint2 mask_offset(j_block * C_simd, QO_offset.y);
+      
+      // TODO: Optimize away this check by comparing j_block to something pre-computed.
       bool in_bounds = mask_offset.x + C_simd <= C;
       mask_offset.x += offset_in_simd.x;
       auto mask_src = simdgroup_matrix_storage<T>::apply_offset(mask, C, mask_offset);
@@ -456,9 +408,11 @@ q->load_second(Q_src, Q_leading_dim, origin, Q_trans); \
         apply_mask(r, in_bounds, load, mask_src, attention_matrix);
       }
       
+      // TODO: Make the outer conditional faster when aligned, similar to the
+      // inner conditional.
       if (R_edge > 0) {
         if (QO_in_bounds) {
-    #pragma clang loop unroll(full)
+#pragma clang loop unroll(full)
           for (ushort r = R_floor; r < R_simd; r += 8) {
             apply_mask(r, in_bounds, load, mask_src, attention_matrix);
           }
@@ -468,37 +422,6 @@ q->load_second(Q_src, Q_leading_dim, origin, Q_trans); \
           }
         }
       }
-      
-#else
-      threadgroup_barrier(mem_flags::mem_threadgroup);
-      if (sidx == 0) {
-        uint2 mask_offset(j_block * C_simd, gid.x * R_group);
-        ushort2 src_tile(min(uint(C_simd), C - mask_offset.x),
-                         min(uint(R_group), R - mask_offset.y));
-        ushort2 dst_tile = src_tile;
-        auto mask_src = simdgroup_matrix_storage<T>::apply_offset(mask, C, mask_offset);
-        
-        simdgroup_event event;
-        event.async_copy(threadgroup_block, C_simd, dst_tile, mask_src, C, src_tile);
-        simdgroup_event::wait(1, &event);
-      }
-      auto mask_offset = ushort2(0, sidx * R_simd) + offset_in_simd;
-      auto mask_block = simdgroup_matrix_storage<T>::apply_offset(threadgroup_block, C_simd, mask_offset);
-      
-      threadgroup_barrier(mem_flags::mem_threadgroup);
-#pragma clang loop unroll(full)
-      for (ushort r = 0; r < R_simd; r += 8) {
-#pragma clang loop unroll(full)
-        for (ushort c = 0; c < C_simd; c += 8) {
-          ushort2 origin(c, r);
-          simdgroup_matrix_storage<T> mask;
-          mask.load(mask_block, C_simd, origin);
-          
-          auto s = get_sram(attention_matrix, C_simd, origin);
-          *(s->thread_elements()) += *(mask.thread_elements());
-        }
-      }
-#endif
     }
     
     // Apply edge mask.
@@ -529,7 +452,6 @@ q->load_second(Q_src, Q_leading_dim, origin, Q_trans); \
       }
     }
     
-#if !DEBUG_DISABLE_SOFTMAX
     // Compute softmax.
 #pragma clang loop unroll(full)
     for (ushort r = 0; r < R_simd; r += 8) {
@@ -583,7 +505,6 @@ q->load_second(Q_src, Q_leading_dim, origin, Q_trans); \
         l_sram[r / 8] = fma(l_sram[r / 8], correction, l);
       }
     }
-#endif
     
     // Load V block.
     threadgroup_barrier(mem_flags::mem_threadgroup);
@@ -620,80 +541,13 @@ q->load_second(Q_src, Q_leading_dim, origin, Q_trans); \
   }
   
   // Write O block.
-#if DIRECT_LOAD_STORE
-  simdgroup_matrix_storage<T> output_matrix[128];
-#pragma clang loop unroll(full)
-  for (ushort r = 0; r < R_simd; r += 8) {
-#if DEBUG_DISABLE_SOFTMAX
-    float l = 1;
-#else
-    float l = 1 / l_sram[r / 8];
-#endif
-#pragma clang loop unroll(full)
-    for (ushort d = 0; d < D_simd; d += 8) {
-      ushort2 origin(d, r);
-      auto o_elements = get_sram(O_sram, D_simd, origin)->thread_elements();
-      simdgroup_matrix_storage<T> o(vec<T, 2>(*o_elements * l));
-      *get_sram(output_matrix, D_simd, origin) = o;
-    }
-  }
-  
-  auto O_dst = simdgroup_matrix_storage<T>::apply_offset(O, O_leading_dim, QO_offset, O_trans);
-  O_dst += head_offsets[3] * (O_trans ? D * R : D);
-  O_dst = apply_batch_offset(O_dst, gid.z * R * H * D);
-  
-#define STORE_OUTPUT \
-for (ushort d = 0; d <= D_floor; d += 8) { \
-bool2 write = (d == D_floor) ? QO_load_store : bool2(true); \
-ushort2 origin(d, r); \
-auto o = get_sram(output_matrix, D_simd, origin); \
-\
-if (D % 2 == 0) { \
-if (write[1]) { \
-o->store(O_dst, O_leading_dim, origin, O_trans); \
-} \
-} else { \
-if (write[0]) { \
-o->store_first(O_dst, O_leading_dim, origin, O_trans); \
-} \
-origin.x += 1; \
-if (write[1]) { \
-o->store_second(O_dst, O_leading_dim, origin, O_trans); \
-} \
-} \
-} \
-  
-#pragma clang loop unroll(full)
-  for (ushort r = 0; r < R_floor; r += 8) {
-#pragma clang loop unroll(full)
-    STORE_OUTPUT
-  }
-  
-  if (R_edge > 0) {
-    if (QO_in_bounds) {
-#pragma clang loop unroll(full)
-      for (ushort r = R_floor; r < R_simd; r += 8) {
-#pragma clang loop unroll(full)
-        STORE_OUTPUT
-      }
-    } else if (offset_in_simd.y < R_modulo) {
-      ushort r = R_floor;
-#pragma clang loop unroll(full)
-      STORE_OUTPUT
-    }
-  }
-#else
   threadgroup_barrier(mem_flags::mem_threadgroup);
   auto O_offset = ushort2(0, sidx * R_simd) + offset_in_simd;
   auto O_block = simdgroup_matrix_storage<T>::apply_offset(threadgroup_block, O_block_leading_dim, O_offset, O_trans);
   
 #pragma clang loop unroll(full)
   for (ushort r = 0; r < R_simd; r += 8) {
-#if DEBUG_DISABLE_SOFTMAX
-    float l = 1;
-#else
     float l = 1 / l_sram[r / 8];
-#endif
 #pragma clang loop unroll(full)
     for (ushort d = 0; d < D_simd; d += 8) {
       ushort2 origin(d, r);
@@ -715,7 +569,6 @@ o->store_second(O_dst, O_leading_dim, origin, O_trans); \
     simdgroup_event event;
     event.async_copy(O_dst, O_leading_dim, tile, threadgroup_block, O_block_leading_dim, tile, O_trans);
   }
-#endif
 }
 
 kernel void attention(device void *Q [[buffer(0)]],

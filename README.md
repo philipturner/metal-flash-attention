@@ -6,7 +6,7 @@ Algorithms:
 - [ ] Attention
   - [x] Dense (87.0% ALU)
   - [ ] Block-Sparse
-  - [ ] Grouped-Query
+  - [ ] Grouped Queries
 - [ ] Convolution
   - [ ] ConvGEMM 1x1
   - [ ] ConvGEMM 3x3
@@ -149,10 +149,12 @@ Scaling by sequence length:
 - Sequence length:
   - Small sequences: every multiple of 4
   - Large sequences: every multiple of 64
+  - Causal mask: every even integer
 - Head size: 64
 - Head count:
   - Small sequences: 10
   - Large sequences: 5
+  - Causal mask: 10
 - Batch size: 1
 
 Scaling by head size:
@@ -201,6 +203,8 @@ Dense: Stable Diffusion 2 outermost attention layer @ 512x512 (sequence length =
 
 ![FlashAttention (F16, H=5, D=64)](./CI/float16-large-sequences-latest.png)
 
+### Float16 Sequence Scaling (Causal Mask)
+
 ### Float32 Head Scaling
 
 ### Float16 Head Scaling
@@ -218,6 +222,8 @@ Releases:
   - Fused transposes for A and B
   - Batched GEMM
 - v1.0.0
-  - Attention
+  - Attention, dense and block-sparse
+- v1.1.0
   - Fused activations
   - Alpha and beta constants from BLAS
+  - Grouped-query attention
