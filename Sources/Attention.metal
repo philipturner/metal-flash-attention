@@ -101,26 +101,20 @@ void gemm(ushort M, ushort N, ushort K, bool accumulate,
 }
 
 template <typename T>
-void apply_mask(ushort r, bool mask_in_bounds, bool2 mask_load,
+void apply_mask(ushort r, uint j_next, ushort2 offset_in_simd,
                 device T *mask_src,
                 thread simdgroup_matrix_storage<T>* attention_matrix)
 {
-#define LOAD_MASK(LOAD) \
+#define LOAD_MASK \
 ushort2 origin(c, r); \
 simdgroup_matrix_storage<T> mask; \
 \
 if (C % 2 == 0) { \
-if (bool2(LOAD)[1]) { \
 mask.load(mask_src, C, origin); \
-} \
 } else { \
-if (bool2(LOAD)[0]) { \
 mask.load_first(mask_src, C, origin); \
-} \
 origin.x += 1; \
-if (bool2(LOAD)[1]) { \
 mask.load_second(mask_src, C, origin); \
-} \
 } \
 \
 auto s = get_sram(attention_matrix, C_simd, origin); \
@@ -128,33 +122,51 @@ auto s = get_sram(attention_matrix, C_simd, origin); \
 
   ushort C_edge = (C % C_simd == 0) ? C_simd : (C % C_simd);
   ushort C_floor = C_edge / 8 * 8;
+  short C_modulo = C_edge - C_floor;
   
   if (C % 8 == 0) {
 #pragma clang loop unroll(full)
     for (ushort c = 0; c < C_floor; c += 8) {
-      LOAD_MASK(true)
+      LOAD_MASK
     }
     
     if (C_edge > 0) {
-      if (mask_in_bounds) {
+      if (j_next <= C) {
 #pragma clang loop unroll(full)
         for (ushort c = C_floor; c < C_simd; c += 8) {
-          LOAD_MASK(true)
+          LOAD_MASK
         }
       }
     }
-  } else if (mask_in_bounds) {
+  } else if (j_next <= C) {
 #pragma clang loop unroll(full)
     for (ushort c = 0; c < C_simd; c += 8) {
-      LOAD_MASK(true)
+      LOAD_MASK
     }
   } else {
 #pragma clang loop unroll(full)
     for (ushort c = 0; c < C_floor; c += 8) {
-      LOAD_MASK(true)
+      LOAD_MASK
     }
-    ushort c = C_floor;
-    LOAD_MASK(mask_load)
+    ushort2 origin(C_floor, r);
+    simdgroup_matrix_storage<T> mask;
+    
+    if (C % 2 == 0) {
+      if (short(offset_in_simd.x) <= short(C_modulo - 2)) {
+        mask.load(mask_src, C, origin);
+      }
+    } else {
+      if (short(offset_in_simd.x) <= short(C_modulo - 1)) {
+        mask.load_first(mask_src, C, origin);
+      }
+      origin.x += 1;
+      if (short(offset_in_simd.x) <= short(C_modulo - 2)) {
+        mask.load_second(mask_src, C, origin);
+      }
+    }
+    
+    auto s = get_sram(attention_matrix, C_simd, origin);
+    *(s->thread_elements()) += *(mask.thread_elements());
   }
 }
 
@@ -255,8 +267,8 @@ void _attention_impl(device T *Q [[buffer(0)]],
                      ushort sidx [[simdgroup_index_in_threadgroup]],
                      ushort lane_id [[thread_index_in_simdgroup]])
 {
+  uint i = gid.x * R_group + sidx * R_simd;
   if (R % R_group > 0) {
-    uint i = gid.x * R_group + sidx * R_simd;
     if (i >= R) {
       return;
     }
@@ -267,11 +279,10 @@ void _attention_impl(device T *Q [[buffer(0)]],
   if (grouped_query) {
     head_offsets = query_offsets[gid.y];
   }
-  ushort D_floor = D / 8 * 8;
-  ushort D_modulo = D - D_floor;
   ushort R_edge = (R % R_simd == 0) ? R_simd : (R % R_simd);
   ushort R_floor = R_edge / 8 * 8;
   ushort R_modulo = R_edge - R_floor;
+  bool i_in_bounds = i + R_simd <= R;
   
   simdgroup_matrix_storage<T> Q_sram[128];
   simdgroup_matrix_storage<float> O_sram[128];
@@ -279,20 +290,8 @@ void _attention_impl(device T *Q [[buffer(0)]],
   float m_sram[128];
   
   // Load Q block.
-  // TODO: Recycle Q_offset.y between mask loads and use it for the Q prefetch.
-  bool2 QO_load_store = false;
-  if (D != D_simd) {
-    if (D % 2 == 1) {
-      QO_load_store[0] = (offset_in_simd.x + 1 <= D_modulo);
-    }
-    QO_load_store[1] = (offset_in_simd.x + 2 <= D_modulo);
-  }
-  uint2 QO_offset = uint2(0, gid.x * R_group + sidx * R_simd);
-  bool QO_in_bounds = QO_offset.y + R_simd <= R;
-  QO_offset += uint2(offset_in_simd);
-  
   if (sidx == 0) {
-    uint2 Q_offset(0, gid.x * R_group);
+    uint2 Q_offset(0, i);
     ushort2 src_tile(D, min(uint(R_group), R - Q_offset.y));
     ushort2 dst_tile(D_simd, src_tile.y);
     
@@ -316,7 +315,6 @@ void _attention_impl(device T *Q [[buffer(0)]],
     l_sram[r / 8] = numeric_limits<float>::denorm_min();
     m_sram[r / 8] = -numeric_limits<float>::max();
   }
-  
   auto Q_offset = ushort2(0, sidx * R_simd) + offset_in_simd;
   auto Q_block = simdgroup_matrix_storage<T>::apply_offset(threadgroup_block, Q_block_leading_dim, Q_offset, Q_trans);
   
@@ -384,48 +382,33 @@ void _attention_impl(device T *Q [[buffer(0)]],
     }
     
     // Apply explicit mask.
+    uint j_next = j_block * C_simd + C_simd;
     if (masked && flags == 2) {
-      ushort C_edge = (C % C_simd == 0) ? C_simd : (C % C_simd);
-      ushort C_floor = C_edge / 8 * 8;
-      ushort C_modulo = C_edge - C_floor;
-      
-      bool2 load = false;
-      if (C != C_simd) {
-        if (C % 2 == 1) {
-          load[0] = (offset_in_simd.x + 1 <= C_modulo);
-        }
-        load[1] = (offset_in_simd.x + 2 <= C_modulo);
-      }
-      uint2 mask_offset(j_block * C_simd, QO_offset.y);
-      
-      // TODO: Optimize away this check by comparing j_block to something pre-computed.
-      bool in_bounds = mask_offset.x + C_simd <= C;
-      mask_offset.x += offset_in_simd.x;
+      uint2 mask_offset(j_block * C_simd, gid.x * R_group + sidx * R_simd);
+      mask_offset += uint2(offset_in_simd);
       auto mask_src = simdgroup_matrix_storage<T>::apply_offset(mask, C, mask_offset);
       
 #pragma clang loop unroll(full)
       for (ushort r = 0; r < R_floor; r += 8) {
-        apply_mask(r, in_bounds, load, mask_src, attention_matrix);
+        apply_mask(r, j_next, offset_in_simd, mask_src, attention_matrix);
       }
       
-      // TODO: Make the outer conditional faster when aligned, similar to the
-      // inner conditional.
       if (R_edge > 0) {
-        if (QO_in_bounds) {
+        if (i_in_bounds) {
 #pragma clang loop unroll(full)
           for (ushort r = R_floor; r < R_simd; r += 8) {
-            apply_mask(r, in_bounds, load, mask_src, attention_matrix);
+            apply_mask(r, j_next, offset_in_simd, mask_src, attention_matrix);
           }
         } else {
           if (offset_in_simd.y < R_modulo) {
-            apply_mask(R_floor, in_bounds, load, mask_src, attention_matrix);
+            apply_mask(R_floor, j_next, offset_in_simd, mask_src, attention_matrix);
           }
         }
       }
     }
     
     // Apply edge mask.
-    if ((C % C_simd > 0) && (j_block * C_simd + C_simd > C)) {
+    if ((C % C_simd > 0) && (j_next > C)) {
       const ushort c_modulo = C % C_simd;
       const ushort c_floor = c_modulo - (c_modulo % 8);
       const ushort c_edge_thread = c_modulo - c_floor;
