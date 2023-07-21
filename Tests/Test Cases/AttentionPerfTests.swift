@@ -19,18 +19,18 @@ class AttentionPerfTests: MFATestCase {
     
     // Prototyping:
     // Granularity:
-    //   1 (causal), 8 (small), 128 (large), 1+ (heads)
+    //   1 (causal), 8 (small), 128 (large), 1+ (head size)
     // Length:
-    //   2 (non-causal), 1 (small), 1 (large), 1 (heads)
+    //   2 (non-causal), 1 (small), 1 (large), 1 (head size)
     // For causal:
     //   remove the non-MFA backends
     //   narrow the range from 0...1024 to 512...1024
     //
     // Production:
     // Granularity:
-    //   2 (causal), 4 (small), 64 (large), 1+ (heads)
+    //   2 (causal), 4 (small), 64 (large), 1+ (head size)
     // Length:
-    //   1 (heads), 2 (everything else)
+    //   1 (head size), 2 (everything else)
     
 //    let duration = Duration(granularity: 64, length: 2)
 //    let (domain, ranges) = rangeSequenceScaling(
@@ -354,7 +354,7 @@ class AttentionPerfTests: MFATestCase {
       SIMD4(granularity, 32,  16, granularity * 1),
       SIMD4(         32, 64,   8, granularity * 1),
       SIMD4(         64, 160,  4, granularity * 2),
-//      SIMD4(        160, 385,  4, granularity * 4),
+      SIMD4(        160, 385,  4, granularity * 4),
     ]
     
     return (domain, parameters.indices.map { i in
@@ -620,11 +620,11 @@ class AttentionPerfTests: MFATestCase {
             let backendRepr = backend.description
             let configRepr = config.description
             let gflopsInt = Int(round(gflops))
-//            print("(\(backendRepr)) \(configRepr) - \(gflopsInt) GFLOPS")
+            print("(\(backendRepr)) \(configRepr) - \(gflopsInt) GFLOPS")
             
-            if backendRepr == "MFA" {
-              print("\(config.D), \(gflopsInt)")
-            }
+//            if backendRepr.contains("MFA") {
+//              print("\(config.D), \(gflopsInt)")
+//            }
           }
           
           data.append(backend: backend, data: samples)
@@ -632,8 +632,6 @@ class AttentionPerfTests: MFATestCase {
         }
       }
     }
-    
-    return
     
     let stride = ranges.first!.stride
     if stride.R > 0, stride.C > 0, stride.H == 0, stride.D == 0 {

@@ -53,11 +53,8 @@ struct Attention_Tensors {
 struct MFA_Attention: Attention, MFA_Operation {
   var parameters: Attention_Parameters
   
-  // D=64 -> 8x32 (F32), 8x48 (F16)
   static var functionConstants: [String: MTLConvertible] = [
-    "R_simd": UInt16(8),
-    "C_simd": UInt16(56),
-    "R_splits": UInt16(4),
+    :
   ]
   init(parameters: Attention_Parameters) {
     self.parameters = parameters
@@ -96,9 +93,62 @@ struct MFA_Attention: Attention, MFA_Operation {
     constants.setConstantValue(&generateBlockMask, type: .bool, index: 105)
     constants.setConstantValue(&groupedQuery, type: .bool, index: 106)
     
-    var R_simd = Self.functionConstants["R_simd"] as! UInt16
-    var C_simd = Self.functionConstants["C_simd"] as! UInt16
-    var R_splits = Self.functionConstants["R_splits"] as! UInt16
+    var R_simd: UInt16
+    var C_simd: UInt16
+    var R_splits: UInt16
+    if dataType == .float {
+      R_simd = 8
+      C_simd = 32
+      R_splits = 4
+    } else {
+      let D = pcopy.D
+      if pcopy.masked {
+        if D <= 16 {
+          R_simd = 16
+          C_simd = 64
+          R_splits = 4
+        } else if D <= 24 {
+          R_simd = 8
+          C_simd = 64
+          R_splits = 8
+        } else if D <= 80 {
+          R_simd = 8
+          C_simd = 64
+          R_splits = 4
+        } else {
+          R_simd = 8
+          C_simd = 32
+          R_splits = 4
+        }
+      } else {
+        if D <= 8 {
+          R_simd = 16
+          C_simd = 64
+          R_splits = 8
+        } else if D <= 24 {
+          R_simd = 8
+          C_simd = 104
+          R_splits = 8
+        } else if D <= 56 {
+          R_simd = 8
+          C_simd = 64
+          R_splits = 8
+        } else if D <= 64 {
+          R_simd = 8
+          C_simd = 104
+          R_splits = 8
+        } else if D <= 96 {
+          R_simd = 8
+          C_simd = 64
+          R_splits = 8
+        } else {
+          R_simd = 8
+          C_simd = 32
+          R_splits = 4
+        }
+      }
+    }
+    
     constants.setConstantValue(&R_simd, type: .ushort, index: 200)
     constants.setConstantValue(&C_simd, type: .ushort, index: 201)
     constants.setConstantValue(&R_splits, type: .ushort, index: 210)
