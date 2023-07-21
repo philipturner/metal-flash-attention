@@ -158,7 +158,7 @@ Scaling by sequence length:
 
 Scaling by head size:
 - Masking: dense, no mask
-- Sequence length 2048
+- Sequence length 4096
 - Head size: every integer
   - &le;64: every integer
   - &gt;64: every `roundUpToPowerOf2(D/64)` integers
@@ -204,11 +204,13 @@ Dense: Stable Diffusion 2 outermost attention layer @ 512x512 (sequence length =
 
 ### Float16 Sequence Scaling (Causal Mask)
 
-### Float32 Head Scaling
+![FlashAttention (F16, H=10, D=64)](./CI/float16-causal-sequences-latest.png)
 
 ### Float16 Head Scaling
 
 Dense: Stable Diffusion 1 outermost attention layer @ 512x512 (head size = 40)
+
+![FlashAttention (F16, R=C=4096, H=8)](./CI/float16-head-sizes-latest.png)
 
 ### Float16 Sparsity Scaling
 

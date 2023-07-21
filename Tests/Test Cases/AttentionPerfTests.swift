@@ -25,24 +25,28 @@ class AttentionPerfTests: MFATestCase {
     // For causal:
     //   remove the non-MFA backends
     //   narrow the range from 0...1024 to 512...1024
+    // For heads caling:
+    //   sequence length 2048
     //
     // Production:
     // Granularity:
     //   2 (causal), 4 (small), 64 (large), 1+ (head size)
     // Length:
     //   1 (head size), 2 (everything else)
+    // For heads scaling:
+    //   sequence length 4096
     
-//    let duration = Duration(granularity: 64, length: 2)
+//    let duration = Duration(granularity: 2, length: 2)
 //    let (domain, ranges) = rangeSequenceScaling(
-//      duration: duration, type: .large)
-//    
-//    var backends = SequenceType.large.backends
+//      duration: duration, type: .causal)
+//
+//    let backends = SequenceType.causal.backends
 //    backends = backends.compactMap {
 //      if $0.isMPS { return nil }
 //      return $0
 //    }
     
-    let duration = Duration(granularity: 8, length: 1)
+    let duration = Duration(granularity: 1, length: 1)
     let (domain, ranges) = rangeHeadScaling(duration: duration)
     let backends = [AttentionBackend.mps, AttentionBackend.mfa]
     testAttention(
@@ -260,12 +264,13 @@ class AttentionPerfTests: MFATestCase {
     var domain: ClosedRange<Int>
     var parameters: [SIMD4<Int>]
     if type == .causal {
-      domain = 512...1024
+//      domain = 512...1024
+      domain = 0...1024
       parameters = [
-//        SIMD4(granularity, 192, 256, 8),
-//        SIMD4( 192,  256, 128, 8),
-//        SIMD4( 256,  384,  64, 8),
-//        SIMD4( 384,  512,  32, 8),
+        SIMD4(granularity, 192, 256, 8),
+        SIMD4( 192,  256, 128, 8),
+        SIMD4( 256,  384,  64, 8),
+        SIMD4( 384,  512,  32, 8),
         SIMD4( 512,  768,  16, 8),
         SIMD4( 768, 1025,   8, 8),
       ]
@@ -351,25 +356,34 @@ class AttentionPerfTests: MFATestCase {
     let granularity = duration.granularity
     let domain = 0...384
     let parameters: [SIMD4<Int>] = [
+      // Prototyping:
+//      SIMD4(granularity, 32,  16, granularity * 1),
+//      SIMD4(         32, 64,   8, granularity * 1),
+//      SIMD4(         64, 160,  4, granularity * 2),
+//      SIMD4(        160, 385,  4, granularity * 4),
+      
+      // Production:
       SIMD4(granularity, 32,  16, granularity * 1),
       SIMD4(         32, 64,   8, granularity * 1),
-      SIMD4(         64, 160,  4, granularity * 2),
-      SIMD4(        160, 385,  4, granularity * 4),
+      SIMD4(         64, 128,  4, granularity * 2),
+      SIMD4(        128, 256,  2, granularity * 4),
+      SIMD4(        256, 385,  2, granularity * 16),
     ]
+    let sequenceLength = 4096
     
     return (domain, parameters.indices.map { i in
       let parameter = parameters[i]
       let start = AttentionConfig(
         B: 1,
-        R: 2048,
-        C: 2048,
+        R: sequenceLength,
+        C: sequenceLength,
         H: 8,
         D: parameter[0],
         sparsityPercent: -1)
       let end = AttentionConfig(
         B: 1,
-        R: 2048,
-        C: 2048,
+        R: sequenceLength,
+        C: sequenceLength,
         H: 8,
         D: parameter[1],
         sparsityPercent: -1)
