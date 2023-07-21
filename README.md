@@ -143,9 +143,9 @@ Setup:
 
 Scaling by sequence length:
 - Masking:
-  - Dense: no mask
-  - Masked: triangular mask
-  - Sparse: triangular mask, summarized by block-sparse mask
+  - No mask
+  - Dense Mask: triangular mask
+  - Sparse Mask: triangular mask, summarized by block-sparse mask
 - Sequence length:
   - Small sequences: every multiple of 4
   - Large sequences: every multiple of 64
@@ -155,21 +155,20 @@ Scaling by sequence length:
   - Small sequences: 10
   - Large sequences: 5
   - Causal mask: 10
-- Batch size: 1
 
 Scaling by head size:
-- Masking: dense
-- Sequence length 4096
+- Masking: dense, no mask
+- Sequence length 2048
 - Head size: every integer
+  - &le;64: every integer
+  - &gt;64: every `roundUpToPowerOf2(D/64)` integers
 - Head count: 8
-- Batch size: 1
 
 Scaling by sparsity:
 - Sparsity: every even percentage
 - Sequence length: 1024
 - Head size: 64
 - Head count: 16
-- Batch size: 64
   
 | Function Constant | Value |
 | ------ | --------- |

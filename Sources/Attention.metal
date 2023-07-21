@@ -52,10 +52,20 @@ constant ushort D_simd = (D + 7) / 8 * 8;
 constant ushort R_splits [[function_constant(210)]];
 constant ushort R_group = R_simd * R_splits;
 
-constant ushort Q_block_leading_dim = (Q_trans ? R_group : D_simd);
-constant ushort K_block_leading_dim = (K_trans ? D_simd : C_simd);
-constant ushort V_block_leading_dim = (V_trans ? C_simd : D_simd);
-constant ushort O_block_leading_dim = (O_trans ? R_group : D_simd);
+constant ushort R_bank_offset [[function_constant(220)]];
+constant ushort C_bank_offset [[function_constant(221)]];
+constant ushort D_bank_offset [[function_constant(222)]];
+constant bool R_bank_offset_defined = is_function_constant_defined(R_bank_offset);
+constant bool C_bank_offset_defined = is_function_constant_defined(C_bank_offset);
+constant bool D_bank_offset_defined = is_function_constant_defined(D_bank_offset);
+
+constant ushort R_block_dim = R_group + (R_bank_offset_defined ? R_bank_offset : 0);
+constant ushort C_block_dim = C_simd + (C_bank_offset_defined ? C_bank_offset : 0);
+constant ushort D_block_dim = D_simd + (D_bank_offset_defined ? D_bank_offset : 0);
+constant ushort Q_block_leading_dim = (Q_trans ? R_block_dim : D_block_dim);
+constant ushort K_block_leading_dim = (K_trans ? D_block_dim : C_block_dim);
+constant ushort V_block_leading_dim = (V_trans ? C_block_dim : D_block_dim);
+constant ushort O_block_leading_dim = (O_trans ? R_block_dim : D_block_dim);
 
 #pragma clang diagnostic pop
 

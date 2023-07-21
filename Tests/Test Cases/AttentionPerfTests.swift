@@ -6,6 +6,7 @@
 //
 
 import Metal
+import PythonKit
 import QuartzCore
 
 class AttentionPerfTests: MFATestCase {
@@ -18,27 +19,32 @@ class AttentionPerfTests: MFATestCase {
     
     // Prototyping:
     // Granularity:
-    //   1 (causal), 8 (small), 128 (large)
+    //   1 (causal), 8 (small), 128 (large), 1+ (heads)
     // Length:
-    //   2 (non-causal), 1 (small), 1 (large)
+    //   2 (non-causal), 1 (small), 1 (large), 1 (heads)
     // For causal:
     //   remove the non-MFA backends
     //   narrow the range from 0...1024 to 512...1024
     //
     // Production:
     // Granularity:
-    //   2 (causal), 4 (small), 64 (large)
+    //   2 (causal), 4 (small), 64 (large), 1+ (heads)
     // Length:
-    //   2
-    let duration = Duration(granularity: 64, length: 2)
-    let (domain, ranges) = rangeSequenceScaling(
-      duration: duration, type: .large)
+    //   1 (heads), 2 (everything else)
     
-    var backends = SequenceType.large.backends
-    backends = backends.compactMap {
-      if $0.isMPS { return nil }
-      return $0
-    }
+//    let duration = Duration(granularity: 64, length: 2)
+//    let (domain, ranges) = rangeSequenceScaling(
+//      duration: duration, type: .large)
+//    
+//    var backends = SequenceType.large.backends
+//    backends = backends.compactMap {
+//      if $0.isMPS { return nil }
+//      return $0
+//    }
+    
+    let duration = Duration(granularity: 8, length: 1)
+    let (domain, ranges) = rangeHeadScaling(duration: duration)
+    let backends = [AttentionBackend.mps, AttentionBackend.mfa]
     testAttention(
       domain: domain, ranges: ranges, backends: backends)
   }
@@ -339,6 +345,66 @@ class AttentionPerfTests: MFATestCase {
     })
   }
   
+  func rangeHeadScaling(
+    duration: Duration
+  ) -> (ClosedRange<Int>, [AttentionRange]) {
+    let granularity = duration.granularity
+    let domain = 0...384
+    let parameters: [SIMD4<Int>] = [
+      SIMD4(granularity, 32,  16, granularity * 1),
+      SIMD4(         32, 64,   8, granularity * 1),
+      SIMD4(         64, 160,  4, granularity * 2),
+//      SIMD4(        160, 385,  4, granularity * 4),
+    ]
+    
+    return (domain, parameters.indices.map { i in
+      let parameter = parameters[i]
+      let start = AttentionConfig(
+        B: 1,
+        R: 2048,
+        C: 2048,
+        H: 8,
+        D: parameter[0],
+        sparsityPercent: -1)
+      let end = AttentionConfig(
+        B: 1,
+        R: 2048,
+        C: 2048,
+        H: 8,
+        D: parameter[1],
+        sparsityPercent: -1)
+      let stride = AttentionConfig(
+        B: 0,
+        R: 0,
+        C: 0,
+        H: 0,
+        D: parameter[3],
+        sparsityPercent: -1)
+      
+      var iterations = max(1, parameter[2])
+      var trials = 0
+      let ref = 8 * duration.length
+      SquareMatrixBenchmark_configure_2(
+        &iterations, &trials, ref: ref)
+      
+      var iterationsMPS = max(1, min(32, parameter[2]))
+      var trialsMPS = 0
+      let refMPS = 8
+      SquareMatrixBenchmark_configure_2(
+        &iterationsMPS, &trialsMPS, ref: refMPS)
+      
+      return AttentionRange(
+        cursor: start,
+        exclusiveEnd: end,
+        stride: stride,
+        testsPerContextSwitch: 16,
+        commandsPerEncoder: iterations,
+        trials: trials,
+        commandsPerEncoderMPS: iterationsMPS,
+        trialsMPS: trialsMPS)
+    })
+  }
+  
 #if DEBUG
   static let verifyResults = true
 #else
@@ -348,8 +414,12 @@ class AttentionPerfTests: MFATestCase {
   func testAttention(
     domain: ClosedRange<Int>,
     ranges: [AttentionRange],
-    backends: [AttentionBackend]
+    backends _backends: [AttentionBackend]
   ) {
+    let backends = _backends.sorted(by: {
+      $0.rawValue < $1.rawValue
+    })
+    
     struct Tensors {
       var q: Tensor<Real>
       var k: Tensor<Real>
@@ -549,8 +619,12 @@ class AttentionPerfTests: MFATestCase {
           for (config, gflops) in samples {
             let backendRepr = backend.description
             let configRepr = config.description
-            let gflopsRepr = Int(round(gflops))
-            print("(\(backendRepr)) \(configRepr) - \(gflopsRepr) GFLOPS")
+            let gflopsInt = Int(round(gflops))
+//            print("(\(backendRepr)) \(configRepr) - \(gflopsInt) GFLOPS")
+            
+            if backendRepr == "MFA" {
+              print("\(config.D), \(gflopsInt)")
+            }
           }
           
           data.append(backend: backend, data: samples)
@@ -559,15 +633,34 @@ class AttentionPerfTests: MFATestCase {
       }
     }
     
-    let H = ranges.first!.exclusiveEnd.H
-    let D = ranges.first!.exclusiveEnd.D
-    let title = "H=\(H), D=\(D)"
-    graph(
-      data: data,
-      axis: \.R,
-      domain: domain,
-      independentVariable: "Sequence Length",
-      title: title)
+    return
+    
+    let stride = ranges.first!.stride
+    if stride.R > 0, stride.C > 0, stride.H == 0, stride.D == 0 {
+      let H = ranges.first!.exclusiveEnd.H
+      let D = ranges.first!.exclusiveEnd.D
+      let title = "H=\(H), D=\(D)"
+      graph(
+        data: data,
+        axis: \.R,
+        domain: domain,
+        independentVariable: "Sequence Length",
+        logThreshold: nil,
+        title: title)
+    } else if stride.R == 0 && stride.C == 0, stride.H == 0, stride.D > 0 {
+      let R = ranges.first!.exclusiveEnd.R
+      let H = ranges.first!.exclusiveEnd.H
+      let title = "R=C=\(R), H=\(H)"
+      graph(
+        data: data,
+        axis: \.D,
+        domain: domain,
+        independentVariable: "Head Size",
+        logThreshold: 16,
+        title: title)
+    } else {
+      fatalError("Unsupported configuration")
+    }
   }
   
   func graph(
@@ -575,9 +668,12 @@ class AttentionPerfTests: MFATestCase {
     axis: KeyPath<AttentionConfig, Int>,
     domain: ClosedRange<Int>,
     independentVariable: String,
+    logThreshold: Int?,
     title: String
   ) {
     let plt = PythonContext.global.plt
+    let (_, ax) = plt.subplots().tuple2
+    
     for key in data.gflops.keys.sorted(by: { $0.rawValue < $1.rawValue }) {
       let value = data.gflops[key]!
       let label = key.description
@@ -590,10 +686,18 @@ class AttentionPerfTests: MFATestCase {
     plt.legend(loc: "upper left")
     plt.xlim(domain.lowerBound, domain.upperBound)
     
-    // TODO: If the backends contain MFA causal, extend to 2x FLOPS.
+    // TODO: If the backends contain MFA block-sparse, extend to 2x FLOPS.
     plt.ylim(0, MetalContext.global.infoDevice.flops / 1e9)
     plt.xlabel(independentVariable)
     plt.ylabel("GFLOPS")
+    
+    if let logThreshold {
+      plt.xscale("symlog", base: 2, linthresh: logThreshold)
+      
+      let ticker = Python.import("matplotlib.ticker")
+      ax.xaxis.set_major_formatter(ticker.ScalarFormatter())
+      plt.xticks([1, 8, 16, 32, 64, 128, 256, 384])
+    }
     
 #if DEBUG
     let debugWarning = " (NOT USABLE FOR CI)"

@@ -56,10 +56,9 @@ struct MFA_Attention: Attention, MFA_Operation {
   // D=64 -> 8x32 (F32), 8x48 (F16)
   static var functionConstants: [String: MTLConvertible] = [
     "R_simd": UInt16(8),
-    "C_simd": UInt16(48),
+    "C_simd": UInt16(56),
     "R_splits": UInt16(4),
   ]
-  
   init(parameters: Attention_Parameters) {
     self.parameters = parameters
   }
@@ -104,24 +103,77 @@ struct MFA_Attention: Attention, MFA_Operation {
     constants.setConstantValue(&C_simd, type: .ushort, index: 201)
     constants.setConstantValue(&R_splits, type: .ushort, index: 210)
     
+    let D_simd = UInt16(pcopy.D + 7) / 8 * 8
+    let R_group = R_simd * R_splits
+    var K_block_length: UInt16
+    var V_block_length: UInt16
+    var Q_block_length: UInt16
+    var O_block_length: UInt16
+    
+    var R_block_dim = R_group
+    var C_block_dim = C_simd
+    var D_block_dim = D_simd
+    func setBankOffset(_ dim: inout UInt16, index: Int) {
+      precondition(dim % 8 == 0, "Original dimension must be divisible by 8.")
+      let dimBytes = dim * UInt16(dataType.size)
+      
+      // How the heuristic works:
+      //
+      // FP16:
+      // Pad 8 -> 8       (16B -> 16B)
+      // Pad 16 -> 24     (32B -> 48B)
+      // Pad 24 -> 24     (48B -> 48B)
+      // Pad 32 -> 36, 40 (64B -> 72B, 80B)
+      // Pad 40 -> 40     (80B -> 80B)
+      // Pad 48 -> 52, 56 (96B -> 104B, 112B)
+      // Pad 56 -> 56     (112B -> 112B)
+      // Pad 64 -> 72     (128B -> 144B)
+      // Pad 80 -> 88     (160B -> 176B)
+      // Pad 96 -> 104    (192B -> 208B)
+      let dimBytesModulo = dimBytes % 64
+      if dimBytesModulo == 16 || dimBytesModulo == 48 {
+        return
+      } else if dimBytesModulo == 0 || dimBytesModulo == 32 {
+        let bankOffsetBytes: UInt16 = 16
+        var bankOffset = bankOffsetBytes / UInt16(dataType.size)
+        dim += bankOffset
+        constants.setConstantValue(&bankOffset, type: .ushort, index: index)
+      } else {
+        fatalError("This should never happen.")
+      }
+    }
+    setBankOffset(&R_block_dim, index: 220)
+    setBankOffset(&C_block_dim, index: 221)
+    setBankOffset(&D_block_dim, index: 222)
+    
     let library = MetalContext.global.library
     let function = try! library.makeFunction(
       name: "attention", constantValues: constants)
     
-    let D_simd = UInt16(pcopy.D + 7) / 8 * 8
-    let R_group = R_simd * R_splits
-    let K_block_length = D_simd * C_simd
-    let V_block_length = C_simd * D_simd
-    var blockElements = max(K_block_length, V_block_length)
+    if pcopy.Q_trans {
+      Q_block_length = D_simd * R_block_dim
+    } else {
+      Q_block_length = R_group * D_block_dim
+    }
+    if pcopy.K_trans {
+      K_block_length = C_simd * D_block_dim
+    } else {
+      K_block_length = D_simd * C_block_dim
+    }
+    if pcopy.V_trans {
+      V_block_length = D_simd * C_block_dim
+    } else {
+      V_block_length = C_simd * D_block_dim
+    }
+    if pcopy.O_trans {
+      O_block_length = D_simd * R_block_dim
+    } else {
+      O_block_length = R_group * D_block_dim
+    }
     
-    let Q_block_length = R_group * D_simd
-    let O_block_length = R_group * D_simd
+    var blockElements = max(K_block_length, V_block_length)
     blockElements = max(blockElements, Q_block_length)
     blockElements = max(blockElements, O_block_length)
-    if pcopy.masked {
-      let mask_block_length = R_group * C_simd
-      blockElements = max(blockElements, mask_block_length)
-    }
     let blockBytes = blockElements * UInt16(dataType.size)
     
     func ceilDivide(target: Int, granularity: UInt16) -> Int {

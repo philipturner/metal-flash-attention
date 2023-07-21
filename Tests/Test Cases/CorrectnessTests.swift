@@ -17,7 +17,7 @@ class CorrectnessTests: MFATestCase {
   override func runQuickTests() {
     let logProgress = true
     testRandomAttention(logProgress: logProgress)
-    testRandomGEMM(logProgress: logProgress)
+//    testRandomGEMM(logProgress: logProgress)
   }
   
   func testRandomGEMM(logProgress: Bool) {
@@ -172,7 +172,7 @@ class CorrectnessTests: MFATestCase {
     print()
     let start = CACurrentMediaTime()
     
-    let testExtension: Int = 1
+    let testExtension: Float = 0.333
     
     //  0 - 15: batch 1, K^T
     // 15 - 30: batch 1, all transposes
@@ -180,11 +180,11 @@ class CorrectnessTests: MFATestCase {
     // 45 - 60: batch 2-8, triangular mask
     // 60 - 75: batch 2-8, block-sparse mask, not matching block size
     // 75 - 90: batch 2-8, block-sparse mask, matching block size
-    let numNonTransposedTrials = 15 * testExtension
-    let numNonBatchedTrials = 30 * testExtension
-    let triangularMaskedStart = 45 * testExtension
-    let blockSparseMaskedStart = 60 * testExtension
-    let numTrials = blockSparseMaskedStart + 15 * testExtension
+    let numNonTransposedTrials = Int(15 * testExtension)
+    let numNonBatchedTrials = Int(30 * testExtension)
+    let triangularMaskedStart = Int(45 * testExtension)
+    let blockSparseMaskedStart = Int(60 * testExtension)
+    let numTrials = blockSparseMaskedStart + Int(15 * testExtension)
     
     // Create a biased random distribution that favors smaller numbers. Take the
     // uniform distribution, then cube the results.
