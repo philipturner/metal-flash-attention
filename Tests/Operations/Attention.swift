@@ -122,30 +122,26 @@ struct MFA_Attention: Attention, MFA_Operation {
           R_splits = 4
         }
       } else {
+        R_simd = 8
+        R_splits = 8
+        
         if D <= 8 {
           R_simd = 16
           C_simd = 64
-          R_splits = 8
+        } else if D <= 16 {
+          C_simd = 72
+          fuseAsyncLoads = true
         } else if D <= 24 {
-          R_simd = 8
           C_simd = 56
-          R_splits = 8
           fuseAsyncLoads = true
         } else if D <= 56 {
-          R_simd = 8
           C_simd = 64
-          R_splits = 8
         } else if D <= 64 {
-          R_simd = 8
           C_simd = 40
-          R_splits = 8
           fuseAsyncLoads = true
         } else if D <= 96 {
-          R_simd = 8
           C_simd = 64
-          R_splits = 8
         } else {
-          R_simd = 8
           C_simd = 32
           R_splits = 4
         }
