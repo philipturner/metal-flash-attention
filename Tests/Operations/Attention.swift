@@ -96,6 +96,7 @@ struct MFA_Attention: Attention, MFA_Operation {
     var R_simd: UInt16
     var C_simd: UInt16
     var R_splits: UInt16
+    var fuseAsyncLoads = false
     if dataType == .float {
       R_simd = 8
       C_simd = 32
@@ -135,8 +136,9 @@ struct MFA_Attention: Attention, MFA_Operation {
           R_splits = 8
         } else if D <= 64 {
           R_simd = 8
-          C_simd = 104
+          C_simd = 40
           R_splits = 8
+          fuseAsyncLoads = true
         } else if D <= 96 {
           R_simd = 8
           C_simd = 64
@@ -152,6 +154,8 @@ struct MFA_Attention: Attention, MFA_Operation {
     constants.setConstantValue(&R_simd, type: .ushort, index: 200)
     constants.setConstantValue(&C_simd, type: .ushort, index: 201)
     constants.setConstantValue(&R_splits, type: .ushort, index: 210)
+    
+    constants.setConstantValue(&fuseAsyncLoads, type: .bool, index: 230)
     
     let D_simd = UInt16(pcopy.D + 7) / 8 * 8
     let R_group = R_simd * R_splits
@@ -221,7 +225,12 @@ struct MFA_Attention: Attention, MFA_Operation {
       O_block_length = R_group * D_block_dim
     }
     
-    var blockElements = max(K_block_length, V_block_length)
+    var blockElements: UInt16
+    if fuseAsyncLoads {
+      blockElements = K_block_length + V_block_length
+    } else {
+      blockElements = max(K_block_length, V_block_length)
+    }
     blockElements = max(blockElements, Q_block_length)
     blockElements = max(blockElements, O_block_length)
     let blockBytes = blockElements * UInt16(dataType.size)

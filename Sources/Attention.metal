@@ -67,6 +67,9 @@ constant ushort K_block_leading_dim = (K_trans ? D_block_dim : C_block_dim);
 constant ushort V_block_leading_dim = (V_trans ? C_block_dim : D_block_dim);
 constant ushort O_block_leading_dim = (O_trans ? R_block_dim : D_block_dim);
 
+constant bool fuse_async_loads [[function_constant(230)]];
+constant ushort V_block_offset = (K_trans ? C_simd * D_block_dim : D_simd * C_block_dim);
+
 #pragma clang diagnostic pop
 
 // MARK: - Utilities
@@ -353,16 +356,32 @@ void _attention_impl(device T *Q [[buffer(0)]],
     threadgroup_barrier(mem_flags::mem_threadgroup);
     if (sidx == 0) {
       uint2 K_offset(j_block * C_simd, 0);
-      ushort2 src_tile(min(uint(C_simd), C - K_offset.x), D);
-      ushort2 dst_tile(src_tile.x, D);
+      ushort2 K_src_tile(min(uint(C_simd), C - K_offset.x), D);
+      ushort2 K_dst_tile(K_src_tile.x, D);
       
       auto K_src = simdgroup_matrix_storage<T>::apply_offset(K, K_leading_dim, K_offset, K_trans);
       K_src += head_offsets[1] * (K_trans ? D : D * C);
       K_src = apply_batch_offset(K_src, gid.z * C * H * D);
       
-      simdgroup_event event;
-      event.async_copy(threadgroup_block, K_block_leading_dim, dst_tile, K_src, K_leading_dim, src_tile, K_trans);
-      simdgroup_event::wait(1, &event);
+      if (fuse_async_loads) {
+        uint2 V_offset(0, j_block * C_simd);
+        uint C_ceil = (C + 7) / 8 * 8;
+        ushort2 V_src_tile(D, min(uint(C_simd), C - V_offset.y));
+        ushort2 V_dst_tile(D, (C >= 2560) ? C_simd : min(uint(C_simd), C_ceil - V_offset.y));
+        
+        auto V_src = simdgroup_matrix_storage<T>::apply_offset(V, V_leading_dim, V_offset, V_trans);
+        V_src += head_offsets[2] * (V_trans ? D * C : D);
+        V_src = apply_batch_offset(V_src, gid.z * C * H * D);
+        
+        simdgroup_event events[2];
+        events[0].async_copy(threadgroup_block, K_block_leading_dim, K_dst_tile, K_src, K_leading_dim, K_src_tile, K_trans);
+        events[1].async_copy(threadgroup_block + V_block_offset, V_block_leading_dim, V_dst_tile, V_src, V_leading_dim, V_src_tile, V_trans);
+        simdgroup_event::wait(2, events);
+      } else {
+        simdgroup_event event;
+        event.async_copy(threadgroup_block, K_block_leading_dim, K_dst_tile, K_src, K_leading_dim, K_src_tile, K_trans);
+        simdgroup_event::wait(1, &event);
+      }
     }
     auto K_block = simdgroup_matrix_storage<T>::apply_offset(threadgroup_block, K_block_leading_dim, offset_in_simd, K_trans);
     
@@ -500,25 +519,31 @@ void _attention_impl(device T *Q [[buffer(0)]],
     }
     
     // Load V block.
-    threadgroup_barrier(mem_flags::mem_threadgroup);
-    if (sidx == 0) {
-      uint2 V_offset(0, j_block * C_simd);
-      uint C_ceil = (C + 7) / 8 * 8;
-      ushort2 src_tile(D, min(uint(C_simd), C - V_offset.y));
-      ushort2 dst_tile(D, (C >= 2560) ? C_simd : min(uint(C_simd), C_ceil - V_offset.y));
-      
-      auto V_src = simdgroup_matrix_storage<T>::apply_offset(V, V_leading_dim, V_offset, V_trans);
-      V_src += head_offsets[2] * (V_trans ? D * C : D);
-      V_src = apply_batch_offset(V_src, gid.z * C * H * D);
-      
-      simdgroup_event event;
-      event.async_copy(threadgroup_block, V_block_leading_dim, dst_tile, V_src, V_leading_dim, src_tile, V_trans);
-      simdgroup_event::wait(1, &event);
+    if (!fuse_async_loads) {
+      threadgroup_barrier(mem_flags::mem_threadgroup);
+      if (sidx == 0) {
+        uint2 V_offset(0, j_block * C_simd);
+        uint C_ceil = (C + 7) / 8 * 8;
+        ushort2 src_tile(D, min(uint(C_simd), C - V_offset.y));
+        ushort2 dst_tile(D, (C >= 2560) ? C_simd : min(uint(C_simd), C_ceil - V_offset.y));
+        
+        auto V_src = simdgroup_matrix_storage<T>::apply_offset(V, V_leading_dim, V_offset, V_trans);
+        V_src += head_offsets[2] * (V_trans ? D * C : D);
+        V_src = apply_batch_offset(V_src, gid.z * C * H * D);
+        
+        simdgroup_event event;
+        event.async_copy(threadgroup_block, V_block_leading_dim, dst_tile, V_src, V_leading_dim, src_tile, V_trans);
+        simdgroup_event::wait(1, &event);
+      }
     }
     auto V_block = simdgroup_matrix_storage<T>::apply_offset(threadgroup_block, V_block_leading_dim, offset_in_simd, V_trans);
     
     // Multiply P * V.
-    threadgroup_barrier(mem_flags::mem_threadgroup);
+    if (fuse_async_loads) {
+      V_block += V_block_offset;
+    } else {
+      threadgroup_barrier(mem_flags::mem_threadgroup);
+    }
     ushort C_edge = (C % C_simd == 0) ? C_simd : (C % C_simd);
     ushort C_ceil = (C >= 2560) ? C_simd : (C_edge + 7) / 8 * 8;
 #pragma clang loop unroll(full)
