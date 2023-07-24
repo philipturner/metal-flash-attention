@@ -17,7 +17,7 @@ class CorrectnessTests: MFATestCase {
   override func runQuickTests() {
     let logProgress = true
     testRandomAttention(logProgress: logProgress)
-//    testRandomGEMM(logProgress: logProgress)
+    testRandomGEMM(logProgress: logProgress)
   }
   
   func testRandomGEMM(logProgress: Bool) {
@@ -27,14 +27,15 @@ class CorrectnessTests: MFATestCase {
     //  0 - 15: batch 1, NN
     // 15 - 45: batch 1, NN/NT/TN/TT
     // 45 - 90: batch 2-16 for A/C
+    // 90+: specific regression tests
     let numNonTransposedTrials = 15
     let numNonBatchedTrials = 45
     let nonBroadcastedCutoff = 60
-    let numTrials = numNonBatchedTrials + 45
+    var numTrials = numNonBatchedTrials + 45
     
     // Create a biased random distribution that favors smaller numbers. Take the
     // uniform distribution, then cube the results.
-    let allRandomInts: [SIMD3<Int>] = (0..<numTrials).map { i in
+    var allRandomInts: [SIMD3<Int>] = (0..<numTrials).map { i in
       let maxMatrixDimension = (i < numNonBatchedTrials) ? 1000 : 500
       
       var randomVecFloat = SIMD3<Float>.random(in: 0..<1)
@@ -43,27 +44,32 @@ class CorrectnessTests: MFATestCase {
       randomInts.replace(with: .one, where: randomInts .== .zero)
       return randomInts
     }
+    allRandomInts.append(SIMD3(77, 64, 77))
     
-    let allRandomTransposes: [(Bool, Bool)] = (0..<numTrials).map { i in
+    var allRandomTransposes: [(Bool, Bool)] = (0..<numTrials).map { i in
       if i < numNonTransposedTrials {
         return (false, false)
       } else {
         return (Bool.random(), Bool.random())
       }
     }
+    allRandomTransposes.append((false, false))
     
-    let allRandomB: [Int?] = (0..<numTrials).map { i in
+    var allRandomB: [(Int?, Int?)] = (0..<numTrials).map { i in
       if i < numNonBatchedTrials {
-        return nil
+        return (nil, nil)
       } else {
-        return Int.random(in: 2...16)
+        return (nil, Int.random(in: 2...16))
       }
     }
+    allRandomB.append((2, 12))
+    
+    numTrials += 1
     
     func testRandomSize(index: Int, ghost: Bool) {
       let randomInts = allRandomInts[index]
       let randomTransposes = allRandomTransposes[index]
-      let batchSize = allRandomB[index]
+      let (extraDim, batchSize) = allRandomB[index]
       
       let M = randomInts[0]
       let N = randomInts[1]
@@ -86,6 +92,11 @@ class CorrectnessTests: MFATestCase {
           shapeB = [batchSize] + shapeB
         }
         shapeC = [batchSize] + shapeC
+      }
+      if let extraDim {
+        shapeA = [extraDim] + shapeA
+        shapeB = [extraDim] + shapeB
+        shapeC = [extraDim] + shapeC
       }
       
       let mps_A = Tensor<Real>(
@@ -148,6 +159,9 @@ class CorrectnessTests: MFATestCase {
             shapeRepr = "\(batchSize)x\(M)x\(N)x\(K)x\(DTypeRepr)"
           } else {
             shapeRepr = "\(M)x\(N)x\(K)x\(DTypeRepr)"
+          }
+          if let extraDim {
+            shapeRepr = "\(extraDim)x\(shapeRepr)"
           }
           let dist = mfa_C.euclideanDistance(to: mps_C)
           let distRepr = "- \(String(format: "%.3f", dist))"

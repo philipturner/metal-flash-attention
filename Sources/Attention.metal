@@ -131,7 +131,11 @@ mask.load_second(mask_src, C, origin); \
 } \
 \
 auto s = get_sram(attention_matrix, C_simd, origin); \
+if (generate_block_mask) { \
+*(s->thread_elements()) = *(mask.thread_elements()); \
+} else { \
 *(s->thread_elements()) += *(mask.thread_elements()); \
+} \
 
   ushort C_edge = (C % C_simd == 0) ? C_simd : (C % C_simd);
   ushort C_floor = C_edge / 8 * 8;
@@ -172,14 +176,26 @@ auto s = get_sram(attention_matrix, C_simd, origin); \
       if (short(offset_in_simd.x) <= short(C_modulo - 1)) {
         mask.load_first(mask_src, C, origin);
       }
-      origin.x += 1;
-      if (short(offset_in_simd.x) <= short(C_modulo - 2)) {
+      
+      if (generate_block_mask) {
+        if (short(offset_in_simd.x) <= short(C_modulo - 2)) {
+          origin.x += 1;
+        }
         mask.load_second(mask_src, C, origin);
+      } else {
+        origin.x += 1;
+        if (short(offset_in_simd.x) <= short(C_modulo - 2)) {
+          mask.load_second(mask_src, C, origin);
+        }
       }
     }
     
     auto s = get_sram(attention_matrix, C_simd, origin);
-    *(s->thread_elements()) += *(mask.thread_elements());
+    if (generate_block_mask) {
+      *(s->thread_elements()) = *(mask.thread_elements());
+    } else {
+      *(s->thread_elements()) += *(mask.thread_elements());
+    }
   }
 }
 
@@ -194,71 +210,135 @@ void _generate_block_mask_impl(threadgroup T *threadgroup_block [[threadgroup(0)
                                ushort sidx [[simdgroup_index_in_threadgroup]],
                                ushort lane_id [[thread_index_in_simdgroup]])
 {
-  uint2 mask_offset(gid.x * C_simd, gid.y * R_group + sidx * R_simd);
-  if (sidx == 0) {
-    ushort2 src_tile(min(uint(C_simd), C - mask_offset.x),
-                     min(uint(R_group), R - mask_offset.y));
-    ushort2 dst_tile(C_simd, R_group);
-    auto mask_src = simdgroup_matrix_storage<T>::apply_offset(mask, C, mask_offset);
-    
-    simdgroup_event event;
-    event.async_copy(threadgroup_block, C_simd, dst_tile, mask_src, C, src_tile, false, simdgroup_async_copy_clamp_mode::clamp_to_edge);
-    simdgroup_event::wait(1, &event);
+  // TODO: Allocate a very tiny threadgroup block for this kernel:
+  // roundup(one slot per simd, 16B)
+  auto results_block = (threadgroup ushort2*)threadgroup_block;
+  uint i = gid.x * R_group + sidx * R_simd;
+  if (R % R_group > 0) {
+    if (i >= R) {
+      results_block[sidx] = ushort2(1, 1);
+      return;
+    }
   }
-  threadgroup_barrier(mem_flags::mem_threadgroup);
   
-  bool all_off = true;
-  bool all_on = true;
-  if (mask_offset.x < C && mask_offset.y < R) {
-    ushort2 offset_in_simd = simdgroup_matrix_storage<T>::offset(lane_id);
-    threadgroup T *mask_block = threadgroup_block + sidx * R_simd * C_simd;
-    mask_block = simdgroup_matrix_storage<T>::apply_offset(mask_block, C_simd, offset_in_simd);
-    
+  ushort2 offset_in_simd = simdgroup_matrix_storage<T>::offset(lane_id);
+  ushort R_edge = (R % R_simd == 0) ? R_simd : (R % R_simd);
+  ushort R_floor = R_edge / 8 * 8;
+  ushort R_modulo = R_edge - R_floor;
+  bool i_in_bounds = i + R_simd <= R;
+  
+  uint j_block = gid.y;
+  uint j_next = j_block * C_simd + C_simd;
+  simdgroup_matrix_storage<T> attention_matrix[128];
+  
+  uint2 mask_offset(j_block * C_simd, gid.x * R_group + sidx * R_simd);
+  mask_offset += uint2(offset_in_simd);
+  auto mask_src = simdgroup_matrix_storage<T>::apply_offset(mask, C, mask_offset);
+  
+  // Apply explicit mask.
 #pragma clang loop unroll(full)
-    for (ushort r = 0; r < R_simd; r += 8) {
+  for (ushort r = 0; r < R_floor; r += 8) {
+    apply_mask(r, j_next, offset_in_simd, mask_src, attention_matrix);
+  }
+  
+  if (R_edge > 0) {
+    if (i_in_bounds) {
 #pragma clang loop unroll(full)
-      for (ushort c = 0; c < C_simd; c += 8) {
-        ushort2 origin(c, r);
-        simdgroup_matrix_storage<T> mask;
-        mask.load(mask_block, C_simd, origin);
-        vec<T, 2> elements = mask.thread_elements()[0];
-        
-        T off = -numeric_limits<T>::max();
-        if (!(elements[0] <= off)) { all_off = false; }
-        if (!(elements[1] <= off)) { all_off = false; }
-        if (!(elements[0] == 0)) { all_on = false; }
-        if (!(elements[1] == 0)) { all_on = false; }
+      for (ushort r = R_floor; r < R_simd; r += 8) {
+        apply_mask(r, j_next, offset_in_simd, mask_src, attention_matrix);
+      }
+    } else {
+      if (offset_in_simd.y < R_modulo) {
+        apply_mask(R_floor, j_next, offset_in_simd, mask_src, attention_matrix);
+      }
+      T placeholder = attention_matrix[0].thread_elements()[0][0];
+      placeholder = simd_broadcast_first(placeholder);
+      
+      if (offset_in_simd.y >= R_modulo) {
+        for (ushort c = 0; c < C_simd; c += 8) {
+          ushort2 origin(c, R_floor);
+          auto s = get_sram(attention_matrix, C_simd, origin);
+          *s = simdgroup_matrix_storage<T>(placeholder);
+        }
+      }
+      for (ushort r = R_floor + 8; r < R_simd; r += 8) {
+        for (ushort c = 0; c < C_simd; c += 8) {
+          ushort2 origin(c, r);
+          auto s = get_sram(attention_matrix, C_simd, origin);
+          *s = simdgroup_matrix_storage<T>(placeholder);
+        }
       }
     }
   }
-  all_off = simd_ballot(all_off).all();
-  all_on = simd_ballot(all_on).all();
-  threadgroup_barrier(mem_flags::mem_threadgroup);
   
-  auto results_block = (threadgroup ushort2*)threadgroup_block;
-  if (lane_id == 0) {
-    results_block[sidx] = ushort2(all_off, all_on);
+  // Apply edge mask.
+  if ((C % C_simd > 0) && (j_next > C)) {
+    ushort C_modulo = C % C_simd;
+    ushort C_floor = C_modulo - (C_modulo % 8);
+    ushort C_edge_thread = C_modulo - C_floor;
+    ushort c = C_floor;
+    T placeholder = attention_matrix[0].thread_elements()[0][0];
+    placeholder = simd_broadcast_first(placeholder);
+    
+    if (offset_in_simd.x >= C_edge_thread) {
+      for (ushort r = 0; r < R_simd; r += 8) {
+        auto s = get_sram(attention_matrix, C_simd, ushort2(c, r));
+        *s = simdgroup_matrix_storage<T>(placeholder);
+      }
+    }
+    
+#pragma clang loop unroll(full)
+    for (c += 8; c < C_simd; c += 8) {
+#pragma clang loop unroll(full)
+      for (ushort r = 0; r < R_simd; r += 8) {
+        auto s = get_sram(attention_matrix, C_simd, ushort2(c, r));
+        *s = simdgroup_matrix_storage<T>(placeholder);
+      }
+    }
   }
+  
+  T minimum = 0;
+  T maximum = -numeric_limits<T>::max();
+#pragma clang loop unroll(full)
+  for (ushort r = 0; r < R_simd; r += 8) {
+#pragma clang loop unroll(full)
+    for (ushort c = 0; c < C_simd; c += 8) {
+      auto s = get_sram(attention_matrix, C_simd, ushort2(c, r));
+      vec<T, 2> elements = s->thread_elements()[0];
+      minimum = min3(elements[0], elements[1], minimum);
+      maximum = max3(elements[0], elements[1], maximum);
+    }
+  }
+  ushort all_zero = false;
+  ushort all_masked = false;
+  if (minimum == maximum) {
+    if (minimum == 0) {
+      all_zero = true;
+    } else if (minimum == -numeric_limits<T>::max()) {
+      all_masked = true;
+    }
+  }
+  all_zero = simd_ballot(all_zero).all();
+  all_masked = simd_ballot(all_masked).all();
+  results_block[sidx] = ushort2(all_zero, all_masked);
   threadgroup_barrier(mem_flags::mem_threadgroup);
   
   if (sidx == 0) {
+    all_zero = true;
+    all_masked = true;
     if (lane_id < R_splits) {
-      ushort2 results = results_block[lane_id];
-      all_off = results[0];
-      all_on = results[1];
+      ushort2 result = results_block[lane_id];
+      all_zero = result[0];
+      all_masked = result[1];
     }
-    all_off = simd_ballot(all_off).all();
-    all_on = simd_ballot(all_on).all();
+    all_zero = simd_ballot(all_zero).all();
+    all_masked = simd_ballot(all_masked).all();
     
-    ushort block_mask_element;
-    if (all_off && all_on) {
-      block_mask_element = 2;
-    } else if (all_off) {
-      block_mask_element = 0;
-    } else if (all_on) {
+    ushort block_mask_element = 2;
+    if (all_zero) {
       block_mask_element = 1;
-    } else {
-      block_mask_element = 2;
+    } else if (all_masked) {
+      block_mask_element = 0;
     }
     uint block_mask_leading_dim = (C + C_simd - 1) / C_simd;
     block_mask[gid.y * block_mask_leading_dim + gid.x] = block_mask_element;
