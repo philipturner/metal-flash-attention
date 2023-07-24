@@ -39,7 +39,7 @@ class AttentionPerfTests: MFATestCase {
 //    let duration = Duration(granularity: 2, length: 2)
 //    let (domain, ranges) = rangeSequenceScaling(
 //      duration: duration, type: .causal)
-
+//
 //    let backends = SequenceType.causal.backends
 //    let backends: [AttentionBackend] = [.mfa]
     
@@ -359,19 +359,19 @@ class AttentionPerfTests: MFATestCase {
     let domain = 0...384
     let parameters: [SIMD4<Int>] = [
       // Prototyping:
-      SIMD4(granularity, 32,  16, granularity * 1),
-      SIMD4(         32, 64,   8, granularity * 1),
-      SIMD4(         64, 160,  4, granularity * 2),
-      SIMD4(        160, 385,  4, granularity * 4),
-      
-      // Production:
 //      SIMD4(granularity, 32,  16, granularity * 1),
 //      SIMD4(         32, 64,   8, granularity * 1),
-//      SIMD4(         64, 128,  4, granularity * 2),
-//      SIMD4(        128, 256,  2, granularity * 4),
-//      SIMD4(        256, 385,  2, granularity * 16),
+//      SIMD4(         64, 160,  4, granularity * 2),
+//      SIMD4(        160, 385,  4, granularity * 4),
+      
+      // Production:
+      SIMD4(granularity, 32,  16, granularity * 1),
+      SIMD4(         32, 64,   8, granularity * 1),
+      SIMD4(         64, 128,  4, granularity * 2),
+      SIMD4(        128, 256,  2, granularity * 4),
+      SIMD4(        256, 385,  2, granularity * 16),
     ]
-    let sequenceLength = 2048
+    let sequenceLength = 4096
     
     return (domain, parameters.indices.map { i in
       let parameter = parameters[i]
@@ -636,10 +636,10 @@ class AttentionPerfTests: MFATestCase {
             let backendRepr = backend.description
             let configRepr = config.description
             let gflopsInt = Int(round(gflops))
-//            print("(\(backendRepr)) \(configRepr) - \(gflopsInt) GFLOPS")
+            print("(\(backendRepr)) \(configRepr) - \(gflopsInt) GFLOPS")
             
             if backendRepr.contains("MFA") {
-              print("\(config.D), \(gflopsInt)")
+//              print("\(config.D), \(gflopsInt)")
 //              print("\(config.R), \(gflopsInt)")
             }
           }

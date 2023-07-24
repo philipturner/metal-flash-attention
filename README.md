@@ -4,7 +4,7 @@ A faster alternative to Metal Performance Shaders, a reference implementation of
 
 Algorithms:
 - [ ] Attention
-  - [x] Dense (87.0% ALU)
+  - [x] Dense (90.2% ALU)
   - [ ] Block-Sparse
   - [ ] Grouped Queries
 - [ ] Convolution

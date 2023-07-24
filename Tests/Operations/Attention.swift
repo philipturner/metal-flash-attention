@@ -97,7 +97,6 @@ struct MFA_Attention: Attention, MFA_Operation {
     var C_simd: UInt16
     var R_splits: UInt16
     var fuseAsyncLoads = false
-    var allowBankConflicts = false
     if dataType == .float {
       R_simd = 8
       C_simd = 32
@@ -149,8 +148,6 @@ struct MFA_Attention: Attention, MFA_Operation {
           C_simd = 40
           R_splits = 8
         }
-        
-        // TODO: Try C_simd=16,24 / R_splits=4 for D=97-384
       }
     }
     
@@ -188,9 +185,7 @@ struct MFA_Attention: Attention, MFA_Operation {
       // Pad 80 -> 88     (160B -> 176B)
       // Pad 96 -> 104    (192B -> 208B)
       let dimBytesModulo = dimBytes % 64
-      if allowBankConflicts {
-        return
-      } else if dimBytesModulo == 16 || dimBytesModulo == 48 {
+      if dimBytesModulo == 16 || dimBytesModulo == 48 {
         return
       } else if dimBytesModulo == 0 || dimBytesModulo == 32 {
         let bankOffsetBytes: UInt16 = 16
