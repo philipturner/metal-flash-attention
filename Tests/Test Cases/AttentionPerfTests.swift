@@ -361,8 +361,8 @@ class AttentionPerfTests: MFATestCase {
       // Prototyping:
       SIMD4(granularity, 32,  16, granularity * 1),
       SIMD4(         32, 64,   8, granularity * 1),
-//      SIMD4(         64, 160,  4, granularity * 2),
-//      SIMD4(        160, 385,  4, granularity * 4),
+      SIMD4(         64, 160,  4, granularity * 2),
+      SIMD4(        160, 385,  4, granularity * 4),
       
       // Production:
 //      SIMD4(granularity, 32,  16, granularity * 1),
