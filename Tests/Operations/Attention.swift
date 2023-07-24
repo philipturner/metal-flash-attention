@@ -128,8 +128,9 @@ struct MFA_Attention: Attention, MFA_Operation {
           R_splits = 8
         } else if D <= 24 {
           R_simd = 8
-          C_simd = 104
+          C_simd = 56
           R_splits = 8
+          fuseAsyncLoads = true
         } else if D <= 56 {
           R_simd = 8
           C_simd = 64
