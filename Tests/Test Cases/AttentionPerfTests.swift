@@ -19,10 +19,10 @@ class AttentionPerfTests: MFATestCase {
     
     // Prototyping:
     // Granularity:
-    //   4 -> 1 (causal), 8 (small), 128 (large), 1+ (head size)
+    //   1-4 (causal), 8 (small), 128 (large), 1+ (head size)
     // Length:
-    //   2 (causal), 1 (everything else)
-    // For causal:
+    //   2 (causal and triangular), 1 (everything else)
+    // For causal and triangular:
     //   remove the non-MFA backends
     //   narrow the range from 0...1024 to 512...1024
     // For heads scaling:
@@ -33,10 +33,12 @@ class AttentionPerfTests: MFATestCase {
     //   2 (causal), 4 (small), 64 (large), 1+ (head size)
     // Length:
     //   1 (head size), 2 (everything else)
+    // For triangular:
+    //   remove the non-MFA backends
     // For heads scaling:
     //   sequence length 4096
     
-    let duration = Duration(granularity: 8, length: 2)
+    let duration = Duration(granularity: -1, length: 2)
     let (domain, ranges) = rangeSequenceScaling(
       duration: duration, type: .causal)
 
@@ -52,7 +54,12 @@ class AttentionPerfTests: MFATestCase {
 //    let (domain, ranges) = rangeHeadScaling(duration: duration)
 //    let backends = [AttentionBackend.mps, AttentionBackend.mfa]
     testAttention(
-      domain: domain, ranges: ranges, backends: backends)
+      domain: domain, ranges: ranges, backends: backends, config: .triangular)
+  }
+  
+  enum GraphConfig {
+    case none
+    case triangular
   }
   
   struct AttentionConfig: Equatable, Hashable {
@@ -268,50 +275,56 @@ class AttentionPerfTests: MFATestCase {
     let granularity = duration.granularity
     
     var domain: ClosedRange<Int>
-    var parameters: [SIMD4<Int>]
+    var parameters: [SIMD8<Int>]
     if type == .causal {
-      domain = 0...3072
+      domain = 0...16384
 //      domain = 512...1024
 //      domain = 0...1024
       parameters = [
-        SIMD4(granularity, 192, 256, 8),
-        SIMD4( 192,  256, 128, 8),
-        SIMD4( 256,  384,  64, 8),
-        SIMD4( 384,  512,  32, 8),
-        SIMD4( 512,  768,  16, 8),
-        SIMD4( 768, 1024,   8, 8),
-        SIMD4(1024, 1536,   4, 8),
-        SIMD4(1536, 2560,   2, 8),
-        SIMD4(2560, 3073,   2, 6),
+        SIMD8(   1,    8,   256, 1, 0, 0, 0, 0),
+        SIMD8(   8,  192,   256, 8, 0, 0, 0, 0),
+        SIMD8( 192,  256,   128, 8, 0, 0, 0, 0),
+        SIMD8( 256,  384,    64, 8, 0, 0, 0, 0),
+        SIMD8( 384,  512,    32, 8, 0, 0, 0, 0),
+        SIMD8( 512,  768,    16, 16, 0, 0, 0, 0),
+        SIMD8( 768, 1024,     8, 16, 0, 0, 0, 0),
+        SIMD8(1024, 1536,     4, 32, 0, 0, 0, 0),
+        SIMD8(1536, 2048,     2, 32, 8, 0, 0, 0),
+        SIMD8(2048, 3072,     2, 64, 8, 0, 0, 0),
+        SIMD8(3072, 4096,     2, 128, 8, 0, 0, 0),
+        SIMD8(4096, 6144,     2, 256, 8, 0, 0, 0),
+        SIMD8( 6 * 1024,  8 * 1024, 2, 512, 7, 0, 0, 0),
+        SIMD8( 8 * 1024, 12 * 1024, 2, 1024, 6, 0, 0, 0),
+        SIMD8(12 * 1024, 16 * 1024 + 1, 2, 2048, 5, 0, 0, 0),
         
-//        SIMD4(granularity, 192, 256, 8),
-//        SIMD4( 192,  256, 128, 8),
-//        SIMD4( 256,  384,  64, 8),
-//        SIMD4( 384,  512,  32, 8),
+//        SIMD4(granularity, 192, 256, granularity, 0, 0, 0, 0),
+//        SIMD4( 192,  256, 128, granularity, 0, 0, 0, 0),
+//        SIMD4( 256,  384,  64, granularity, 0, 0, 0, 0),
+//        SIMD4( 384,  512,  32, granularity, 0, 0, 0, 0),
         
-//        SIMD4( 512,  768,  16, 8),
-//        SIMD4( 768, 1025,   8, 8),
+//        SIMD4( 512,  768,  16, granularity, 0, 0, 0, 0),
+//        SIMD4( 768, 1025,   8, granularity, 0, 0, 0, 0),
       ]
     } else if type == .small {
       domain = 0...2048
       parameters = [
-        SIMD4(granularity, 192, 256, 8),
-        SIMD4( 192,  256, 128, 8),
-        SIMD4( 256,  384,  64, 8),
-        SIMD4( 384,  512,  32, 8),
-        SIMD4( 512,  768,  16, 8),
-        SIMD4( 768, 1024,   8, 8),
-        SIMD4(1024, 1536,   4, 8),
-        SIMD4(1536, 2049,   2, 8),
+        SIMD8(granularity, 192, 256, granularity, 0, 0, 0, 0),
+        SIMD8( 192,  256, 128, granularity, 0, 0, 0, 0),
+        SIMD8( 256,  384,  64, granularity, 0, 0, 0, 0),
+        SIMD8( 384,  512,  32, granularity, 0, 0, 0, 0),
+        SIMD8( 512,  768,  16, granularity, 0, 0, 0, 0),
+        SIMD8( 768, 1024,   8, granularity, 0, 0, 0, 0),
+        SIMD8(1024, 1536,   4, granularity, 0, 0, 0, 0),
+        SIMD8(1536, 2049,   2, granularity, 0, 0, 0, 0),
       ]
     } else {
       precondition(granularity >= 16, "Granularity is too small.")
       domain = 2048...8192
       parameters = [
-        SIMD4(2048, 3072, 16, 8),
-        SIMD4(3072, 4096,  8, 8),
-        SIMD4(4096, 6144,  4, 8),
-        SIMD4(6144, 8193,  2, 8),
+        SIMD8(2048, 3072, 16, granularity, 0, 0, 0, 0),
+        SIMD8(3072, 4096,  8, granularity, 0, 0, 0, 0),
+        SIMD8(4096, 6144,  4, granularity, 0, 0, 0, 0),
+        SIMD8(6144, 8193,  2, granularity, 0, 0, 0, 0),
       ]
     }
     
@@ -338,21 +351,22 @@ class AttentionPerfTests: MFATestCase {
         sparsityPercent: -1)
       let stride = AttentionConfig(
         B: 0,
-        R: granularity,
-        C: granularity,
+        R: parameter[3],
+        C: parameter[3],
         H: 0,
         D: 0,
         sparsityPercent: 0)
       
+      let refBase = (parameter[4] > 0) ? parameter[4] : 8
       var iterations = max(1, parameter[2])
       var trials = 0
-      let ref = parameter[3] * duration.length
+      let ref = refBase * duration.length
       SquareMatrixBenchmark_configure_2(
         &iterations, &trials, ref: ref)
       
       var iterationsMPS = max(1, min(32, parameter[2]))
       var trialsMPS = 0
-      let refMPS = parameter[3]
+      let refMPS = refBase
       SquareMatrixBenchmark_configure_2(
         &iterationsMPS, &trialsMPS, ref: refMPS)
       
@@ -446,7 +460,8 @@ class AttentionPerfTests: MFATestCase {
   func testAttention(
     domain: ClosedRange<Int>,
     ranges: [AttentionRange],
-    backends _backends: [AttentionBackend]
+    backends _backends: [AttentionBackend],
+    config: GraphConfig
   ) {
     let backends = _backends.sorted(by: {
       $0.rawValue < $1.rawValue
@@ -679,7 +694,8 @@ class AttentionPerfTests: MFATestCase {
         domain: domain,
         independentVariable: "Sequence Length",
         logThreshold: nil,
-        title: title)
+        title: title,
+        config: config)
     } else if stride.R == 0 && stride.C == 0, stride.H == 0, stride.D > 0 {
       let R = ranges.first!.exclusiveEnd.R
       let H = ranges.first!.exclusiveEnd.H
@@ -690,7 +706,8 @@ class AttentionPerfTests: MFATestCase {
         domain: domain,
         independentVariable: "Head Size",
         logThreshold: 16,
-        title: title)
+        title: title,
+        config: config)
     } else {
       fatalError("Unsupported configuration")
     }
@@ -702,7 +719,8 @@ class AttentionPerfTests: MFATestCase {
     domain: ClosedRange<Int>,
     independentVariable: String,
     logThreshold: Int?,
-    title: String
+    title: String,
+    config: GraphConfig
   ) {
     let plt = PythonContext.global.plt
     let (_, ax) = plt.subplots().tuple2
@@ -718,7 +736,13 @@ class AttentionPerfTests: MFATestCase {
       plt.plot(sizeArray, gflopsArray, style, label: label)
       maxListGFLOPS = max(maxListGFLOPS, gflopsArray.max()!)
     }
-    plt.legend(loc: "upper left")
+    
+    switch config {
+    case .none:
+      plt.legend(loc: "upper left")
+    case .triangular:
+      plt.legend(loc: "lower right")
+    }
     plt.xlim(domain.lowerBound, domain.upperBound)
     
     var maxGFLOPS = Float(MetalContext.global.infoDevice.flops / 1e9)
@@ -732,12 +756,7 @@ class AttentionPerfTests: MFATestCase {
     
     plt.ylim(0, maxGFLOPS)
     plt.xlabel(independentVariable)
-    
-    if axis == \AttentionConfig.sparsityPercent {
-      plt.ylabel("GFLOPS * sparsity")
-    } else {
-      plt.ylabel("GFLOPS")
-    }
+    plt.ylabel("GFLOPS")
     
     if let logThreshold {
       plt.xscale("symlog", base: 2, linthresh: logThreshold)
@@ -745,6 +764,14 @@ class AttentionPerfTests: MFATestCase {
       let ticker = Python.import("matplotlib.ticker")
       ax.xaxis.set_major_formatter(ticker.ScalarFormatter())
       plt.xticks([1, 8, 16, 32, 64, 128, 256, 384])
+    } else if config == .triangular {
+      plt.xscale("symlog", base: 2, linthresh: 512)
+      
+      let ticker = Python.import("matplotlib.ticker")
+      ax.xaxis.set_major_formatter(ticker.ScalarFormatter())
+      plt.xticks([
+        1, 256, 512, 1024, 2048, 4096, 8 * 1024, 16 * 1024
+      ])
     }
     
 #if DEBUG

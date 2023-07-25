@@ -84,14 +84,28 @@ struct MFA_Attention: Attention, MFA_Operation {
     constants.setConstantValue(&pcopy.masked, type: .bool, index: 50000)
     constants.setConstantValue(&pcopy.blockSparse, type: .bool, index: 102)
     
+    var triangular = false
+    if parameters.masked && parameters.blockSparse {
+      // If masked and R ≈ C, is it very likely this is causal self-attention.
+      let ratio = Float(parameters.R) / Float(parameters.C)
+      let ratioCutoff: Float = 1.1
+      let additiveCutoff: Int = 128
+      if abs(parameters.R - parameters.C) < additiveCutoff {
+        triangular = true
+      } else if 1 / ratioCutoff < ratio, ratio < ratioCutoff {
+        triangular = true
+      }
+    }
+    constants.setConstantValue(&triangular, type: .bool, index: 103)
+    
     var forward = true
     var backward = false
     var generateBlockMask = false
     var groupedQuery = false
-    constants.setConstantValue(&forward, type: .bool, index: 103)
-    constants.setConstantValue(&backward, type: .bool, index: 104)
-    constants.setConstantValue(&generateBlockMask, type: .bool, index: 105)
-    constants.setConstantValue(&groupedQuery, type: .bool, index: 106)
+    constants.setConstantValue(&forward, type: .bool, index: 110)
+    constants.setConstantValue(&backward, type: .bool, index: 111)
+    constants.setConstantValue(&generateBlockMask, type: .bool, index: 112)
+    constants.setConstantValue(&groupedQuery, type: .bool, index: 113)
     
     var R_simd: UInt16
     var C_simd: UInt16
@@ -154,8 +168,9 @@ struct MFA_Attention: Attention, MFA_Operation {
     constants.setConstantValue(&R_simd, type: .ushort, index: 200)
     constants.setConstantValue(&C_simd, type: .ushort, index: 201)
     constants.setConstantValue(&R_splits, type: .ushort, index: 210)
-    
-    constants.setConstantValue(&fuseAsyncLoads, type: .bool, index: 230)
+    if fuseAsyncLoads {
+      constants.setConstantValue(&fuseAsyncLoads, type: .bool, index: 213)
+    }
     
     let D_simd = UInt16(pcopy.D + 7) / 8 * 8
     let R_group = R_simd * R_splits
@@ -210,7 +225,7 @@ struct MFA_Attention: Attention, MFA_Operation {
     
     if parameters.blockSparse {
       var generateBlockMask = true
-      constants.setConstantValue(&generateBlockMask, type: .bool, index: 105)
+      constants.setConstantValue(&generateBlockMask, type: .bool, index: 112)
       functions.append(try! library.makeFunction(
         name: "attention", constantValues: constants))
     }

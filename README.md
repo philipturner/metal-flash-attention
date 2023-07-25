@@ -4,20 +4,18 @@ A faster alternative to Metal Performance Shaders, a reference implementation of
 
 Algorithms:
 - [ ] Attention
-  - [x] Dense (90.2% ALU)
-  - [ ] Block-Sparse
-  - [ ] Grouped Queries
+  - [x] Dense (90.5% ALU)
+  - [x] Block-Sparse
+  - [ ] Triangular
 - [ ] Convolution
-  - [ ] ConvGEMM 1x1
   - [ ] ConvGEMM 3x3
   - [ ] Winograd 4x4
   - [ ] Winograd 5x5
   - [ ] Winograd 6x6
+  - [ ] Winograd 7x7
 - [x] GEMM
   - [x] FP16 (93.3% ALU)
   - [x] FP32 (87.2% ALU)
-  - [x] SIMD Futures
-  - [x] [Stream-K](https://arxiv.org/abs/2301.03598)
   - [ ] Fused Activations
 - [ ] Normalization
   - [ ] Group Normalization
@@ -163,12 +161,6 @@ Scaling by head size:
   - &le;64: every integer
   - &gt;64: every `roundUpToPowerOf2(D/64)` integers
 - Head count: 8
-
-Scaling by sparsity:
-- Sparsity: every even percentage
-- Sequence length: 1024
-- Head size: 64
-- Head count: 16
   
 | Function Constant | Value |
 | ------ | --------- |
@@ -180,11 +172,6 @@ Scaling by sparsity:
 | `R_simd` | Block R / `R_splits` |
 | `C_simd` | Block C |
 | `D_simd` | $$8 \times \left \lceil{ \frac{D}{8} }\right \rceil $$  |
-
-| Precision | D Start | D End | Block R | Block C |
-| - | - | - | - | - |
-| Float32 | 64 | 64 | 32 | 32 |
-| Float16 | 64 | 64 | 32 | 48 |
 
 ### Float32 Sequence Scaling (Small)
 
@@ -204,15 +191,15 @@ Dense: Stable Diffusion 2 outermost attention layer @ 512x512 (sequence length =
 
 ### Float16 Sequence Scaling (Causal Mask)
 
-![FlashAttention (F16, H=10, D=64)](./CI/float16-causal-sequences-latest.png)
+![FlashAttention (F16, H=10, D=64)](./CI/float16-small-causal-latest.png)
+
+![FlashAttention (F16, H=10, D=64)](./CI/float16-large-causal-latest.png)
 
 ### Float16 Head Scaling
 
 Dense: Stable Diffusion 1 outermost attention layer @ 512x512 (head size = 40)
 
 ![FlashAttention (F16, R=C=4096, H=8)](./CI/float16-head-sizes-latest.png)
-
-### Float16 Sparsity Scaling
 
 ## Roadmap
 
@@ -223,7 +210,7 @@ Releases:
   - Fused transposes for A and B
   - Batched GEMM
 - v1.0.0
-  - Attention, dense and block-sparse
+  - Attention: dense, block-sparse, and triangular
 - v1.1.0
   - Fused activations
   - Alpha and beta constants from BLAS

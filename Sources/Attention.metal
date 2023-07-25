@@ -13,9 +13,6 @@ using namespace metal;
 
 // MARK: - Function Constants
 
-#pragma clang diagnostic push
-#pragma clang diagnostic ignored "-Wunused"
-
 // Dimensions of each matrix.
 constant uint R [[function_constant(0)]];
 constant uint C [[function_constant(1)]];
@@ -41,21 +38,21 @@ constant bool batched [[function_constant(100)]];
 constant bool masked [[function_constant(50000)]]; // 101
 constant bool block_sparse [[function_constant(102)]];
 constant bool block_sparse_masked = masked && block_sparse;
+constant bool triangular [[function_constant(103)]];
 
-constant bool forward [[function_constant(103)]];
-constant bool backward [[function_constant(104)]];
-constant bool generate_block_mask [[function_constant(105)]];
-constant bool grouped_query [[function_constant(106)]];
+constant bool forward [[function_constant(110)]];
+constant bool backward [[function_constant(111)]];
+constant bool generate_block_mask [[function_constant(112)]];
+constant bool grouped_query [[function_constant(113)]];
 
 constant ushort R_simd [[function_constant(200)]];
 constant ushort C_simd [[function_constant(201)]];
 constant ushort D_simd = (D + 7) / 8 * 8;
 
-// TODO: Try reversing the traversal order to improve work distribution during
-// causal sparse attention.
 constant ushort R_splits [[function_constant(210)]];
-constant bool R_traverse_backward [[function_constant(213)]];
 constant ushort R_group = R_simd * R_splits;
+constant bool fuse_async_loads [[function_constant(213)]];
+constant bool _fuse_async_loads = is_function_constant_defined(fuse_async_loads) ? fuse_async_loads : false;
 
 constant ushort R_bank_offset [[function_constant(220)]];
 constant ushort C_bank_offset [[function_constant(221)]];
@@ -67,15 +64,12 @@ constant bool D_bank_offset_defined = is_function_constant_defined(D_bank_offset
 constant ushort R_block_dim = R_group + (R_bank_offset_defined ? R_bank_offset : 0);
 constant ushort C_block_dim = C_simd + (C_bank_offset_defined ? C_bank_offset : 0);
 constant ushort D_block_dim = D_simd + (D_bank_offset_defined ? D_bank_offset : 0);
+constant ushort V_block_offset = (K_trans ? C_simd * D_block_dim : D_simd * C_block_dim);
+
 constant ushort Q_block_leading_dim = (Q_trans ? R_block_dim : D_block_dim);
 constant ushort K_block_leading_dim = (K_trans ? D_block_dim : C_block_dim);
 constant ushort V_block_leading_dim = (V_trans ? C_block_dim : D_block_dim);
 constant ushort O_block_leading_dim = (O_trans ? R_block_dim : D_block_dim);
-
-constant bool fuse_async_loads [[function_constant(230)]];
-constant ushort V_block_offset = (K_trans ? C_simd * D_block_dim : D_simd * C_block_dim);
-
-#pragma clang diagnostic pop
 
 // MARK: - Utilities
 
@@ -367,6 +361,11 @@ void _attention_impl(device T *Q [[buffer(0)]],
                      ushort sidx [[simdgroup_index_in_threadgroup]],
                      ushort lane_id [[thread_index_in_simdgroup]])
 {
+  if (triangular) {
+    uint R_blocks = (R + R_group - 1) / R_group;
+    gid.x = R_blocks - 1 - gid.x;
+  }
+  
   uint i = gid.x * R_group + sidx * R_simd;
   if (R % R_group > 0) {
     if (i >= R) {
@@ -450,7 +449,7 @@ void _attention_impl(device T *Q [[buffer(0)]],
       K_src += head_offsets[1] * (K_trans ? D : D * C);
       K_src = apply_batch_offset(K_src, gid.z * C * H * D);
       
-      if (fuse_async_loads) {
+      if (_fuse_async_loads) {
         uint2 V_offset(0, j_block * C_simd);
         uint C_ceil = (C + 7) / 8 * 8;
         ushort2 V_src_tile(D, min(uint(C_simd), C - V_offset.y));
@@ -609,7 +608,7 @@ void _attention_impl(device T *Q [[buffer(0)]],
     }
     
     // Load V block.
-    if (!fuse_async_loads) {
+    if (!_fuse_async_loads) {
       threadgroup_barrier(mem_flags::mem_threadgroup);
       if (sidx == 0) {
         uint2 V_offset(0, j_block * C_simd);
@@ -629,7 +628,7 @@ void _attention_impl(device T *Q [[buffer(0)]],
     auto V_block = simdgroup_matrix_storage<T>::apply_offset(threadgroup_block, V_block_leading_dim, offset_in_simd, V_trans);
     
     // Multiply P * V.
-    if (fuse_async_loads) {
+    if (_fuse_async_loads) {
       V_block += V_block_offset;
     } else {
       threadgroup_barrier(mem_flags::mem_threadgroup);
