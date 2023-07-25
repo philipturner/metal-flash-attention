@@ -49,7 +49,10 @@ constant ushort R_simd [[function_constant(200)]];
 constant ushort C_simd [[function_constant(201)]];
 constant ushort D_simd = (D + 7) / 8 * 8;
 
+// TODO: Try reversing the traversal order to improve work distribution during
+// causal sparse attention.
 constant ushort R_splits [[function_constant(210)]];
+constant bool R_traverse_backward [[function_constant(213)]];
 constant ushort R_group = R_simd * R_splits;
 
 constant ushort R_bank_offset [[function_constant(220)]];
@@ -203,8 +206,8 @@ if (generate_block_mask) { \
 
 template <typename T>
 void _generate_block_mask_impl(threadgroup T *threadgroup_block [[threadgroup(0)]],
-                               device T *mask [[buffer(11), function_constant(masked)]],
-                               device uchar *block_mask [[buffer(12), function_constant(block_sparse)]],
+                               device T *mask [[buffer(21), function_constant(masked)]],
+                               device uchar *block_mask [[buffer(13), function_constant(block_sparse)]],
                                
                                uint3 gid [[threadgroup_position_in_grid]],
                                ushort sidx [[simdgroup_index_in_threadgroup]],
@@ -334,14 +337,16 @@ void _generate_block_mask_impl(threadgroup T *threadgroup_block [[threadgroup(0)
     all_zero = simd_ballot(all_zero).all();
     all_masked = simd_ballot(all_masked).all();
     
-    ushort block_mask_element = 2;
-    if (all_zero) {
-      block_mask_element = 1;
-    } else if (all_masked) {
+    ushort block_mask_element;
+    if (all_masked) {
       block_mask_element = 0;
+    } else if (all_zero) {
+      block_mask_element = 1;
+    } else {
+      block_mask_element = 2;
     }
     uint block_mask_leading_dim = (C + C_simd - 1) / C_simd;
-    block_mask[gid.y * block_mask_leading_dim + gid.x] = block_mask_element;
+    block_mask[gid.x * block_mask_leading_dim + gid.y] = block_mask_element;
   }
 }
 

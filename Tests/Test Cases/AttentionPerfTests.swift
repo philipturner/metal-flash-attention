@@ -19,9 +19,9 @@ class AttentionPerfTests: MFATestCase {
     
     // Prototyping:
     // Granularity:
-    //   1 (causal), 8 (small), 128 (large), 1+ (head size)
+    //   4 -> 1 (causal), 8 (small), 128 (large), 1+ (head size)
     // Length:
-    //   2 (non-causal), 1 (small), 1 (large), 1 (head size)
+    //   2 (causal), 1 (everything else)
     // For causal:
     //   remove the non-MFA backends
     //   narrow the range from 0...1024 to 512...1024
@@ -36,21 +36,21 @@ class AttentionPerfTests: MFATestCase {
     // For heads scaling:
     //   sequence length 4096
     
-//    let duration = Duration(granularity: 2, length: 2)
-//    let (domain, ranges) = rangeSequenceScaling(
-//      duration: duration, type: .causal)
-//
-//    let backends = SequenceType.causal.backends
+    let duration = Duration(granularity: 4, length: 2)
+    let (domain, ranges) = rangeSequenceScaling(
+      duration: duration, type: .causal)
+
+    var backends = SequenceType.causal.backends
 //    let backends: [AttentionBackend] = [.mfa]
     
-//    backends = backends.compactMap {
-//      if $0.isMPS { return nil }
-//      return $0
-//    }
+    backends = backends.compactMap {
+      if $0.isMPS { return nil }
+      return $0
+    }
     
-    let duration = Duration(granularity: 1, length: 1)
-    let (domain, ranges) = rangeHeadScaling(duration: duration)
-    let backends = [AttentionBackend.mps, AttentionBackend.mfa]
+//    let duration = Duration(granularity: 1, length: 1)
+//    let (domain, ranges) = rangeHeadScaling(duration: duration)
+//    let backends = [AttentionBackend.mps, AttentionBackend.mfa]
     testAttention(
       domain: domain, ranges: ranges, backends: backends)
   }
@@ -125,55 +125,59 @@ class AttentionPerfTests: MFATestCase {
   
   enum AttentionBackend: Int {
     case mps = 0
-    case mpsCausal = 1
+    case mpsMasked = 1
     case mfa = 2
-    case mfaCausal = 3
+    case mfaMasked = 3
+    case mfaBlockSparse = 4
     
     var tensorBackend: TensorBackend {
       switch self {
-      case .mps, .mpsCausal: return .mps
-      case .mfa, .mfaCausal: return .mfa
+      case .mps, .mpsMasked: return .mps
+      case .mfa, .mfaMasked, .mfaBlockSparse: return .mfa
       }
     }
     
-    var description: String {
+    var causalDescription: String {
       switch self {
       case .mps: return "MPS"
-      case .mpsCausal: return "MPS (Causal)"
+      case .mpsMasked: return "MPS (Causal)"
       case .mfa: return "MFA"
-      case .mfaCausal: return "MFA (Causal, Dense)"
+      case .mfaMasked: return "MFA (Causal, Dense)"
+      case .mfaBlockSparse: return "MFA (Causal, Sparse)"
       }
     }
     
     var isMPS: Bool {
       switch self {
-      case .mps, .mpsCausal: return true
-      case .mfa, .mfaCausal: return false
+      case .mps, .mpsMasked: return true
+      case .mfa, .mfaMasked, .mfaBlockSparse: return false
       }
     }
     
     var equivalentMPS: AttentionBackend {
       switch self {
       case .mps: fatalError("Is MPS.")
-      case .mpsCausal: fatalError("Is MPS.")
+      case .mpsMasked: fatalError("Is MPS.")
       case .mfa: return .mps
-      case .mfaCausal: return .mpsCausal
+      case .mfaMasked: return .mpsMasked
+      case .mfaBlockSparse: return .mpsMasked
       }
     }
     
-    var isCausal: Bool {
+    var isMasked: Bool {
       switch self {
       case .mps, .mfa: return false
-      case .mpsCausal, .mfaCausal: return true
+      case .mpsMasked, .mfaMasked, .mfaBlockSparse: return true
       }
     }
     
     var mplColor: String {
       switch self {
       case .mps: return "-r"
-      case .mpsCausal: return "-y"
+      case .mpsMasked: return "-y"
       case .mfa: return "-b"
-      case .mfaCausal: return "-g"
+      case .mfaMasked: return "-g"
+      case .mfaBlockSparse: return "-k"
       }
     }
   }
@@ -253,7 +257,7 @@ class AttentionPerfTests: MFATestCase {
       case .small, .large:
         return [.mps, .mfa]
       case .causal:
-        return [.mps, .mpsCausal, .mfa, .mfaCausal]
+        return [.mps, .mpsMasked, .mfa, .mfaMasked, .mfaBlockSparse]
       }
     }
   }
@@ -266,13 +270,13 @@ class AttentionPerfTests: MFATestCase {
     var domain: ClosedRange<Int>
     var parameters: [SIMD4<Int>]
     if type == .causal {
-//      domain = 512...1024
-      domain = 0...1024
+      domain = 512...1024
+//      domain = 0...1024
       parameters = [
-        SIMD4(granularity, 192, 256, 8),
-        SIMD4( 192,  256, 128, 8),
-        SIMD4( 256,  384,  64, 8),
-        SIMD4( 384,  512,  32, 8),
+//        SIMD4(granularity, 192, 256, 8),
+//        SIMD4( 192,  256, 128, 8),
+//        SIMD4( 256,  384,  64, 8),
+//        SIMD4( 384,  512,  32, 8),
         SIMD4( 512,  768,  16, 8),
         SIMD4( 768, 1025,   8, 8),
       ]
@@ -462,7 +466,7 @@ class AttentionPerfTests: MFATestCase {
         self.v = Tensor(shape: shapeV, randomUniform: 0..<1)
         self.o = Tensor(zerosLike: shapeO)
         
-        if backend.isCausal {
+        if backend.isMasked {
           let shapeMask = B + [1, R, C]
           self.mask = Tensor(shape: shapeMask, mask: .upperTriangular)
         }
@@ -633,7 +637,7 @@ class AttentionPerfTests: MFATestCase {
           }
           
           for (config, gflops) in samples {
-            let backendRepr = backend.description
+            let backendRepr = backend.causalDescription
             let configRepr = config.description
             let gflopsInt = Int(round(gflops))
             print("(\(backendRepr)) \(configRepr) - \(gflopsInt) GFLOPS")
@@ -689,22 +693,37 @@ class AttentionPerfTests: MFATestCase {
     let plt = PythonContext.global.plt
     let (_, ax) = plt.subplots().tuple2
     
+    var maxListGFLOPS: Float = 0
     for key in data.gflops.keys.sorted(by: { $0.rawValue < $1.rawValue }) {
       let value = data.gflops[key]!
-      let label = key.description
+      let label = key.causalDescription
       let sizeArray = value.map { $0.0[keyPath: axis] }
       
       let gflopsArray = value.map { $0.1 }
       let style = key.mplColor
       plt.plot(sizeArray, gflopsArray, style, label: label)
+      maxListGFLOPS = max(maxListGFLOPS, gflopsArray.max()!)
     }
     plt.legend(loc: "upper left")
     plt.xlim(domain.lowerBound, domain.upperBound)
     
-    // TODO: If the backends contain MFA block-sparse, extend to 2x FLOPS.
-    plt.ylim(0, MetalContext.global.infoDevice.flops / 1e9)
+    var maxGFLOPS = Float(MetalContext.global.infoDevice.flops / 1e9)
+    if maxListGFLOPS > maxGFLOPS {
+      let xPoints: [Int] = [domain.lowerBound, domain.upperBound]
+      let yPoints: [Float] = [maxGFLOPS, maxGFLOPS]
+      plt.plot(xPoints, yPoints, linestyle: "dashed", color: "black")
+      
+      maxGFLOPS = maxListGFLOPS
+    }
+    
+    plt.ylim(0, maxGFLOPS)
     plt.xlabel(independentVariable)
-    plt.ylabel("GFLOPS")
+    
+    if axis == \AttentionConfig.sparsityPercent {
+      plt.ylabel("GFLOPS * sparsity")
+    } else {
+      plt.ylabel("GFLOPS")
+    }
     
     if let logThreshold {
       plt.xscale("symlog", base: 2, linthresh: logThreshold)
