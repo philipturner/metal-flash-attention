@@ -134,11 +134,11 @@ struct MFA_GEMM: GEMM, MFA_Operation {
       flags |= 0x1
     }
     return AsyncPipeline(
-      function: function,
+      functions: [function],
       flags: flags,
-      threadgroupMemoryLength: blockBytes,
-      gridSize: gridSize,
-      groupSize: groupSize)
+      threadgroupMemoryLengths: [blockBytes],
+      gridSizes: [gridSize],
+      groupSizes: [groupSize])
   }
   
   func encode(
@@ -146,9 +146,9 @@ struct MFA_GEMM: GEMM, MFA_Operation {
     tensors: GEMM_Tensors,
     resource: AsyncPipeline
   ) {
-    encoder.setComputePipelineState(resource.resource)
+    encoder.setComputePipelineState(resource.resource(index: 0))
     encoder.setThreadgroupMemoryLength(
-      Int(resource.threadgroupMemoryLength), index: 0)
+      Int(resource.threadgroupMemoryLengths[0]), index: 0)
     
     let tensorA = tensors.a as! MFA_TensorBuffer
     let tensorB = tensors.b as! MFA_TensorBuffer
@@ -203,10 +203,10 @@ struct MFA_GEMM: GEMM, MFA_Operation {
       gridZ = 1
     }
     
-    var gridSize = resource.gridSize
+    var gridSize = resource.gridSizes[0]
     gridSize.depth = gridZ
     encoder.dispatchThreadgroups(
-      gridSize, threadsPerThreadgroup: resource.groupSize)
+      gridSize, threadsPerThreadgroup: resource.groupSizes[0])
   }
 }
 
@@ -318,7 +318,7 @@ struct MPS_GEMM: GEMM, MPS_Operation {
     let tensorC = tensors.c as! MPS_TensorBuffer
     let inputs = [tensorA.tensorData, tensorB.tensorData]
     let results = [tensorC.tensorData]
-    resource.resource.encode(
+    resource.resource(index: 0).encode(
       to: encoder,
       inputs: inputs,
       results: results,

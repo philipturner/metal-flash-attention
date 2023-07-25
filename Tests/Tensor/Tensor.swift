@@ -320,6 +320,10 @@ extension Tensor {
       V_trans: transposeV, O_trans: transposeO,
       batched: batched, masked: mask != nil,
       blockSparse: blockSparse)
+    if blockSparse {
+      precondition(mask != nil, "Block sparsity requires a mask.")
+    }
+    
     parameters.batchDimensionsQ = queries.shape.dropLast(3)
     if let mask {
       parameters.batchDimensionsMask = mask.shape.dropLast(3)

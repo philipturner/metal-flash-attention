@@ -8,11 +8,14 @@
 import Metal
 import QuartzCore
 import PythonKit
+import simd
 
 class CorrectnessTests: MFATestCase {
   override class func typeDescription() -> String {
     "CorrectnessTests"
   }
+  
+  static let useBlockSparsity = true
   
   override func runQuickTests() {
     let logProgress = true
@@ -186,7 +189,7 @@ class CorrectnessTests: MFATestCase {
     print()
     let start = CACurrentMediaTime()
     
-    let testExtension: Float = 0.333
+    let testExtension: Float = 1.000 // 0.334
     
     //  0 - 15: batch 1, K^T
     // 15 - 30: batch 1, all transposes
@@ -197,31 +200,45 @@ class CorrectnessTests: MFATestCase {
     let numNonTransposedTrials = Int(15 * testExtension)
     let numNonBatchedTrials = Int(30 * testExtension)
     let triangularMaskedStart = Int(45 * testExtension)
-    let blockSparseMaskedStart = Int(60 * testExtension)
-    let numTrials = blockSparseMaskedStart + Int(15 * testExtension)
+    let unalignedSparseStart = Int(60 * testExtension)
+    let alignedSparseStart = unalignedSparseStart + Int(15 * testExtension)
+    let numTrials = alignedSparseStart + Int(15 * testExtension)
     
     // Create a biased random distribution that favors smaller numbers. Take the
     // uniform distribution, then cube the results.
     let allRandomInts: [SIMD4<Int>] = (0..<numTrials).map { i in
-      let maxMatrixDimension = (i < numNonBatchedTrials) ? 500 : 250
+      let maxMatrixDimension = (i < numNonBatchedTrials) ? 515 : 259
       
-      var randomVecFloat = SIMD3<Float>.random(in: 0..<1)
-      randomVecFloat = randomVecFloat * randomVecFloat * randomVecFloat
-      if i >= triangularMaskedStart && i < blockSparseMaskedStart {
-        let rms = sqrt(randomVecFloat[0] * randomVecFloat[1])
-        randomVecFloat[0] = rms
-        randomVecFloat[1] = rms
+      var randomVecFloat = SIMD4<Float>.random(in: 0..<1)
+      precondition(all((randomVecFloat .>= 0) .| (randomVecFloat .<= 1)))
+      
+      var randomInts: SIMD4<Int>
+      if i >= alignedSparseStart {
+        let maxDim = Float(maxMatrixDimension)
+        let floats = SIMD4(
+          simd_mix(128, maxDim, randomVecFloat[0]),
+          simd_mix(128, maxDim, randomVecFloat[1]),
+          simd_mix(1, 3, randomVecFloat[2]),
+          simd_mix(100, 128, randomVecFloat[3]))
+        randomInts = SIMD4(__tg_rint(floats))
+      } else {
+        randomVecFloat = randomVecFloat * randomVecFloat * randomVecFloat
+        if i >= triangularMaskedStart && i < unalignedSparseStart {
+          let rms = sqrt(randomVecFloat[0] * randomVecFloat[1])
+          randomVecFloat[0] = rms
+          randomVecFloat[1] = rms
+        }
+        
+        randomVecFloat *= Float(maxMatrixDimension)
+        let numHeads =  Int.random(in: Bool.random() ? 1...2 : 3...8)
+        randomVecFloat[2] /= Float(numHeads)
+        
+        randomInts = SIMD4(
+          Int(randomVecFloat[0]),
+          Int(randomVecFloat[1]),
+          numHeads,
+          Int(randomVecFloat[2]))
       }
-      randomVecFloat *= Float(maxMatrixDimension)
-      
-      let numHeads =  Int.random(in: Bool.random() ? 1...2 : 3...8)
-      randomVecFloat[2] /= Float(numHeads)
-      
-      var randomInts = SIMD4(
-        Int(randomVecFloat[0]),
-        Int(randomVecFloat[1]),
-        numHeads,
-        Int(randomVecFloat[2]))
       
       // WARNING: This threshold must change to match the block sizes.
       let threshold = (Real.self == Float.self) ? 128 : 256
@@ -254,7 +271,7 @@ class CorrectnessTests: MFATestCase {
     let allRandomMasks: [AttentionMask?] = (0..<numTrials).map { i in
       if i < triangularMaskedStart {
         return nil
-      } else if i < blockSparseMaskedStart {
+      } else if i < unalignedSparseStart {
         return .upperTriangular
       } else {
         var blockSize: Int
@@ -267,6 +284,9 @@ class CorrectnessTests: MFATestCase {
           blockSize = Int.random(in: 21...100)
         default:
           fatalError()
+        }
+        if i >= alignedSparseStart {
+          blockSize = 64
         }
         return .blockSparse(blockSize, Float.random(in: 0.1...0.9))
       }
@@ -341,10 +361,15 @@ class CorrectnessTests: MFATestCase {
         _ O: inout Tensor<Real>,
         _ mask: Tensor<Real>?
       ) {
+        var blockSparse = Self.useBlockSparsity
+        blockSparse = blockSparse && (mask != nil)
+        blockSparse = blockSparse && (TensorBackend.default == .mfa)
+        
         O.attention(
           queries: Q, keys: K, values: V, mask: mask,
           transposeQ: Q_trans, transposeK: K_trans,
-          transposeV: V_trans, transposeO: O_trans)
+          transposeV: V_trans, transposeO: O_trans,
+          blockSparse: blockSparse)
       }
       
       if ghost {

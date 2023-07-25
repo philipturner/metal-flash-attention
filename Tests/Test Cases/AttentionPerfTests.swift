@@ -492,19 +492,20 @@ class AttentionPerfTests: MFATestCase {
     ) -> Float {
       var tensors = Tensors(config: config, backend: backend)
       var minTime: Double = .infinity
-      let backend = TensorBackend.default
+      let tensorBackend = TensorBackend.default
       for _ in 0..<trials {
-        backend.markFirstCommand()
+        tensorBackend.markFirstCommand()
         for _ in 0..<iterations {
           tensors.o.attention(
             queries: tensors.q,
             keys: tensors.k,
             values: tensors.v,
             mask: tensors.mask,
-            transposeK: true)
+            transposeK: true,
+            blockSparse: backend == .mfaBlockSparse)
         }
-        backend.markLastCommand()
-        minTime = min(minTime, backend.synchronize())
+        tensorBackend.markLastCommand()
+        minTime = min(minTime, tensorBackend.synchronize())
       }
       
       var floatOps = config.B
@@ -533,7 +534,8 @@ class AttentionPerfTests: MFATestCase {
           keys: mfaTensors.k,
           values: mfaTensors.v,
           mask: mfaTensors.mask,
-          transposeK: true)
+          transposeK: true,
+          blockSparse: backend == .mfaBlockSparse)
       }
       
       _ExecutionContext.withDefaultBackend(mps) {

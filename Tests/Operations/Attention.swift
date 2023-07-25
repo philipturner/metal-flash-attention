@@ -201,25 +201,37 @@ struct MFA_Attention: Attention, MFA_Operation {
     setBankOffset(&D_block_dim, index: 222)
     
     let library = MetalContext.global.library
-    let function = try! library.makeFunction(
-      name: "attention", constantValues: constants)
     
-    if pcopy.Q_trans {
+    var functions = [
+      try! library.makeFunction(
+        name: "attention", constantValues: constants)
+    ]
+    
+    
+    if parameters.blockSparse {
+      var generateBlockMask = true
+      constants.setConstantValue(&generateBlockMask, type: .bool, index: 105)
+      functions.append(try! library.makeFunction(
+        name: "attention", constantValues: constants))
+    }
+    
+    
+    if parameters.Q_trans {
       Q_block_length = D_simd * R_block_dim
     } else {
       Q_block_length = R_group * D_block_dim
     }
-    if pcopy.K_trans {
+    if parameters.K_trans {
       K_block_length = C_simd * D_block_dim
     } else {
       K_block_length = D_simd * C_block_dim
     }
-    if pcopy.V_trans {
+    if parameters.V_trans {
       V_block_length = D_simd * C_block_dim
     } else {
       V_block_length = C_simd * D_block_dim
     }
-    if pcopy.O_trans {
+    if parameters.O_trans {
       O_block_length = D_simd * R_block_dim
     } else {
       O_block_length = R_group * D_block_dim
@@ -233,19 +245,38 @@ struct MFA_Attention: Attention, MFA_Operation {
     }
     blockElements = max(blockElements, Q_block_length)
     blockElements = max(blockElements, O_block_length)
-    let blockBytes = blockElements * UInt16(dataType.size)
+    var blockBytes = [
+      blockElements * UInt16(dataType.size)
+    ]
     
     func ceilDivide(target: Int, granularity: UInt16) -> Int {
       (target + Int(granularity) - 1) / Int(granularity)
     }
-    let gridSize = MTLSize(
-      width: ceilDivide(target: parameters.R, granularity: R_group),
-      height: parameters.H,
-      depth: 1)
-    let groupSize = MTLSize(
-      width: 32 * Int(R_splits),
-      height: 1,
-      depth: 1)
+    var gridSizes = [
+      MTLSize(
+        width: ceilDivide(target: parameters.R, granularity: R_group),
+        height: parameters.H,
+        depth: 1)
+    ]
+    var groupSizes = [
+      MTLSize(
+        width: 32 * Int(R_splits),
+        height: 1,
+        depth: 1)
+    ]
+    
+    if parameters.blockSparse {
+      blockBytes.append(
+        4 * R_splits)
+      gridSizes.append(MTLSize(
+        width: ceilDivide(target: parameters.R, granularity: R_group),
+        height: ceilDivide(target: parameters.C, granularity: C_simd),
+        depth: 1))
+      groupSizes.append(MTLSize(
+        width: 32 * Int(R_splits),
+        height: 1,
+        depth: 1))
+    }
     
     var flags: UInt32 = 0
     if parameters.batched {
@@ -258,11 +289,11 @@ struct MFA_Attention: Attention, MFA_Operation {
       flags |= 0x4
     }
     return AsyncPipeline(
-      function: function,
+      functions: functions,
       flags: flags,
-      threadgroupMemoryLength: blockBytes,
-      gridSize: gridSize,
-      groupSize: groupSize)
+      threadgroupMemoryLengths: blockBytes,
+      gridSizes: gridSizes,
+      groupSizes: groupSizes)
   }
   
   func encode(
@@ -270,10 +301,6 @@ struct MFA_Attention: Attention, MFA_Operation {
     tensors: Attention_Tensors,
     resource: AsyncPipeline
   ) {
-    encoder.setComputePipelineState(resource.resource)
-    encoder.setThreadgroupMemoryLength(
-      Int(resource.threadgroupMemoryLength), index: 0)
-    
     let tensorQ = tensors.q as! MFA_TensorBuffer
     let tensorK = tensors.k as! MFA_TensorBuffer
     let tensorV = tensors.v as! MFA_TensorBuffer
@@ -284,6 +311,11 @@ struct MFA_Attention: Attention, MFA_Operation {
     encoder.setBuffer(tensorO.buffer, offset: 0, index: 3)
     
     var gridZ: Int
+    var scratchBufferSize: Int = 0
+    if resource.flags & 0x4 > 0 {
+      let gridSize = resource.gridSizes[1]
+      scratchBufferSize = gridSize.height * gridSize.width
+    }
     if resource.flags & 0x1 > 0 {
       let batchDimensionsQ = tensors.q.shape.dropLast(3)
       let batchDimensionsK = tensors.k.shape.dropLast(3)
@@ -296,25 +328,28 @@ struct MFA_Attention: Attention, MFA_Operation {
       gridZ = batchDimensionsQ.reduce(1, *)
       
       let elementSize = tensors.q.dataType.size
-      func byteStride(shape: [Int]) -> Int {
+      var byteStrideMask = 0
+      var byteStrideBlockMask = 0
+      
+      func setMaskStride(shape: [Int]) {
         var output = elementSize
         output *= shape[shape.count - 1]
         output *= shape[shape.count - 2]
         output *= shape[shape.count - 3]
-        if shape.dropLast(3).reduce(1, *) == 1 {
-          output = 0
+        
+        if shape.dropLast(3).reduce(1, *) > 1 {
+          byteStrideMask = output
+          byteStrideBlockMask = scratchBufferSize
+          scratchBufferSize *= gridZ
         }
-        return output
       }
-      var byteStrideMask = 0
-      let byteStrideBlockMask = 0
       
       if resource.flags & 0x2 > 0 {
         let batchDimensionsMask = tensors.mask!.shape.dropLast(3)
         assert(
           batchDimensionsMask.reduce(1, *) == 1 ||
           batchDimensionsMask == batchDimensionsQ)
-        byteStrideMask = byteStride(shape: tensors.mask!.shape)
+        setMaskStride(shape: tensors.mask!.shape)
       }
       
       withUnsafeTemporaryAllocation(
@@ -349,11 +384,33 @@ struct MFA_Attention: Attention, MFA_Operation {
       assert(maskShape[maskShape.count - 3] == 1)
       encoder.setBuffer(tensorMask.buffer, offset: 0, index: 12)
     }
+    if resource.flags & 0x4 > 0 {
+      scratchBufferSize *= gridZ
+      precondition(resource.flags & 0x2 > 0)
+      precondition(scratchBufferSize > 0)
+
+      let scratchBuffer = MFA_Backend.global.cache
+        .requestScratchBuffer(size: scratchBufferSize)
+      encoder.setBuffer(scratchBuffer, offset: 0, index: 13)
+
+      encoder.setComputePipelineState(resource.resource(index: 1))
+      encoder.setThreadgroupMemoryLength(
+        Int(resource.threadgroupMemoryLengths[1]), index: 0)
+
+      var gridSize = resource.gridSizes[1]
+      gridSize.depth = gridZ
+      encoder.dispatchThreadgroups(
+        gridSize, threadsPerThreadgroup: resource.groupSizes[1])
+    }
     
-    var gridSize = resource.gridSize
+    encoder.setComputePipelineState(resource.resource(index: 0))
+    encoder.setThreadgroupMemoryLength(
+      Int(resource.threadgroupMemoryLengths[0]), index: 0)
+    
+    var gridSize = resource.gridSizes[0]
     gridSize.depth = gridZ
     encoder.dispatchThreadgroups(
-      gridSize, threadsPerThreadgroup: resource.groupSize)
+      gridSize, threadsPerThreadgroup: resource.groupSizes[0])
   }
 }
 
@@ -508,7 +565,7 @@ struct MPS_Attention: Attention, MPS_Operation {
       attentionMatrix,
       alpha,
       name: "QK/sqrt(D)")
-
+    
     var zeroMask: MPSGraphTensor?
     if var originalMask {
       if dataType == .half {
@@ -524,11 +581,11 @@ struct MPS_Attention: Attention, MPS_Operation {
       if dataType == .float {
         value = Double(-Float.greatestFiniteMagnitude / 2)
       } else {
-        #if arch(arm64)
+#if arch(arm64)
         value = Double(-Float16.greatestFiniteMagnitude / 2)
-        #else
+#else
         value = Double(-Float.greatestFiniteMagnitude / 2)
-        #endif
+#endif
       }
       let scalar = graph.constant(
         value,
@@ -629,7 +686,7 @@ struct MPS_Attention: Attention, MPS_Operation {
       inputs.append(tensorMask.tensorData)
     }
     let results = [tensorO.tensorData]
-    resource.resource.encode(
+    resource.resource(index: 0).encode(
       to: encoder,
       inputs: inputs,
       results: results,
@@ -689,12 +746,12 @@ struct Py_Attention: Attention, Py_Operation {
         zeroMask = np.less_equal(
           attentionMatrix, -Float.greatestFiniteMagnitude / 2)
       } else {
-        #if arch(arm64)
+#if arch(arm64)
         zeroMask = np.less_equal(
           attentionMatrix, Float(-Float16.greatestFiniteMagnitude / 2))
-        #else
+#else
         fatalError()
-        #endif
+#endif
       }
     }
     

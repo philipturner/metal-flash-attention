@@ -40,6 +40,8 @@ constant uint Q_data_type [[function_constant(30)]];
 constant bool batched [[function_constant(100)]];
 constant bool masked [[function_constant(50000)]]; // 101
 constant bool block_sparse [[function_constant(102)]];
+constant bool block_sparse_masked = masked && block_sparse;
+
 constant bool forward [[function_constant(103)]];
 constant bool backward [[function_constant(104)]];
 constant bool generate_block_mask [[function_constant(105)]];
@@ -207,7 +209,7 @@ if (generate_block_mask) { \
 template <typename T>
 void _generate_block_mask_impl(threadgroup T *threadgroup_block [[threadgroup(0)]],
                                device T *mask [[buffer(21), function_constant(masked)]],
-                               device uchar *block_mask [[buffer(13), function_constant(block_sparse)]],
+                               device uchar *block_mask [[buffer(13), function_constant(block_sparse_masked)]],
                                
                                uint3 gid [[threadgroup_position_in_grid]],
                                ushort sidx [[simdgroup_index_in_threadgroup]],
@@ -359,7 +361,7 @@ void _attention_impl(device T *Q [[buffer(0)]],
                      threadgroup T *threadgroup_block [[threadgroup(0)]],
                      constant uint4 *query_offsets [[buffer(11), function_constant(grouped_query)]],
                      device T *mask [[buffer(12), function_constant(masked)]],
-                     device uchar *block_mask [[buffer(13), function_constant(block_sparse)]],
+                     device uchar *block_mask [[buffer(13), function_constant(block_sparse_masked)]],
                      
                      uint3 gid [[threadgroup_position_in_grid]],
                      ushort sidx [[simdgroup_index_in_threadgroup]],
@@ -430,11 +432,11 @@ void _attention_impl(device T *Q [[buffer(0)]],
   uint j_block_max = (C + C_simd - 1) / C_simd;
   for (uint j_block = 0; j_block < j_block_max; j_block += 1) {
     ushort flags = masked ? 2 : 1;
-    if (block_sparse) {
-      flags = block_mask[gid.x * j_block_max + j_block];
-      if (flags == 0) {
-        continue;
-      }
+    if (block_sparse_masked) {
+//      flags = block_mask[gid.x * j_block_max + j_block];
+//      if (flags == 0) {
+//        continue;
+//      }
     }
     
     // Load K block.
@@ -566,8 +568,11 @@ void _attention_impl(device T *Q [[buffer(0)]],
       m = max(m, simd_shuffle_xor(m, 1));
       m = max(m, simd_shuffle_xor(m, 8));
       
+      // TODO: Why did I originally have this?
+      // if (masked && !block_sparse && m <= threshold)
+      
       constexpr T threshold = -numeric_limits<T>::max() / 2;
-      if (masked && !block_sparse && m <= threshold) {
+      if (masked && m <= threshold) {
         for (ushort c = 0; c < C_simd; c += 8) {
           auto s = get_sram(attention_matrix, C_simd, ushort2(c, r));
           *(s->thread_elements()) = vec<T, 2>(0);
@@ -702,7 +707,7 @@ kernel void attention(device void *Q [[buffer(0)]],
                       constant ulong4 *matrix_offsets [[buffer(10), function_constant(batched)]],
                       constant uint4 *query_offsets [[buffer(11), function_constant(grouped_query)]],
                       device void *mask [[buffer(12), function_constant(masked)]],
-                      device uchar *block_mask [[buffer(13), function_constant(block_sparse)]],
+                      device uchar *block_mask [[buffer(13), function_constant(block_sparse_masked)]],
                       
                       uint3 gid [[threadgroup_position_in_grid]],
                       ushort sidx [[simdgroup_index_in_threadgroup]],
@@ -712,7 +717,7 @@ kernel void attention(device void *Q [[buffer(0)]],
     if (masked) {
       mask = ((device uchar*)mask) + matrix_offsets[gid.z][0];
     }
-    if (block_sparse) {
+    if (block_sparse_masked) {
       block_mask += matrix_offsets[gid.z][1];
     }
   }

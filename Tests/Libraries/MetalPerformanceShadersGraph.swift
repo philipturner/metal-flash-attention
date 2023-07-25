@@ -73,7 +73,7 @@ class AsyncGraph: AsyncResource {
       if let error {
         fatalError(error.localizedDescription)
       }
-      self.finish(resource: executable)
+      self.finish(resource: executable, index: 0)
     }
     
     let graphDevice = MetalContext.global.graphDevice
@@ -87,12 +87,12 @@ class AsyncGraph: AsyncResource {
     self._finished = true
   }
   
-  func finish(resource: MPSGraphExecutable) {
+  func finish(resource: MPSGraphExecutable, index: Int) {
     self._executable = resource
     self._semaphore.signal()
   }
   
-  var resource: MPSGraphExecutable {
+  func resource(index: Int) -> MPSGraphExecutable {
     if !_finished {
       _blockingWait()
     }

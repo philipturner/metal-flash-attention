@@ -75,10 +75,10 @@ protocol AsyncResource {
   associatedtype Resource
   
   // A background thread calls this to write the finished resoure.
-  func finish(resource: Resource)
+  func finish(resource: Resource, index: Int)
   
   // Lazily blocks until the background thread finishes.
-  var resource: Resource { get }
+  func resource(index: Int) -> Resource
 }
 
 protocol MetalOperation {
@@ -100,7 +100,23 @@ class OperationCache<Backend: MetalBackend> {
   fileprivate var gemm: [
     GEMM_Parameters: Backend.Resource] = [:]
   
-  // TODO: Expanding Metal allocation for scratch space (e.g. block masks).
+  var scratchBuffer: MTLBuffer?
+  
+  func requestScratchBuffer(size: Int) -> MTLBuffer {
+    let device = MetalContext.global.device
+    var regenerateBuffer = (scratchBuffer == nil)
+    if !regenerateBuffer {
+      regenerateBuffer = (scratchBuffer!.length < size)
+    }
+    if regenerateBuffer {
+      func roundUpToPowerOf2(_ input: Int) -> Int {
+          1 << (Int.bitWidth - max(0, input - 1).leadingZeroBitCount)
+      }
+      let roundedSize = roundUpToPowerOf2(size)
+      scratchBuffer = device.makeBuffer(length: roundedSize)
+    }
+    return scratchBuffer!
+  }
   
   func clear() {
     gemm.removeAll()

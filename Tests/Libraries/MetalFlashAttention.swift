@@ -58,55 +58,61 @@ final class MFA_Backend: MetalBackend {
 }
 
 class AsyncPipeline: AsyncResource {
-  private var _pipeline: MTLComputePipelineState?
+  private var _pipelines: [MTLComputePipelineState?]
   private var _semaphore: DispatchSemaphore
   private var _finished = false
   
   // Pre-compute some of the dispatch metadata to speed up encoding. Some
   // functions will ignore the metadata or overwrite some of its values.
   var flags: UInt32
-  var threadgroupMemoryLength: UInt16
-  var gridSize: MTLSize
-  var groupSize: MTLSize
+  var threadgroupMemoryLengths: [UInt16]
+  var gridSizes: [MTLSize]
+  var groupSizes: [MTLSize]
   
   init(
-    function: MTLFunction,
+    functions: [MTLFunction],
     flags: UInt32,
-    threadgroupMemoryLength: UInt16,
-    gridSize: MTLSize,
-    groupSize: MTLSize
+    threadgroupMemoryLengths: [UInt16],
+    gridSizes: [MTLSize],
+    groupSizes: [MTLSize]
   ) {
+    self._pipelines = Array(repeating: nil, count: functions.count)
     self._semaphore = DispatchSemaphore(value: 0)
     
     self.flags = flags
-    self.threadgroupMemoryLength = threadgroupMemoryLength
-    self.gridSize = gridSize
-    self.groupSize = groupSize
+    self.threadgroupMemoryLengths = threadgroupMemoryLengths
+    self.gridSizes = gridSizes
+    self.groupSizes = groupSizes
     
     let device = MetalContext.global.device
-    device.makeComputePipelineState(function: function) { pipeline, error in
-      if let error {
-        fatalError(error.localizedDescription)
+    for i in functions.indices {
+      let function = functions[i]
+      device.makeComputePipelineState(function: function) { pipeline, error in
+        if let error {
+          fatalError(error.localizedDescription)
+        }
+        self.finish(resource: pipeline!, index: i)
       }
-      self.finish(resource: pipeline!)
     }
   }
   
   private func _blockingWait() {
-    self._semaphore.wait()
+    for _ in 0..<_pipelines.count {
+      self._semaphore.wait()
+    }
     self._finished = true
   }
   
-  func finish(resource: MTLComputePipelineState) {
-    self._pipeline = resource
+  func finish(resource: MTLComputePipelineState, index: Int) {
+    self._pipelines[index] = resource
     self._semaphore.signal()
   }
   
-  var resource: MTLComputePipelineState {
+  func resource(index: Int) -> MTLComputePipelineState {
     if !_finished {
       _blockingWait()
     }
-    return _pipeline!
+    return _pipelines[index]!
   }
 }
 
