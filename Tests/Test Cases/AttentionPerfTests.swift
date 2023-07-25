@@ -36,7 +36,7 @@ class AttentionPerfTests: MFATestCase {
     // For heads scaling:
     //   sequence length 4096
     
-    let duration = Duration(granularity: 4, length: 2)
+    let duration = Duration(granularity: 8, length: 2)
     let (domain, ranges) = rangeSequenceScaling(
       duration: duration, type: .causal)
 
@@ -270,15 +270,27 @@ class AttentionPerfTests: MFATestCase {
     var domain: ClosedRange<Int>
     var parameters: [SIMD4<Int>]
     if type == .causal {
-      domain = 512...1024
+      domain = 0...3072
+//      domain = 512...1024
 //      domain = 0...1024
       parameters = [
+        SIMD4(granularity, 192, 256, 8),
+        SIMD4( 192,  256, 128, 8),
+        SIMD4( 256,  384,  64, 8),
+        SIMD4( 384,  512,  32, 8),
+        SIMD4( 512,  768,  16, 8),
+        SIMD4( 768, 1024,   8, 8),
+        SIMD4(1024, 1536,   4, 8),
+        SIMD4(1536, 2560,   2, 8),
+        SIMD4(2560, 3073,   2, 6),
+        
 //        SIMD4(granularity, 192, 256, 8),
 //        SIMD4( 192,  256, 128, 8),
 //        SIMD4( 256,  384,  64, 8),
 //        SIMD4( 384,  512,  32, 8),
-        SIMD4( 512,  768,  16, 8),
-        SIMD4( 768, 1025,   8, 8),
+        
+//        SIMD4( 512,  768,  16, 8),
+//        SIMD4( 768, 1025,   8, 8),
       ]
     } else if type == .small {
       domain = 0...2048

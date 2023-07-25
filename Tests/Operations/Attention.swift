@@ -276,6 +276,11 @@ struct MFA_Attention: Attention, MFA_Operation {
         width: 32 * Int(R_splits),
         height: 1,
         depth: 1))
+      
+      // Reduce memory allocation overhead during benchmarks.
+      let scratchBufferSize = 8 * gridSizes[1].width * gridSizes[1].height
+      _ = MFA_Backend.global.cache
+        .requestScratchBuffer(size: scratchBufferSize)
     }
     
     var flags: UInt32 = 0

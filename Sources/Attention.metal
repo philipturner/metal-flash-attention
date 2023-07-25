@@ -433,10 +433,10 @@ void _attention_impl(device T *Q [[buffer(0)]],
   for (uint j_block = 0; j_block < j_block_max; j_block += 1) {
     ushort flags = masked ? 2 : 1;
     if (block_sparse_masked) {
-//      flags = block_mask[gid.x * j_block_max + j_block];
-//      if (flags == 0) {
-//        continue;
-//      }
+      flags = block_mask[gid.x * j_block_max + j_block];
+      if (flags == 0) {
+        continue;
+      }
     }
     
     // Load K block.
