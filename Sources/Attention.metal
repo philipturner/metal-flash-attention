@@ -221,54 +221,60 @@ public:
     uint edge_blocks = grid_x - complete_blocks;
     uint split_blocks = lower_blocks + edge_blocks;
     
+    bool is_right = (i_block > split_blocks);
+    uint split_i_block = upper_blocks + i_block;
+    if (is_right) {
+      split_i_block -= split_blocks;
+    }
+    uint j_block_max = (C + C_simd - 1) / C_simd;
+    
     switch (pass_id) {
       case none: {
         can_store_o = true;
         
         this->i_block = i_block;
         j_block = 0;
-        j_block_end = (C + C_simd - 1) / C_simd;
+        j_block_end = j_block_max;
         break;
       }
       case lower: {
-        bool is_right = (i_block > split_blocks);
-        uint split_i_block = upper_blocks + i_block;
-        if (is_right) {
-          split_i_block -= split_blocks;
-        }
         can_store_o = !is_right;
         
         this->i_block = split_i_block;
-        if (is_right) {
-          j_block = 7; // TODO
-          j_block_end = (C + C_simd - 1) / C_simd;
-        } else {
+        if (!is_right) {
           j_block = 0;
-          j_block_end = 7; // TODO
+          j_block_end = (j_block_max + 1) / 2;
+        } else {
+          j_block = (j_block_max + 1) / 2;
+          j_block_end = j_block_max;
         }
         break;
       }
       case upper: {
-        // TODO: -
-        // Order reversal should be happening in the upper part, not the lower.
-        //    uint R_blocks = (R + R_group - 1) / R_group;
-        //    gid.x = R_blocks - 1 - gid.x;
-        can_store_o = (i_block > 10) && (i_block < 19);
+        can_store_o = is_right && (split_i_block < upper_blocks);
         
-        this->i_block = i_block;
-        j_block = 0;
-        j_block_end = (C + C_simd - 1) / C_simd;
+        this->i_block = upper_blocks - 1 - split_i_block;
+        j_block = j_block_max - 1;
+        j_block_end = 0;
         break;
       }
     }
   }
   
   bool continue_j_block() const {
-    return j_block < j_block_end;
+    if (pass_id == upper) {
+      return int(j_block) >= 0;
+    } else {
+      return j_block < j_block_end;
+    }
   }
   
   void iterate_j_block() {
-    j_block += 1;
+    if (pass_id == upper) {
+      j_block -= 1;
+    } else {
+      j_block += 1;
+    }
   }
 };
 
@@ -735,7 +741,7 @@ void _attention_impl(device T *Q [[buffer(0)]],
   }
   
   if (pass.pass_id == triangular_pass::lower) {
-    // Store or load partial sums.
+    // TODO: Store or load partial sums.
   }
   
   // Write O block.
