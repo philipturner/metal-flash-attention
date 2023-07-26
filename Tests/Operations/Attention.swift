@@ -216,20 +216,16 @@ struct MFA_Attention: Attention, MFA_Operation {
     setBankOffset(&D_block_dim, index: 222)
     
     let library = MetalContext.global.library
-    
     var functions = [
       try! library.makeFunction(
         name: "attention", constantValues: constants)
     ]
-    
-    
     if parameters.blockSparse {
       var generateBlockMask = true
       constants.setConstantValue(&generateBlockMask, type: .bool, index: 112)
       functions.append(try! library.makeFunction(
         name: "attention", constantValues: constants))
     }
-    
     
     if parameters.Q_trans {
       Q_block_length = D_simd * R_block_dim
@@ -251,6 +247,29 @@ struct MFA_Attention: Attention, MFA_Operation {
     } else {
       O_block_length = R_group * D_block_dim
     }
+    
+    var deviceElements: UInt64
+    if triangular {
+      let floats_per_cacheline = 128 / 4
+      var num_lm_elements = Int(2 * R_group)
+      num_lm_elements += floats_per_cacheline - 1
+      num_lm_elements /= floats_per_cacheline
+      num_lm_elements *= floats_per_cacheline
+      
+      var num_O_elements = Int(R_group * D_simd)
+      num_O_elements += floats_per_cacheline - 1
+      num_O_elements /= floats_per_cacheline
+      num_O_elements *= floats_per_cacheline
+      
+      let num_O_blocks = (parameters.R + Int(R_group) - 1) / Int(R_group)
+      deviceElements = UInt64(num_lm_elements + num_O_elements)
+      deviceElements *= UInt64(num_O_blocks)
+    } else {
+      deviceElements = 0
+    }
+    var deviceBytes = [
+      deviceElements * 4
+    ]
     
     var blockElements: UInt16
     if fuseAsyncLoads {
@@ -281,8 +300,8 @@ struct MFA_Attention: Attention, MFA_Operation {
     ]
     
     if parameters.blockSparse {
-      blockBytes.append(
-        4 * R_splits)
+      blockBytes.append(4 * R_splits)
+      deviceBytes.append(0)
       gridSizes.append(MTLSize(
         width: ceilDivide(target: parameters.R, granularity: R_group),
         height: ceilDivide(target: parameters.C, granularity: C_simd),
@@ -308,9 +327,13 @@ struct MFA_Attention: Attention, MFA_Operation {
     if parameters.blockSparse {
       flags |= 0x4
     }
+    if triangular {
+      flags |= 0x8
+    }
     return AsyncPipeline(
       functions: functions,
       flags: flags,
+      deviceMemoryLengths: deviceBytes,
       threadgroupMemoryLengths: blockBytes,
       gridSizes: gridSizes,
       groupSizes: groupSizes)
@@ -330,11 +353,24 @@ struct MFA_Attention: Attention, MFA_Operation {
     encoder.setBuffer(tensorV.buffer, offset: 0, index: 2)
     encoder.setBuffer(tensorO.buffer, offset: 0, index: 3)
     
+    // TODO: If partials and locks buffer sizes are < 0, don't encode them into
+    // the buffer table.
+    //
+    // TODO: Round up the scratch buffer size to a multiple of the cacheline
+    // size when allocating.
     var gridZ: Int
-    var scratchBufferSize: Int = 0
+    var scratchBufferSize: Int = -1
+    var partialsBufferSize: Int = -1
+    var locksBufferSize: Int = -1
+    
     if resource.flags & 0x4 > 0 {
       let gridSize = resource.gridSizes[1]
       scratchBufferSize = gridSize.height * gridSize.width
+    }
+    if resource.flags & 0x8 > 0 {
+      let gridSize = resource.gridSizes[0]
+      partialsBufferSize = Int(resource.deviceMemoryLengths[0])
+      locksBufferSize = gridSize.height * gridSize.width
     }
     if resource.flags & 0x1 > 0 {
       let batchDimensionsQ = tensors.q.shape.dropLast(3)
@@ -345,7 +381,10 @@ struct MFA_Attention: Attention, MFA_Operation {
       assert(batchDimensionsQ == batchDimensionsK)
       assert(batchDimensionsQ == batchDimensionsV)
       assert(batchDimensionsQ == batchDimensionsO)
+      
       gridZ = batchDimensionsQ.reduce(1, *)
+      partialsBufferSize *= gridZ
+      locksBufferSize *= gridZ
       
       let elementSize = tensors.q.dataType.size
       var byteStrideMask = 0
@@ -359,7 +398,7 @@ struct MFA_Attention: Attention, MFA_Operation {
         
         if shape.dropLast(3).reduce(1, *) > 1 {
           byteStrideMask = output
-          byteStrideBlockMask = scratchBufferSize
+          byteStrideBlockMask = max(0, scratchBufferSize)
           scratchBufferSize *= gridZ
         }
       }
@@ -398,6 +437,33 @@ struct MFA_Attention: Attention, MFA_Operation {
       gridZ = 1
     }
     
+    do {
+      var size = 0
+      if scratchBufferSize > 0 {
+        size += (scratchBufferSize + 127) / 128 * 128
+      }
+      let partialsOffset = size
+      if partialsBufferSize > 0 {
+        size += partialsBufferSize
+      }
+      if size > 0 {
+        let scratchBuffer = MFA_Backend.global.cache
+          .requestScratchBuffer(size: size)
+        if scratchBufferSize > 0 {
+          encoder.setBuffer(scratchBuffer, offset: 0, index: 13)
+        }
+        if partialsBufferSize > 0 {
+          encoder.setBuffer(scratchBuffer, offset: partialsOffset, index: 15)
+        }
+      }
+      
+      if locksBufferSize > 0 {
+        let locksBuffer = MFA_Backend.global.cache
+          .requestLocksBuffer(size: locksBufferSize)
+        encoder.setBuffer(locksBuffer, offset: 0, index: 14)
+      }
+    }
+    
     if resource.flags & 0x2 > 0 {
       let tensorMask = tensors.mask! as! MFA_TensorBuffer
       let maskShape = tensors.mask!.shape
@@ -408,11 +474,7 @@ struct MFA_Attention: Attention, MFA_Operation {
       scratchBufferSize *= gridZ
       precondition(resource.flags & 0x2 > 0)
       precondition(scratchBufferSize > 0)
-
-      let scratchBuffer = MFA_Backend.global.cache
-        .requestScratchBuffer(size: scratchBufferSize)
-      encoder.setBuffer(scratchBuffer, offset: 0, index: 13)
-
+      
       encoder.setComputePipelineState(resource.resource(index: 1))
       encoder.setThreadgroupMemoryLength(
         Int(resource.threadgroupMemoryLengths[1]), index: 0)

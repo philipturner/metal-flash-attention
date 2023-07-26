@@ -65,6 +65,11 @@ class AsyncPipeline: AsyncResource {
   // Pre-compute some of the dispatch metadata to speed up encoding. Some
   // functions will ignore the metadata or overwrite some of its values.
   var flags: UInt32
+  
+  // Device memory lengths are for an entire matrix plane, not a single TG.
+  // Locks are not included in device memory length; every threadgroup gets one
+  // lock for kernels that opt in.
+  var deviceMemoryLengths: [UInt64]
   var threadgroupMemoryLengths: [UInt16]
   var gridSizes: [MTLSize]
   var groupSizes: [MTLSize]
@@ -72,6 +77,7 @@ class AsyncPipeline: AsyncResource {
   init(
     functions: [MTLFunction],
     flags: UInt32,
+    deviceMemoryLengths: [UInt64],
     threadgroupMemoryLengths: [UInt16],
     gridSizes: [MTLSize],
     groupSizes: [MTLSize]
@@ -80,6 +86,7 @@ class AsyncPipeline: AsyncResource {
     self._semaphore = DispatchSemaphore(value: 0)
     
     self.flags = flags
+    self.deviceMemoryLengths = deviceMemoryLengths
     self.threadgroupMemoryLengths = threadgroupMemoryLengths
     self.gridSizes = gridSizes
     self.groupSizes = groupSizes

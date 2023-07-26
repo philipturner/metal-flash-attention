@@ -346,7 +346,20 @@ void _generate_block_mask_impl(threadgroup T *threadgroup_block [[threadgroup(0)
   }
 }
 
-template <typename T>
+class triangular_pass {
+public:
+  static constant ushort none = 0;
+  static constant ushort lower = 1;
+  static constant ushort upper = 2;
+  
+  // TODO: Encapsulate operations unique to each pass inside this class, such as
+  // loop iteration.
+  triangular_pass(ushort pass_id) {
+    
+  }
+};
+
+template <typename T, ushort pass_id>
 void _attention_impl(device T *Q [[buffer(0)]],
                      device T *K [[buffer(1)]],
                      device T *V [[buffer(2)]],
@@ -356,6 +369,8 @@ void _attention_impl(device T *Q [[buffer(0)]],
                      constant uint4 *query_offsets [[buffer(11), function_constant(grouped_query)]],
                      device T *mask [[buffer(12), function_constant(masked)]],
                      device uchar *block_mask [[buffer(13), function_constant(block_sparse_masked)]],
+                     device atomic_uint *locks [[buffer(14), function_constant(triangular)]],
+                     device float *partials [[buffer(15), function_constant(triangular)]],
                      
                      uint3 gid [[threadgroup_position_in_grid]],
                      ushort sidx [[simdgroup_index_in_threadgroup]],
@@ -567,9 +582,6 @@ void _attention_impl(device T *Q [[buffer(0)]],
       m = max(m, simd_shuffle_xor(m, 1));
       m = max(m, simd_shuffle_xor(m, 8));
       
-      // TODO: Why did I originally have this?
-      // if (masked && !block_sparse && m <= threshold)
-      
       constexpr T threshold = -numeric_limits<T>::max() / 2;
       if (masked && m <= threshold) {
         for (ushort c = 0; c < C_simd; c += 8) {
@@ -707,6 +719,8 @@ kernel void attention(device void *Q [[buffer(0)]],
                       constant uint4 *query_offsets [[buffer(11), function_constant(grouped_query)]],
                       device void *mask [[buffer(12), function_constant(masked)]],
                       device uchar *block_mask [[buffer(13), function_constant(block_sparse_masked)]],
+                      device atomic_uint *locks [[buffer(14), function_constant(triangular)]],
+                      device float *partials [[buffer(15), function_constant(triangular)]],
                       
                       uint3 gid [[threadgroup_position_in_grid]],
                       ushort sidx [[simdgroup_index_in_threadgroup]],
@@ -729,9 +743,19 @@ kernel void attention(device void *Q [[buffer(0)]],
     }
   } else if (forward) {
     if (Q_data_type == MTLDataTypeFloat) {
-      _attention_impl((device float*)Q, (device float*)K, (device float*)V, (device float*)O, (threadgroup float*)threadgroup_block, query_offsets, (device float*)mask, block_mask, gid, sidx, lane_id);
+      if (triangular) {
+        _attention_impl<float, triangular_pass::lower>((device float*)Q, (device float*)K, (device float*)V, (device float*)O, (threadgroup float*)threadgroup_block, query_offsets, (device float*)mask, block_mask, locks, partials, gid, sidx, lane_id);
+//        _attention_impl<float, triangular_pass::upper>((device float*)Q, (device float*)K, (device float*)V, (device float*)O, (threadgroup float*)threadgroup_block, query_offsets, (device float*)mask, block_mask, locks, partials, gid, sidx, lane_id);
+      } else {
+        _attention_impl<float, triangular_pass::none>((device float*)Q, (device float*)K, (device float*)V, (device float*)O, (threadgroup float*)threadgroup_block, query_offsets, (device float*)mask, block_mask, locks, partials, gid, sidx, lane_id);
+      }
     } else if (Q_data_type == MTLDataTypeHalf) {
-      _attention_impl((device half*)Q, (device half*)K, (device half*)V, (device half*)O, (threadgroup half*)threadgroup_block, query_offsets, (device half*)mask, block_mask, gid, sidx, lane_id);
+      if (triangular) {
+        _attention_impl<half, triangular_pass::lower>((device half*)Q, (device half*)K, (device half*)V, (device half*)O, (threadgroup half*)threadgroup_block, query_offsets, (device half*)mask, block_mask, locks, partials, gid, sidx, lane_id);
+//        _attention_impl<half, triangular_pass::upper>((device half*)Q, (device half*)K, (device half*)V, (device half*)O, (threadgroup half*)threadgroup_block, query_offsets, (device half*)mask, block_mask, locks, partials, gid, sidx, lane_id);
+      } else {
+        _attention_impl<half, triangular_pass::none>((device half*)Q, (device half*)K, (device half*)V, (device half*)O, (threadgroup half*)threadgroup_block, query_offsets, (device half*)mask, block_mask, locks, partials, gid, sidx, lane_id);
+      }
     }
   }
 }

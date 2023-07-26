@@ -96,26 +96,39 @@ protocol MetalOperation {
 class OperationCache<Backend: MetalBackend> {
   fileprivate var attention: [
     Attention_Parameters: Backend.Resource] = [:]
-  
   fileprivate var gemm: [
     GEMM_Parameters: Backend.Resource] = [:]
   
   var scratchBuffer: MTLBuffer?
   
+  // To sanitize corrupted locks, simply set this property to `nil` and request
+  // another locks buffer.
+  var locksBuffer: MTLBuffer?
+  
   func requestScratchBuffer(size: Int) -> MTLBuffer {
+    requestBuffer(size: size, keyPath: \.scratchBuffer)
+  }
+  
+  func requestLocksBuffer(size: Int) -> MTLBuffer {
+    requestBuffer(size: size, keyPath: \.locksBuffer)
+  }
+  
+  private func requestBuffer(
+    size: Int, keyPath: ReferenceWritableKeyPath<OperationCache, MTLBuffer?>
+  ) -> MTLBuffer {
     let device = MetalContext.global.device
-    var regenerateBuffer = (scratchBuffer == nil)
+    var regenerateBuffer = (self[keyPath: keyPath] == nil)
     if !regenerateBuffer {
-      regenerateBuffer = (scratchBuffer!.length < size)
+      regenerateBuffer = (self[keyPath: keyPath]!.length < size)
     }
     if regenerateBuffer {
       func roundUpToPowerOf2(_ input: Int) -> Int {
           1 << (Int.bitWidth - max(0, input - 1).leadingZeroBitCount)
       }
       let roundedSize = roundUpToPowerOf2(size)
-      scratchBuffer = device.makeBuffer(length: roundedSize)
+      self[keyPath: keyPath] = device.makeBuffer(length: roundedSize)
     }
-    return scratchBuffer!
+    return self[keyPath: keyPath]!
   }
   
   func clear() {

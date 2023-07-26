@@ -136,6 +136,7 @@ struct MFA_GEMM: GEMM, MFA_Operation {
     return AsyncPipeline(
       functions: [function],
       flags: flags,
+      deviceMemoryLengths: [0],
       threadgroupMemoryLengths: [blockBytes],
       gridSizes: [gridSize],
       groupSizes: [groupSize])
