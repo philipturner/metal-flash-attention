@@ -286,17 +286,22 @@ struct MFA_Attention: Attention, MFA_Operation {
     func ceilDivide(target: Int, granularity: UInt16) -> Int {
       (target + Int(granularity) - 1) / Int(granularity)
     }
+    var gridX = ceilDivide(target: parameters.R, granularity: R_group)
+    if triangular {
+      let completeBlocks = parameters.R / Int(R_group)
+      let upperBlocks = completeBlocks / 2
+      let lowerBlocks = completeBlocks - upperBlocks
+      let edgeBlocks = gridX - completeBlocks
+      precondition(lowerBlocks >= upperBlocks)
+      
+      gridX = (lowerBlocks + edgeBlocks) * 2
+    }
+    
     var gridSizes = [
-      MTLSize(
-        width: ceilDivide(target: parameters.R, granularity: R_group),
-        height: parameters.H,
-        depth: 1)
+      MTLSize(width: gridX, height: parameters.H, depth: 1)
     ]
     var groupSizes = [
-      MTLSize(
-        width: 32 * Int(R_splits),
-        height: 1,
-        depth: 1)
+      MTLSize(width: 32 * Int(R_splits), height: 1, depth: 1)
     ]
     
     if parameters.blockSparse {
@@ -353,11 +358,6 @@ struct MFA_Attention: Attention, MFA_Operation {
     encoder.setBuffer(tensorV.buffer, offset: 0, index: 2)
     encoder.setBuffer(tensorO.buffer, offset: 0, index: 3)
     
-    // TODO: If partials and locks buffer sizes are < 0, don't encode them into
-    // the buffer table.
-    //
-    // TODO: Round up the scratch buffer size to a multiple of the cacheline
-    // size when allocating.
     var gridZ: Int
     var scratchBufferSize: Int = -1
     var partialsBufferSize: Int = -1

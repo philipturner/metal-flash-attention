@@ -198,6 +198,80 @@ if (generate_block_mask) { \
   }
 }
 
+class triangular_pass {
+public:
+  static constant ushort none = 0;
+  static constant ushort lower = 1;
+  static constant ushort upper = 2;
+  
+  ushort pass_id;
+  bool can_store_o;
+  
+  uint i_block;
+  uint j_block;
+  uint j_block_end;
+  
+  triangular_pass(ushort pass_id, uint i_block) {
+    this->pass_id = pass_id;
+    
+    uint grid_x = (R + R_group - 1) / R_group;
+    uint complete_blocks = R / R_group;
+    uint upper_blocks = complete_blocks / 2;
+    uint lower_blocks = complete_blocks - upper_blocks;
+    uint edge_blocks = grid_x - complete_blocks;
+    uint split_blocks = lower_blocks + edge_blocks;
+    
+    switch (pass_id) {
+      case none: {
+        can_store_o = true;
+        
+        this->i_block = i_block;
+        j_block = 0;
+        j_block_end = (C + C_simd - 1) / C_simd;
+        break;
+      }
+      case lower: {
+        bool is_right = (i_block > split_blocks);
+        uint split_i_block = upper_blocks + i_block;
+        if (is_right) {
+          split_i_block -= split_blocks;
+        }
+        can_store_o = !is_right;
+        
+        this->i_block = split_i_block;
+        if (is_right) {
+          j_block = 7; // TODO
+          j_block_end = (C + C_simd - 1) / C_simd;
+        } else {
+          j_block = 0;
+          j_block_end = 7; // TODO
+        }
+        break;
+      }
+      case upper: {
+        // TODO: -
+        // Order reversal should be happening in the upper part, not the lower.
+        //    uint R_blocks = (R + R_group - 1) / R_group;
+        //    gid.x = R_blocks - 1 - gid.x;
+        can_store_o = (i_block > 10) && (i_block < 19);
+        
+        this->i_block = i_block;
+        j_block = 0;
+        j_block_end = (C + C_simd - 1) / C_simd;
+        break;
+      }
+    }
+  }
+  
+  bool continue_j_block() const {
+    return j_block < j_block_end;
+  }
+  
+  void iterate_j_block() {
+    j_block += 1;
+  }
+};
+
 // MARK: - Kernels
 
 template <typename T>
@@ -209,8 +283,6 @@ void _generate_block_mask_impl(threadgroup T *threadgroup_block [[threadgroup(0)
                                ushort sidx [[simdgroup_index_in_threadgroup]],
                                ushort lane_id [[thread_index_in_simdgroup]])
 {
-  // TODO: Allocate a very tiny threadgroup block for this kernel:
-  // roundup(one slot per simd, 16B)
   auto results_block = (threadgroup ushort2*)threadgroup_block;
   uint i = gid.x * R_group + sidx * R_simd;
   if (R % R_group > 0) {
@@ -346,20 +418,7 @@ void _generate_block_mask_impl(threadgroup T *threadgroup_block [[threadgroup(0)
   }
 }
 
-class triangular_pass {
-public:
-  static constant ushort none = 0;
-  static constant ushort lower = 1;
-  static constant ushort upper = 2;
-  
-  // TODO: Encapsulate operations unique to each pass inside this class, such as
-  // loop iteration.
-  triangular_pass(ushort pass_id) {
-    
-  }
-};
-
-template <typename T, ushort pass_id>
+template <typename T>
 void _attention_impl(device T *Q [[buffer(0)]],
                      device T *K [[buffer(1)]],
                      device T *V [[buffer(2)]],
@@ -372,16 +431,12 @@ void _attention_impl(device T *Q [[buffer(0)]],
                      device atomic_uint *locks [[buffer(14), function_constant(triangular)]],
                      device float *partials [[buffer(15), function_constant(triangular)]],
                      
+                     triangular_pass pass,
                      uint3 gid [[threadgroup_position_in_grid]],
                      ushort sidx [[simdgroup_index_in_threadgroup]],
                      ushort lane_id [[thread_index_in_simdgroup]])
 {
-  if (triangular) {
-    uint R_blocks = (R + R_group - 1) / R_group;
-    gid.x = R_blocks - 1 - gid.x;
-  }
-  
-  uint i = gid.x * R_group + sidx * R_simd;
+  uint i = pass.i_block * R_group + sidx * R_simd;
   if (R % R_group > 0) {
     if (i >= R) {
       return;
@@ -443,11 +498,12 @@ void _attention_impl(device T *Q [[buffer(0)]],
     }
   }
   
-  uint j_block_max = (C + C_simd - 1) / C_simd;
-  for (uint j_block = 0; j_block < j_block_max; j_block += 1) {
+  for (; pass.continue_j_block(); pass.iterate_j_block()) {
+    uint j_block = pass.j_block;
     ushort flags = masked ? 2 : 1;
     if (block_sparse_masked) {
-      flags = block_mask[gid.x * j_block_max + j_block];
+      uint j_block_stride = (C + C_simd - 1) / C_simd;
+      flags = block_mask[pass.i_block * j_block_stride + j_block];
       if (flags == 0) {
         continue;
       }
@@ -514,7 +570,7 @@ void _attention_impl(device T *Q [[buffer(0)]],
     // Apply explicit mask.
     uint j_next = j_block * C_simd + C_simd;
     if (masked && flags == 2) {
-      uint2 mask_offset(j_block * C_simd, gid.x * R_group + sidx * R_simd);
+      uint2 mask_offset(j_block * C_simd, pass.i_block * R_group + sidx * R_simd);
       mask_offset += uint2(offset_in_simd);
       auto mask_src = simdgroup_matrix_storage<T>::apply_offset(mask, C, mask_offset);
       
@@ -678,34 +734,66 @@ void _attention_impl(device T *Q [[buffer(0)]],
     }
   }
   
-  // Write O block.
-  threadgroup_barrier(mem_flags::mem_threadgroup);
-  auto O_offset = ushort2(0, sidx * R_simd) + offset_in_simd;
-  auto O_block = simdgroup_matrix_storage<T>::apply_offset(threadgroup_block, O_block_leading_dim, O_offset, O_trans);
-  
-#pragma clang loop unroll(full)
-  for (ushort r = 0; r < R_simd; r += 8) {
-    float l = 1 / l_sram[r / 8];
-#pragma clang loop unroll(full)
-    for (ushort d = 0; d < D_simd; d += 8) {
-      ushort2 origin(d, r);
-      auto o_elements = get_sram(O_sram, D_simd, origin)->thread_elements();
-      simdgroup_matrix_storage<T> o(vec<T, 2>(*o_elements * l));
-      o.store(O_block, O_block_leading_dim, origin, O_trans);
-    }
+  if (pass.pass_id == triangular_pass::lower) {
+    // Store or load partial sums.
   }
   
-  threadgroup_barrier(mem_flags::mem_threadgroup);
-  if (sidx == 0) {
-    uint2 O_offset(0, gid.x * R_group);
-    ushort2 tile(D, min(uint(R_group), R - O_offset.y));
+  // Write O block.
+  if (pass.can_store_o) {
+    threadgroup_barrier(mem_flags::mem_threadgroup);
+    auto O_offset = ushort2(0, sidx * R_simd) + offset_in_simd;
+    auto O_block = simdgroup_matrix_storage<T>::apply_offset(threadgroup_block, O_block_leading_dim, O_offset, O_trans);
     
-    auto O_dst = simdgroup_matrix_storage<T>::apply_offset(O, O_leading_dim, O_offset, O_trans);
-    O_dst += head_offsets[3] * (O_trans ? D * R : D);
-    O_dst = apply_batch_offset(O_dst, gid.z * R * H * D);
+#pragma clang loop unroll(full)
+    for (ushort r = 0; r < R_simd; r += 8) {
+      float l = 1 / l_sram[r / 8];
+#pragma clang loop unroll(full)
+      for (ushort d = 0; d < D_simd; d += 8) {
+        ushort2 origin(d, r);
+        auto o_elements = get_sram(O_sram, D_simd, origin)->thread_elements();
+        simdgroup_matrix_storage<T> o(vec<T, 2>(*o_elements * l));
+        o.store(O_block, O_block_leading_dim, origin, O_trans);
+      }
+    }
     
-    simdgroup_event event;
-    event.async_copy(O_dst, O_leading_dim, tile, threadgroup_block, O_block_leading_dim, tile, O_trans);
+    threadgroup_barrier(mem_flags::mem_threadgroup);
+    if (sidx == 0) {
+      uint2 O_offset(0, pass.i_block * R_group);
+      ushort2 tile(D, min(uint(R_group), R - O_offset.y));
+      
+      auto O_dst = simdgroup_matrix_storage<T>::apply_offset(O, O_leading_dim, O_offset, O_trans);
+      O_dst += head_offsets[3] * (O_trans ? D * R : D);
+      O_dst = apply_batch_offset(O_dst, gid.z * R * H * D);
+      
+      simdgroup_event event;
+      event.async_copy(O_dst, O_leading_dim, tile, threadgroup_block, O_block_leading_dim, tile, O_trans);
+    }
+  }
+}
+
+template <typename T>
+void _triangular_impl(device T *Q [[buffer(0)]],
+                      device T *K [[buffer(1)]],
+                      device T *V [[buffer(2)]],
+                      device T *O [[buffer(3)]],
+                      
+                      threadgroup T *threadgroup_block [[threadgroup(0)]],
+                      constant uint4 *query_offsets [[buffer(11), function_constant(grouped_query)]],
+                      device T *mask [[buffer(12), function_constant(masked)]],
+                      device uchar *block_mask [[buffer(13), function_constant(block_sparse_masked)]],
+                      device atomic_uint *locks [[buffer(14), function_constant(triangular)]],
+                      device float *partials [[buffer(15), function_constant(triangular)]],
+                      
+                      uint3 gid [[threadgroup_position_in_grid]],
+                      ushort sidx [[simdgroup_index_in_threadgroup]],
+                      ushort lane_id [[thread_index_in_simdgroup]])
+{
+  triangular_pass lower_pass(triangular_pass::lower, gid.x);
+  _attention_impl(Q, K, V, O, threadgroup_block, query_offsets, mask, block_mask, locks, partials, lower_pass, gid, sidx, lane_id);
+  
+  triangular_pass upper_pass(triangular_pass::lower, gid.x);
+  if (upper_pass.can_store_o) {
+    _attention_impl(Q, K, V, O, threadgroup_block, query_offsets, mask, block_mask, locks, partials, upper_pass, gid, sidx, lane_id);
   }
 }
 
@@ -742,20 +830,20 @@ kernel void attention(device void *Q [[buffer(0)]],
       _generate_block_mask_impl((threadgroup half*)threadgroup_block, (device half*)mask, block_mask, gid, sidx, lane_id);
     }
   } else if (forward) {
+    triangular_pass pass(triangular_pass::none, gid.x);
     if (Q_data_type == MTLDataTypeFloat) {
       if (triangular) {
-        _attention_impl<float, triangular_pass::lower>((device float*)Q, (device float*)K, (device float*)V, (device float*)O, (threadgroup float*)threadgroup_block, query_offsets, (device float*)mask, block_mask, locks, partials, gid, sidx, lane_id);
-//        _attention_impl<float, triangular_pass::upper>((device float*)Q, (device float*)K, (device float*)V, (device float*)O, (threadgroup float*)threadgroup_block, query_offsets, (device float*)mask, block_mask, locks, partials, gid, sidx, lane_id);
+        _triangular_impl((device float*)Q, (device float*)K, (device float*)V, (device float*)O, (threadgroup float*)threadgroup_block, query_offsets, (device float*)mask, block_mask, locks, partials, gid, sidx, lane_id);
       } else {
-        _attention_impl<float, triangular_pass::none>((device float*)Q, (device float*)K, (device float*)V, (device float*)O, (threadgroup float*)threadgroup_block, query_offsets, (device float*)mask, block_mask, locks, partials, gid, sidx, lane_id);
+        _attention_impl((device float*)Q, (device float*)K, (device float*)V, (device float*)O, (threadgroup float*)threadgroup_block, query_offsets, (device float*)mask, block_mask, locks, partials, pass, gid, sidx, lane_id);
       }
     } else if (Q_data_type == MTLDataTypeHalf) {
       if (triangular) {
-        _attention_impl<half, triangular_pass::lower>((device half*)Q, (device half*)K, (device half*)V, (device half*)O, (threadgroup half*)threadgroup_block, query_offsets, (device half*)mask, block_mask, locks, partials, gid, sidx, lane_id);
-//        _attention_impl<half, triangular_pass::upper>((device half*)Q, (device half*)K, (device half*)V, (device half*)O, (threadgroup half*)threadgroup_block, query_offsets, (device half*)mask, block_mask, locks, partials, gid, sidx, lane_id);
+        _triangular_impl((device half*)Q, (device half*)K, (device half*)V, (device half*)O, (threadgroup half*)threadgroup_block, query_offsets, (device half*)mask, block_mask, locks, partials, gid, sidx, lane_id);
       } else {
-        _attention_impl<half, triangular_pass::none>((device half*)Q, (device half*)K, (device half*)V, (device half*)O, (threadgroup half*)threadgroup_block, query_offsets, (device half*)mask, block_mask, locks, partials, gid, sidx, lane_id);
+        _attention_impl((device half*)Q, (device half*)K, (device half*)V, (device half*)O, (threadgroup half*)threadgroup_block, query_offsets, (device half*)mask, block_mask, locks, partials, pass, gid, sidx, lane_id);
       }
     }
   }
 }
+
