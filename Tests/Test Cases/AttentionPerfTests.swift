@@ -38,23 +38,24 @@ class AttentionPerfTests: MFATestCase {
     // For heads scaling:
     //   sequence length 4096
     
-    let duration = Duration(granularity: -1, length: 2)
+    let duration = Duration(granularity: 2, length: 2)
     let (domain, ranges) = rangeSequenceScaling(
       duration: duration, type: .causal)
 
     var backends = SequenceType.causal.backends
 //    let backends: [AttentionBackend] = [.mfa]
     
-    backends = backends.compactMap {
-      if $0.isMPS { return nil }
-      return $0
-    }
+//    backends = backends.compactMap {
+//      if $0.isMPS { return nil }
+//      return $0
+//    }
     
 //    let duration = Duration(granularity: 1, length: 1)
 //    let (domain, ranges) = rangeHeadScaling(duration: duration)
 //    let backends = [AttentionBackend.mps, AttentionBackend.mfa]
     testAttention(
-      domain: domain, ranges: ranges, backends: backends, config: .triangular)
+      domain: domain, ranges: ranges, backends: backends,
+      config: .none)
   }
   
   enum GraphConfig {
@@ -277,33 +278,33 @@ class AttentionPerfTests: MFATestCase {
     var domain: ClosedRange<Int>
     var parameters: [SIMD8<Int>]
     if type == .causal {
-      domain = 0...16384
+//      domain = 0...16384
 //      domain = 512...1024
-//      domain = 0...1024
+      domain = 0...1024
       parameters = [
-        SIMD8(   1,    8,   256, 1, 0, 0, 0, 0),
-        SIMD8(   8,  192,   256, 8, 0, 0, 0, 0),
-        SIMD8( 192,  256,   128, 8, 0, 0, 0, 0),
-        SIMD8( 256,  384,    64, 8, 0, 0, 0, 0),
-        SIMD8( 384,  512,    32, 8, 0, 0, 0, 0),
-        SIMD8( 512,  768,    16, 16, 0, 0, 0, 0),
-        SIMD8( 768, 1024,     8, 16, 0, 0, 0, 0),
-        SIMD8(1024, 1536,     4, 32, 0, 0, 0, 0),
-        SIMD8(1536, 2048,     2, 32, 8, 0, 0, 0),
-        SIMD8(2048, 3072,     2, 64, 8, 0, 0, 0),
-        SIMD8(3072, 4096,     2, 128, 8, 0, 0, 0),
-        SIMD8(4096, 6144,     2, 256, 8, 0, 0, 0),
-        SIMD8( 6 * 1024,  8 * 1024, 2, 512, 7, 0, 0, 0),
-        SIMD8( 8 * 1024, 12 * 1024, 2, 1024, 6, 0, 0, 0),
-        SIMD8(12 * 1024, 16 * 1024 + 1, 2, 2048, 5, 0, 0, 0),
+//        SIMD8(   1,    8,   256, 1, 0, 0, 0, 0),
+//        SIMD8(   8,  192,   256, 8, 0, 0, 0, 0),
+//        SIMD8( 192,  256,   128, 8, 0, 0, 0, 0),
+//        SIMD8( 256,  384,    64, 8, 0, 0, 0, 0),
+//        SIMD8( 384,  512,    32, 8, 0, 0, 0, 0),
+//        SIMD8( 512,  768,    16, 16, 0, 0, 0, 0),
+//        SIMD8( 768, 1024,     8, 16, 0, 0, 0, 0),
+//        SIMD8(1024, 1536,     4, 32, 0, 0, 0, 0),
+//        SIMD8(1536, 2048,     2, 32, 8, 0, 0, 0),
+//        SIMD8(2048, 3072,     2, 64, 8, 0, 0, 0),
+//        SIMD8(3072, 4096,     2, 128, 8, 0, 0, 0),
+//        SIMD8(4096, 6144,     2, 256, 8, 0, 0, 0),
+//        SIMD8( 6 * 1024,  8 * 1024, 2, 512, 7, 0, 0, 0),
+//        SIMD8( 8 * 1024, 12 * 1024, 2, 1024, 6, 0, 0, 0),
+//        SIMD8(12 * 1024, 16 * 1024 + 1, 2, 2048, 5, 0, 0, 0),
         
-//        SIMD4(granularity, 192, 256, granularity, 0, 0, 0, 0),
-//        SIMD4( 192,  256, 128, granularity, 0, 0, 0, 0),
-//        SIMD4( 256,  384,  64, granularity, 0, 0, 0, 0),
-//        SIMD4( 384,  512,  32, granularity, 0, 0, 0, 0),
+        SIMD8(granularity, 192, 256, granularity, 0, 0, 0, 0),
+        SIMD8( 192,  256, 128, granularity, 0, 0, 0, 0),
+        SIMD8( 256,  384,  64, granularity, 0, 0, 0, 0),
+        SIMD8( 384,  512,  32, granularity, 0, 0, 0, 0),
         
-//        SIMD4( 512,  768,  16, granularity, 0, 0, 0, 0),
-//        SIMD4( 768, 1025,   8, granularity, 0, 0, 0, 0),
+        SIMD8( 512,  768,  16, granularity, 0, 0, 0, 0),
+        SIMD8( 768, 1025,   8, granularity, 0, 0, 0, 0),
       ]
     } else if type == .small {
       domain = 0...2048

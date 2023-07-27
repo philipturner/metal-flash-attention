@@ -189,15 +189,15 @@ Dense: Stable Diffusion 2 outermost attention layer @ 512x512 (sequence length =
 
 ![FlashAttention (F16, H=5, D=64)](./CI/float16-large-sequences-latest.png)
 
-### Float32 Sequence Scaling (Causal Mask)
-
-![FlashAttention (F32, H=10, D=64)](./CI/float32-large-causal-latest.png)
-
 ### Float16 Sequence Scaling (Causal Mask)
 
 ![FlashAttention (F16, H=10, D=64)](./CI/float16-small-causal-latest.png)
 
 ![FlashAttention (F16, H=10, D=64)](./CI/float16-large-causal-latest.png)
+
+### Float32 Sequence Scaling (Causal Mask)
+
+![FlashAttention (F32, H=10, D=64)](./CI/float32-large-causal-latest.png)
 
 ### Float16 Head Scaling
 
