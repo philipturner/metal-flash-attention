@@ -852,11 +852,29 @@ void _attention_impl(device T *Q [[buffer(0)]],
           correction_send[r / 8] = 1 / correction_recv;
         }
         l_sram[r / 8] = fma(l, correction_send[r / 8], l_sram[r / 8]);
-        m_sram[r / 8] = m;
       }
       partial += base;
       
-      
+#pragma clang loop unroll(full)
+      for (ushort r = 0; r < R_simd; r += 8) {
+#pragma clang loop unroll(full)
+        for (ushort d = 0; d < C_simd; d += 8) {
+          bool failed = true;
+          while (failed) {
+            auto object = partial + (r * D_simd + d);
+            float2 o_send;
+            if (pass.decode(object, &o_send)) {
+              *((device float2*)object) = 0;
+              failed = false;
+              
+              auto o = get_sram(O_sram, D_simd, ushort2(d, r));
+              auto o_elements = o->thread_elements();
+              auto correction = correction_send[r / 8];
+              *o_elements = fma(o_send, correction, *o_elements);
+            }
+          }
+        }
+      }
     }
   }
   
