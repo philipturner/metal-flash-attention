@@ -437,31 +437,20 @@ struct MFA_Attention: Attention, MFA_Operation {
       gridZ = 1
     }
     
-    do {
-      var size = 0
-      if scratchBufferSize > 0 {
-        size += (scratchBufferSize + 127) / 128 * 128
-      }
-      let partialsOffset = size
-      if partialsBufferSize > 0 {
-        size += partialsBufferSize
-      }
-      if size > 0 {
-        let scratchBuffer = MFA_Backend.global.cache
-          .requestScratchBuffer(size: size)
-        if scratchBufferSize > 0 {
-          encoder.setBuffer(scratchBuffer, offset: 0, index: 13)
-        }
-        if partialsBufferSize > 0 {
-          encoder.setBuffer(scratchBuffer, offset: partialsOffset, index: 15)
-        }
-      }
-      
-      if locksBufferSize > 0 {
-        let locksBuffer = MFA_Backend.global.cache
-          .requestLocksBuffer(size: locksBufferSize)
-        encoder.setBuffer(locksBuffer, offset: 0, index: 14)
-      }
+    if scratchBufferSize > 0 {
+      let scratchBuffer = MFA_Backend.global.cache
+        .requestScratchBuffer(size: scratchBufferSize)
+      encoder.setBuffer(scratchBuffer, offset: 0, index: 13)
+    }
+    if locksBufferSize > 0 {
+      let locksBuffer = MFA_Backend.global.cache
+        .requestLocksBuffer(size: locksBufferSize)
+      encoder.setBuffer(locksBuffer, offset: 0, index: 14)
+    }
+    if partialsBufferSize > 0 {
+      let partialsBuffer = MFA_Backend.global.cache
+        .requestPartialsBuffer(size: partialsBufferSize)
+      encoder.setBuffer(partialsBuffer, offset: 0, index: 15)
     }
     
     if resource.flags & 0x2 > 0 {
@@ -478,7 +467,7 @@ struct MFA_Attention: Attention, MFA_Operation {
       encoder.setComputePipelineState(resource.resource(index: 1))
       encoder.setThreadgroupMemoryLength(
         Int(resource.threadgroupMemoryLengths[1]), index: 0)
-
+      
       var gridSize = resource.gridSizes[1]
       gridSize.depth = gridZ
       encoder.dispatchThreadgroups(

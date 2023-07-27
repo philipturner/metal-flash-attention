@@ -277,6 +277,21 @@ public:
       j_block += 1;
     }
   }
+  
+  METAL_FUNC void encode(device float *object, float2 value) const {
+    uint2 bitpattern = as_type<uint2>(value);
+    bitpattern &= 1;
+    atomic_store_explicit((device atomic_uint*)object, bitpattern[0], memory_order_relaxed);
+    atomic_store_explicit((device atomic_uint*)object + 1, bitpattern[1], memory_order_relaxed);
+  }
+  
+  METAL_FUNC bool decode(device float *object, thread float2 *value) {
+    *value = as_type<float2>(uint2(
+      atomic_load_explicit((device atomic_uint*)object, memory_order_relaxed),
+      atomic_load_explicit((device atomic_uint*)object + 1, memory_order_relaxed)
+    ));
+    return all(bool2(as_type<uint2>(*value) & 1));
+  }
 };
 
 // MARK: - Kernels
@@ -753,65 +768,95 @@ void _attention_impl(device T *Q [[buffer(0)]],
     uint O_block_index = gid.y * head_O_blocks + pass.i_block;
     O_block_index += gid.z * H * head_O_blocks;
     
+    ulong address = O_block_index * (num_lm_elements + num_O_elements);
+    auto partial = partials + address;
+    ushort r_base = offset_in_simd.x + sidx * R_simd;
+    ushort base = num_lm_elements + offset_in_simd.x;
+    base += (sidx * R_simd + offset_in_simd.y) * D_simd;
+    
     if (!pass.can_store_o) {
+      if (offset_in_simd.x == 0) {
+#pragma clang loop unroll(full)
+        for (ushort r = 0; r < R_simd; r += 8) {
+          auto object = partial + 2 * (r + r_base);
+          pass.encode(object, { l_sram[r / 8], m_sram[r / 8] });
+        }
+      }
+      partial += base;
+      
+#pragma clang loop unroll(full)
+      for (ushort r = 0; r < R_simd; r += 8) {
+#pragma clang loop unroll(full)
+        for (ushort d = 0; d < D_simd; d += 8) {
+          auto object = partial + (r * D_simd + d);
+          auto o = get_sram(O_sram, D_simd, ushort2(d, r));
+          pass.encode(object, *o->thread_elements());
+        }
+      }
+      threadgroup_barrier(mem_flags::mem_device);
+      
+      if (sidx == 0 && lane_id == 0) {
+        atomic_store_explicit(locks + O_block_index, 1, memory_order_relaxed);
+      }
+    } else {
+      if (sidx == 0 && lane_id == 0) {
+        fault_counter counter(1000);
+        bool succeeded = false;
+        while (!succeeded) {
+          if (counter.quit()) { return; }
+          
+          uint expected = 1;
+          succeeded = atomic_compare_exchange_weak_explicit(locks + O_block_index, &expected, 0, memory_order_relaxed, memory_order_relaxed);
+        }
+        ((device uint*)locks)[O_block_index] = 0;
+      }
+      threadgroup_barrier(mem_flags::mem_device);
+      
+      float2 lm[128];
       fault_counter counter(100);
       bool failed = true;
       while (failed) {
         if (counter.quit()) { return; }
         failed = false;
         
-        ulong address = O_block_index * (num_lm_elements + num_O_elements);
-        auto partial = (device atomic_uint*)(partials + address);
-        if (offset_in_simd.x == 0) {
-          ushort r_base = offset_in_simd.x + sidx * R_simd;
-          
-#pragma clang loop unroll(full)
-          for (ushort r = 0; r < R_simd; r += 8) {
-            auto object = partial + 2 * (r + r_base);
-            auto l = as_type<uint>(l_sram[r / 8]);
-            auto m = as_type<uint>(m_sram[r / 8]);
-            atomic_store_explicit(object, l, memory_order_relaxed);
-            atomic_store_explicit(object + 1, m, memory_order_relaxed);
-            
-            uint actual_l = atomic_load_explicit(object, memory_order_relaxed);
-            uint actual_m = atomic_load_explicit(object + 1, memory_order_relaxed);
-            if ((l != actual_l) || (m != actual_m)) {
-              failed = true;
-            }
-          }
-        }
-        
-        ushort base = num_lm_elements + offset_in_simd.x;
-        base += (sidx * R_simd + offset_in_simd.y) * D_simd;
-        partial += base;
-        
 #pragma clang loop unroll(full)
         for (ushort r = 0; r < R_simd; r += 8) {
-#pragma clang loop unroll(full)
-          for (ushort d = 0; d < D_simd; d += 8) {
-            auto o = get_sram(O_sram, D_simd, ushort2(d, r));
-            auto object = partial + (r * D_simd + d);
-            uint2 elements = as_type<uint2>(*o->thread_elements());
-            atomic_store_explicit(object, elements[0], memory_order_relaxed);
-            atomic_store_explicit(object + 1, elements[1], memory_order_relaxed);
-            
-            uint actual_0 = atomic_load_explicit(object, memory_order_relaxed);
-            uint actual_1 = atomic_load_explicit(object + 1, memory_order_relaxed);
-            if ((elements[0] != actual_0) || (elements[1] != actual_1)) {
-              failed = true;
-            }
+          auto object = partial + 2 * (r + r_base);
+          if (!pass.decode(object, lm + r / 8)) {
+            failed = true;
           }
         }
       }
-      threadgroup_barrier(mem_flags::mem_device);
-    }
-    
-    if (sidx == 0) {
       
-    }
-    
-    if (pass.can_store_o) {
-      threadgroup_barrier(mem_flags::mem_device);
+      float correction_send[128];
+#pragma clang loop unroll(full)
+      for (ushort r = 0; r < R_simd; r += 8) {
+        float l = lm[r / 8][0];
+        float m = lm[r / 8][1];
+        m = max(m_sram[r / 8], m);
+        float correction_recv = exp2(M_LOG2E_F * (m_sram[r / 8] - m));
+        ((device float2*)partial)[r + r_base] = 0;
+        
+        constexpr T threshold = -numeric_limits<T>::max() / 2;
+        if (m <= threshold) {
+          correction_send[r / 8] = 0;
+        } else if (m > m_sram[r / 8]) {
+          correction_send[r / 8] = 1;
+#pragma clang loop unroll(full)
+          for (ushort d = 0; d < D_simd; d += 8) {
+            auto o = get_sram(O_sram, D_simd, ushort2(d, r));
+            *(o->thread_elements()) *= correction_recv;
+          }
+          l_sram[r / 8] *= correction_recv;
+        } else {
+          correction_send[r / 8] = 1 / correction_recv;
+        }
+        l_sram[r / 8] = fma(l, correction_send[r / 8], l_sram[r / 8]);
+        m_sram[r / 8] = m;
+      }
+      partial += base;
+      
+      
     }
   }
   
@@ -930,3 +975,4 @@ kernel void attention(device void *Q [[buffer(0)]],
     }
   }
 }
+

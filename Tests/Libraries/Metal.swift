@@ -101,12 +101,16 @@ class OperationCache<Backend: MetalBackend> {
   
   var scratchBuffer: MTLBuffer?
   
-  // To sanitize corrupted locks, simply set this property to `nil` and request
-  // another locks buffer.
+  var partialsBuffer: MTLBuffer?
+  
   var locksBuffer: MTLBuffer?
   
   func requestScratchBuffer(size: Int) -> MTLBuffer {
     requestBuffer(size: size, keyPath: \.scratchBuffer)
+  }
+  
+  func requestPartialsBuffer(size: Int) -> MTLBuffer {
+    requestBuffer(size: size, keyPath: \.partialsBuffer)
   }
   
   func requestLocksBuffer(size: Int) -> MTLBuffer {
