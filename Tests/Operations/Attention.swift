@@ -261,9 +261,9 @@ struct MFA_Attention: Attention, MFA_Operation {
       num_O_elements /= floats_per_cacheline
       num_O_elements *= floats_per_cacheline
       
-      let num_O_blocks = (parameters.R + Int(R_group) - 1) / Int(R_group)
+      let head_O_blocks = (parameters.R + Int(R_group) - 1) / Int(R_group)
       deviceElements = UInt64(num_lm_elements + num_O_elements)
-      deviceElements *= UInt64(num_O_blocks)
+      deviceElements *= UInt64(parameters.H * head_O_blocks)
     } else {
       deviceElements = 0
     }

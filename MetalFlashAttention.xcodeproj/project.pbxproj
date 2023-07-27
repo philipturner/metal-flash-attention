@@ -56,6 +56,7 @@
 
 /* Begin PBXFileReference section */
 		980070F52A66E4490097D21F /* AttentionPerfTests.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = AttentionPerfTests.swift; sourceTree = "<group>"; };
+		9802CB392A72A687004AFD03 /* metal_fault_counter */ = {isa = PBXFileReference; explicitFileType = sourcecode.metal; path = metal_fault_counter; sourceTree = "<group>"; };
 		980EDCFC2A4E10A100BC9BF0 /* CorrectnessTests.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = CorrectnessTests.swift; sourceTree = "<group>"; };
 		98325C472A6B2A7000A4D7BB /* float32-small-sequences-latest.png */ = {isa = PBXFileReference; lastKnownFileType = image.png; path = "float32-small-sequences-latest.png"; sourceTree = "<group>"; };
 		9835F4592A4A3BA40095D0D0 /* Attention.metal */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.metal; path = Attention.metal; sourceTree = "<group>"; };
@@ -219,9 +220,10 @@
 				9835F45B2A4A3BAD0095D0D0 /* Convolution.metal */,
 				987E36142A45E90700ACACE3 /* GEMM.metal */,
 				9835F45D2A4A81150095D0D0 /* Normalization.metal */,
+				9835F4742A4B4B550095D0D0 /* metal_data_type */,
+				9802CB392A72A687004AFD03 /* metal_fault_counter */,
 				987E360D2A45E6A100ACACE3 /* metal_simdgroup_event */,
 				987E36122A45E74800ACACE3 /* metal_simdgroup_matrix_storage */,
-				9835F4742A4B4B550095D0D0 /* metal_data_type */,
 			);
 			path = Sources;
 			sourceTree = "<group>";

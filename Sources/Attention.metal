@@ -7,6 +7,7 @@
 
 #include <metal_stdlib>
 #include "metal_data_type"
+#include "metal_fault_counter"
 #include "metal_simdgroup_event"
 #include "metal_simdgroup_matrix_storage"
 using namespace metal;
@@ -211,7 +212,7 @@ public:
   uint j_block;
   uint j_block_end;
   
-  triangular_pass(ushort pass_id, uint i_block) {
+  METAL_FUNC triangular_pass(ushort pass_id, uint i_block) {
     this->pass_id = pass_id;
     
     uint grid_x = (R + R_group - 1) / R_group;
@@ -221,7 +222,7 @@ public:
     uint edge_blocks = grid_x - complete_blocks;
     uint split_blocks = lower_blocks + edge_blocks;
     
-    bool is_right = (i_block > split_blocks);
+    bool is_right = (i_block >= split_blocks);
     uint split_i_block = upper_blocks + i_block;
     if (is_right) {
       split_i_block -= split_blocks;
@@ -261,7 +262,7 @@ public:
     }
   }
   
-  bool continue_j_block() const {
+  METAL_FUNC bool continue_j_block() const {
     if (pass_id == upper) {
       return int(j_block) >= 0;
     } else {
@@ -269,7 +270,7 @@ public:
     }
   }
   
-  void iterate_j_block() {
+  METAL_FUNC void iterate_j_block() {
     if (pass_id == upper) {
       j_block -= 1;
     } else {
@@ -332,13 +333,16 @@ void _generate_block_mask_impl(threadgroup T *threadgroup_block [[threadgroup(0)
       placeholder = simd_broadcast_first(placeholder);
       
       if (offset_in_simd.y >= R_modulo) {
+#pragma clang loop unroll(full)
         for (ushort c = 0; c < C_simd; c += 8) {
           ushort2 origin(c, R_floor);
           auto s = get_sram(attention_matrix, C_simd, origin);
           *s = simdgroup_matrix_storage<T>(placeholder);
         }
       }
+#pragma clang loop unroll(full)
       for (ushort r = R_floor + 8; r < R_simd; r += 8) {
+#pragma clang loop unroll(full)
         for (ushort c = 0; c < C_simd; c += 8) {
           ushort2 origin(c, r);
           auto s = get_sram(attention_matrix, C_simd, origin);
@@ -358,6 +362,7 @@ void _generate_block_mask_impl(threadgroup T *threadgroup_block [[threadgroup(0)
     placeholder = simd_broadcast_first(placeholder);
     
     if (offset_in_simd.x >= C_edge_thread) {
+#pragma clang loop unroll(full)
       for (ushort r = 0; r < R_simd; r += 8) {
         auto s = get_sram(attention_matrix, C_simd, ushort2(c, r));
         *s = simdgroup_matrix_storage<T>(placeholder);
@@ -443,7 +448,7 @@ void _attention_impl(device T *Q [[buffer(0)]],
                      ushort lane_id [[thread_index_in_simdgroup]])
 {
   uint i = pass.i_block * R_group + sidx * R_simd;
-  if (R % R_group > 0) {
+  if ((R % R_group > 0) && (pass.pass_id == triangular_pass::none)) {
     if (i >= R) {
       return;
     }
@@ -740,8 +745,74 @@ void _attention_impl(device T *Q [[buffer(0)]],
     }
   }
   
+  // Combine partial sums.
   if (pass.pass_id == triangular_pass::lower) {
-    // TODO: Store or load partial sums.
+    ushort num_lm_elements = (2 * R_group + 31) / 32 * 32;
+    ushort num_O_elements = (R_group * D_simd + 31) / 32 * 32;
+    uint head_O_blocks = (R + R_group - 1) / R_group;
+    uint O_block_index = gid.y * head_O_blocks + pass.i_block;
+    O_block_index += gid.z * H * head_O_blocks;
+    
+    if (!pass.can_store_o) {
+      fault_counter counter(100);
+      bool failed = true;
+      while (failed) {
+        if (counter.quit()) { return; }
+        failed = false;
+        
+        ulong address = O_block_index * (num_lm_elements + num_O_elements);
+        auto partial = (device atomic_uint*)(partials + address);
+        if (offset_in_simd.x == 0) {
+          ushort r_base = offset_in_simd.x + sidx * R_simd;
+          
+#pragma clang loop unroll(full)
+          for (ushort r = 0; r < R_simd; r += 8) {
+            auto object = partial + 2 * (r + r_base);
+            auto l = as_type<uint>(l_sram[r / 8]);
+            auto m = as_type<uint>(m_sram[r / 8]);
+            atomic_store_explicit(object, l, memory_order_relaxed);
+            atomic_store_explicit(object + 1, m, memory_order_relaxed);
+            
+            uint actual_l = atomic_load_explicit(object, memory_order_relaxed);
+            uint actual_m = atomic_load_explicit(object + 1, memory_order_relaxed);
+            if ((l != actual_l) || (m != actual_m)) {
+              failed = true;
+            }
+          }
+        }
+        
+        ushort base = num_lm_elements + offset_in_simd.x;
+        base += (sidx * R_simd + offset_in_simd.y) * D_simd;
+        partial += base;
+        
+#pragma clang loop unroll(full)
+        for (ushort r = 0; r < R_simd; r += 8) {
+#pragma clang loop unroll(full)
+          for (ushort d = 0; d < D_simd; d += 8) {
+            auto o = get_sram(O_sram, D_simd, ushort2(d, r));
+            auto object = partial + (r * D_simd + d);
+            uint2 elements = as_type<uint2>(*o->thread_elements());
+            atomic_store_explicit(object, elements[0], memory_order_relaxed);
+            atomic_store_explicit(object + 1, elements[1], memory_order_relaxed);
+            
+            uint actual_0 = atomic_load_explicit(object, memory_order_relaxed);
+            uint actual_1 = atomic_load_explicit(object + 1, memory_order_relaxed);
+            if ((elements[0] != actual_0) || (elements[1] != actual_1)) {
+              failed = true;
+            }
+          }
+        }
+      }
+      threadgroup_barrier(mem_flags::mem_device);
+    }
+    
+    if (sidx == 0) {
+      
+    }
+    
+    if (pass.can_store_o) {
+      threadgroup_barrier(mem_flags::mem_device);
+    }
   }
   
   // Write O block.
@@ -795,6 +866,13 @@ void _triangular_impl(device T *Q [[buffer(0)]],
                       ushort lane_id [[thread_index_in_simdgroup]])
 {
   triangular_pass lower_pass(triangular_pass::lower, gid.x);
+  uint i = lower_pass.i_block * R_group + sidx * R_simd;
+  if (R % R_group > 0) {
+    if (i >= R) {
+      return;
+    }
+  }
+  
   _attention_impl(Q, K, V, O, threadgroup_block, query_offsets, mask, block_mask, locks, partials, lower_pass, gid, sidx, lane_id);
   
   triangular_pass upper_pass(triangular_pass::lower, gid.x);
@@ -852,4 +930,3 @@ kernel void attention(device void *Q [[buffer(0)]],
     }
   }
 }
-
