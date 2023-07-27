@@ -57,7 +57,7 @@ func showAttentionTest() {
   let expectedBackend: TensorBackend = .mps
   let actualBackend: TensorBackend = .mfa
   #if arch(arm64)
-  typealias Real = Float16
+  typealias Real = Float32 // Float16
   #else
   typealias Real = Float32
   #endif
@@ -71,13 +71,20 @@ func showAttentionTest() {
 //  C_simd = 64
 //  R_splits = 4
   
-  let B = 8
-  let R = 1
-  let C = 1
+//  let B = 8
+//  let R = 1
+//  let C = 1
+//  let H = 1
+//  let D = 1
+  let B = 1
+  let R = 8
+  let C = 8
   let H = 1
-  let D = 1
+  let D = 8
+//  let expected_mask = Tensor<Real>(
+//    shape: [1, 1, R, C], mask: .blockSparse(2, 0.2), backend: expectedBackend)
   let expected_mask = Tensor<Real>(
-    shape: [1, 1, R, C], mask: .blockSparse(2, 0.2), backend: expectedBackend)
+    shape: [1, 1, R, C], mask: .upperTriangular, backend: expectedBackend)
   let expected_Q = Tensor<Real>(
     shape: [B, R, H, D], randomUniform: 0..<1, backend: expectedBackend)
   let expected_K = Tensor<Real>(
@@ -112,7 +119,7 @@ func showAttentionTest() {
       actual_O.attention(
         queries: actual_Q, keys: actual_K, values: actual_V,
         mask: actual_mask,
-        transposeK: true, transposeO: true)
+        transposeK: true, transposeO: true, blockSparse: true)
     }
   }
   

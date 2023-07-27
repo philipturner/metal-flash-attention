@@ -33,7 +33,7 @@ class MFATestCase {
   static func runTests(speed: TestSpeed) {
     let testCases: [MFATestCase] = [
       CorrectnessTests(),
-//      AttentionPerfTests(),
+      AttentionPerfTests(),
 //      GEMMPerfTests(),
     ]
     

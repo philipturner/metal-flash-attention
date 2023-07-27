@@ -3,7 +3,7 @@
 A faster alternative to Metal Performance Shaders, a reference implementation of modern GPU algorithms, and a step toward defragmenting the AI ecosystem.
 
 Algorithms:
-- [ ] Attention
+- [x] Attention
   - [x] Dense (90.5% ALU)
   - [x] Block-Sparse
   - [ ] Triangular
@@ -189,6 +189,10 @@ Dense: Stable Diffusion 2 outermost attention layer @ 512x512 (sequence length =
 
 ![FlashAttention (F16, H=5, D=64)](./CI/float16-large-sequences-latest.png)
 
+### Float32 Sequence Scaling (Causal Mask)
+
+![FlashAttention (F32, H=10, D=64)](./CI/float16-large-causal-latest.png)
+
 ### Float16 Sequence Scaling (Causal Mask)
 
 ![FlashAttention (F16, H=10, D=64)](./CI/float16-small-causal-latest.png)
@@ -210,8 +214,4 @@ Releases:
   - Fused transposes for A and B
   - Batched GEMM
 - v1.0.0
-  - Attention: dense, block-sparse, and triangular
-- v1.1.0
-  - Fused activations
-  - Alpha and beta constants from BLAS
-  - Grouped-query attention
+  - Attention: dense and block-sparse

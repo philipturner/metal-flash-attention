@@ -85,6 +85,7 @@ struct MFA_Attention: Attention, MFA_Operation {
     constants.setConstantValue(&pcopy.blockSparse, type: .bool, index: 102)
     
     var triangular = false
+    #if false
     if parameters.masked && parameters.blockSparse {
       // If masked and R ≈ C, is it very likely this is causal self-attention.
       let ratio = Float(parameters.R) / Float(parameters.C)
@@ -96,6 +97,7 @@ struct MFA_Attention: Attention, MFA_Operation {
         triangular = true
       }
     }
+    #endif
     constants.setConstantValue(&triangular, type: .bool, index: 103)
     
     var forward = true

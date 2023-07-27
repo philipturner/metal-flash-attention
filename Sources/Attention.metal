@@ -222,11 +222,7 @@ public:
     uint edge_blocks = grid_x - complete_blocks;
     uint split_blocks = lower_blocks + edge_blocks;
     
-    bool is_right = (i_block >= split_blocks);
-    uint split_i_block = upper_blocks + i_block;
-    if (is_right) {
-      split_i_block -= split_blocks;
-    }
+    uint split_i_block = i_block % split_blocks;
     uint j_block_max = (C + C_simd - 1) / C_simd;
     
     switch (pass_id) {
@@ -239,10 +235,10 @@ public:
         break;
       }
       case lower: {
-        can_store_o = !is_right;
+        can_store_o = (i_block != split_i_block);
         
         this->i_block = split_i_block;
-        if (!is_right) {
+        if (i_block != split_i_block) {
           j_block = 0;
           j_block_end = (j_block_max + 1) / 2;
         } else {
@@ -252,9 +248,9 @@ public:
         break;
       }
       case upper: {
-        can_store_o = is_right && (split_i_block < upper_blocks);
+        can_store_o = (i_block < upper_blocks);
         
-        this->i_block = upper_blocks - 1 - split_i_block;
+        this->i_block = upper_blocks - 1 - i_block;
         j_block = j_block_max - 1;
         j_block_end = 0;
         break;
@@ -280,7 +276,7 @@ public:
   
   METAL_FUNC void encode(device float *object, float2 value) const {
     uint2 bitpattern = as_type<uint2>(value);
-    bitpattern &= 1;
+    bitpattern = (bitpattern & 0xFFFFFFFE) | 1;
     atomic_store_explicit((device atomic_uint*)object, bitpattern[0], memory_order_relaxed);
     atomic_store_explicit((device atomic_uint*)object + 1, bitpattern[1], memory_order_relaxed);
   }
@@ -803,7 +799,9 @@ void _attention_impl(device T *Q [[buffer(0)]],
         fault_counter counter(1000);
         bool succeeded = false;
         while (!succeeded) {
-          if (counter.quit()) { return; }
+          if (counter.quit()) {
+            return;
+          }
           
           uint expected = 1;
           succeeded = atomic_compare_exchange_weak_explicit(locks + O_block_index, &expected, 0, memory_order_relaxed, memory_order_relaxed);
@@ -816,7 +814,9 @@ void _attention_impl(device T *Q [[buffer(0)]],
       fault_counter counter(100);
       bool failed = true;
       while (failed) {
-        if (counter.quit()) { return; }
+        if (counter.quit()) {
+          return;
+        }
         failed = false;
         
 #pragma clang loop unroll(full)
@@ -860,7 +860,13 @@ void _attention_impl(device T *Q [[buffer(0)]],
 #pragma clang loop unroll(full)
         for (ushort d = 0; d < C_simd; d += 8) {
           bool failed = true;
+          
+          fault_counter counter(10);
           while (failed) {
+            if (counter.quit()) {
+              return;
+            }
+            
             auto object = partial + (r * D_simd + d);
             float2 o_send;
             if (pass.decode(object, &o_send)) {
@@ -938,7 +944,7 @@ void _triangular_impl(device T *Q [[buffer(0)]],
   
   _attention_impl(Q, K, V, O, threadgroup_block, query_offsets, mask, block_mask, locks, partials, lower_pass, gid, sidx, lane_id);
   
-  triangular_pass upper_pass(triangular_pass::lower, gid.x);
+  triangular_pass upper_pass(triangular_pass::upper, gid.x);
   if (upper_pass.can_store_o) {
     _attention_impl(Q, K, V, O, threadgroup_block, query_offsets, mask, block_mask, locks, partials, upper_pass, gid, sidx, lane_id);
   }
