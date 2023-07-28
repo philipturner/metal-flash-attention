@@ -49,22 +49,20 @@ constant ushort N_padded = (N < N_simd) ? (N_modulo + 7) / 8 * 8 : N_simd;
 
 constant ushort M_splits [[function_constant(210)]];
 constant ushort N_splits [[function_constant(211)]];
-constant ushort K_splits [[function_constant(212)]]; /* 1, 2, 3, 4, 6, 8 */
 
 constant ushort M_group = M_simd * M_splits;
 constant ushort N_group = N_simd * N_splits;
-constant ushort K_group = K_simd * K_splits;
-constant ushort A_block_leading_dim = (A_trans ? M_group : K_group);
-constant ushort B_block_leading_dim = (B_trans ? K_group : N_group);
+constant ushort A_block_leading_dim = (A_trans ? M_group : K_simd);
+constant ushort B_block_leading_dim = (B_trans ? K_simd : N_group);
 
 // There is no padding for M reads/writes.
 // There is no padding for N reads/writes.
-constant ushort K_group_unpadded = (K % K_group == 0) ? K_group : (K % K_group);
-constant ushort K_simd_padded = (K_group_unpadded + 7) / 8 * 8;
+constant ushort K_simd_unpadded = (K % K_simd == 0) ? K_simd : (K % K_simd);
+constant ushort K_simd_padded = (K_simd_unpadded + 7) / 8 * 8;
 
 constant ushort A_sram_length = (M_simd / 8) * 1;
 constant ushort B_sram_length = 1 * (N_simd / 8);
-constant ushort A_block_length = M_group * K_group;
+constant ushort A_block_length = M_group * K_simd;
 //constant ushort B_block_length = K_group * N_group;
 
 // Threadgroup block must fit entire C accumulator and partial sums.
@@ -100,19 +98,19 @@ METAL_FUNC void prefetch(threadgroup T *A_block, device T *A,
                          threadgroup T *B_block, device T *B,
                          ushort2 B_tile_src, uint2 B_offset, uint k)
 {
-  A_tile_src.x = min(uint(K_group), K - k);
-  B_tile_src.y = min(uint(K_group), K - k);
+  A_tile_src.x = min(uint(K_simd), K - k);
+  B_tile_src.y = min(uint(K_simd), K - k);
   auto A_src = simdgroup_matrix_storage<T>::apply_offset(A, A_leading_dim, A_offset, A_trans);
   auto B_src = simdgroup_matrix_storage<T>::apply_offset(B, B_leading_dim, B_offset, B_trans);
   
   // Rounded-up ceiling for the threadgroup block.
-  const uint K_edge_floor = K - K_group_unpadded;
+  const uint K_edge_floor = K - K_simd_unpadded;
   const uint K_edge_ceil = K_edge_floor + K_simd_padded;
   ushort K_padded;
-  if (K_edge_floor == K_group) {
-    K_padded = K_group;
+  if (K_edge_floor == K_simd) {
+    K_padded = K_simd;
   } else {
-    K_padded = min(uint(K_group), K_edge_ceil - k);
+    K_padded = min(uint(K_simd), K_edge_ceil - k);
   }
   ushort2 A_tile_dst(K_padded, A_tile_src.y);
   ushort2 B_tile_dst(B_tile_src.x, K_padded);
@@ -277,9 +275,7 @@ void _gemm_impl(device T *A [[buffer(0)]],
   simdgroup_matrix_storage<T> sram[1024];
   auto A_block = threadgroup_block + A_block_offset;
   auto B_block = threadgroup_block + B_block_offset;
-  ushort3 sid(sidx % N_splits,
-              (sidx % (M_splits * N_splits) / N_splits),
-              sidx / (M_splits * N_splits));
+  ushort2 sid(sidx % N_splits, sidx / N_splits);
   ushort2 offset_in_simd = simdgroup_matrix_storage<T>::offset(lane_id);
   
   uint2 A_offset(0, gid.y * M_group);
@@ -292,10 +288,56 @@ void _gemm_impl(device T *A [[buffer(0)]],
     }
   }
   
-  ushort3 offset_in_group(sid.x * N_simd + offset_in_simd.x,
-                          sid.y * M_simd + offset_in_simd.y, 0);
-  if (K_splits > 1) {
-    offset_in_group.z = sid.z * K_simd;
+  ushort2 offset_in_group(sid.x * N_simd + offset_in_simd.x,
+                          sid.y * M_simd + offset_in_simd.y);
+  
+  if (use_bias) {
+    if (sidx == 0) {
+      auto bias = (device T*)D;
+      if (batched) {
+        ulong offset = matrix_offsets[gid.z].w;
+        bias = (device T*)((device uchar*)bias + offset);
+      }
+      
+      ushort bias_elements;
+      if (is_function_constant_defined(D_trans) && D_trans) {
+        bias += A_offset.y;
+        bias_elements = min(uint(M_group), M - A_offset.y);
+      } else {
+        bias += B_offset.x;
+        bias_elements = min(uint(N_group), N - B_offset.x);
+      }
+      
+      simdgroup_event event;
+      event.async_copy(threadgroup_block, bias, bias_elements);
+      simdgroup_event::wait(1, &event);
+    }
+    threadgroup_barrier(mem_flags::mem_threadgroup);
+    
+    if (is_function_constant_defined(D_trans) && D_trans) {
+      auto bias = threadgroup_block + offset_in_simd.y;
+#pragma clang loop unroll(full)
+      for (ushort n = 0; n < N_simd; n += 8) {
+        auto D = bias[n];
+#pragma clang loop unroll(full)
+        for (ushort m = 0; m < M_simd; m += 8) {
+          auto C = C_sram(sram, ushort2(m, n));
+          *(C->thread_elements()) = D;
+        }
+      }
+    } else {
+      auto bias = threadgroup_block + offset_in_simd.x;
+#pragma clang loop unroll(full)
+      for (ushort m = 0; m < M_simd; m += 8) {
+        auto D = *(threadgroup vec<T, 2>*)(bias + m);
+#pragma clang loop unroll(full)
+        for (ushort n = 0; n < N_simd; n += 8) {
+          auto C = C_sram(sram, ushort2(m, n));
+          *(C->thread_elements()) = D;
+        }
+      }
+    }
+    threadgroup_barrier(mem_flags::mem_threadgroup);
   }
   
   ushort2 A_tile_src;
@@ -306,7 +348,7 @@ void _gemm_impl(device T *A [[buffer(0)]],
     prefetch(A_block, A, A_tile_src, A_offset, B_block, B, B_tile_src, B_offset, 0);
   }
   
-  if (K > K_simd) {
+  if (K > K_simd && !use_bias) {
 #pragma clang loop unroll(full)
     for (ushort m = 0; m < M_padded; m += 8) {
 #pragma clang loop unroll(full)
@@ -316,25 +358,22 @@ void _gemm_impl(device T *A [[buffer(0)]],
     }
   }
   
-  for (uint K_floor = 0; K_floor < K; K_floor += K_group) {
-    ushort2 A_block_offset(offset_in_simd.x + offset_in_group.z, offset_in_group.y);
-    ushort2 B_block_offset(offset_in_group.x, offset_in_simd.y + offset_in_group.z);
+  for (uint K_floor = 0; K_floor < K; K_floor += K_simd) {
+    ushort2 A_block_offset(offset_in_simd.x, offset_in_group.y);
+    ushort2 B_block_offset(offset_in_group.x, offset_in_simd.y);
     auto A_block_src = simdgroup_matrix_storage<T>::apply_offset(A_block, A_block_leading_dim, A_block_offset, A_trans);
     auto B_block_src = simdgroup_matrix_storage<T>::apply_offset(B_block, B_block_leading_dim, B_block_offset, B_trans);
     threadgroup_barrier(mem_flags::mem_threadgroup);
     
-    if (K_splits > 1 && K_floor + offset_in_group.z >= K) {
-      break;
-    }
 #pragma clang loop unroll(full)
     for (ushort k = 0; k < K_simd_padded; k += 8) {
-      bool accumulate = !(k == 0 && K <= K_simd);
+      bool accumulate = use_bias || !(K <= K_simd && k == 0);
       multiply_accumulate(sram, A_block_src, B_block_src, accumulate);
       A_block_src += A_trans ? 8 * M_group : 8;
       B_block_src += B_trans ? 8 : 8 * N_group;
     }
     
-    if (K_floor + K_group < K) {
+    if (K_floor + K_simd < K) {
 #pragma clang loop unroll(full)
       for (ushort k = K_simd_padded; k < K_simd; k += 8) {
         multiply_accumulate(sram, A_block_src, B_block_src);
@@ -344,46 +383,11 @@ void _gemm_impl(device T *A [[buffer(0)]],
       threadgroup_barrier(mem_flags::mem_threadgroup);
       
       if (sidx == 0) {
-        uint K_next = K_floor + K_group;
+        uint K_next = K_floor + K_simd;
         A_offset.x = K_next;
         B_offset.y = K_next;
         prefetch(A_block, A, A_tile_src, A_offset, B_block, B, B_tile_src, B_offset, K_next);
       }
-    }
-  }
-  
-  if (K_splits > 1) {
-    ushort reach = K_splits / 2;
-    if (K_splits % 3 == 0) {
-      ushort receivers = K_splits / 3;
-      ushort id_in_sum = sid.z / receivers;
-      threadgroup_barrier(mem_flags::mem_threadgroup);
-      
-      if (id_in_sum > 0) {
-        ushort index = (sid.z % receivers) * 2 + (id_in_sum - 1);
-        partial_store(sram, threadgroup_block + index * M_simd * N_simd, true);
-      }
-      threadgroup_barrier(mem_flags::mem_threadgroup);
-      if (id_in_sum > 0) { return; }
-      
-#pragma clang loop unroll(full)
-      for (ushort id_in_sum = 0; id_in_sum < 2; ++id_in_sum) {
-        ushort index = receivers * 2 + id_in_sum;
-        partial_accumulate(sram, threadgroup_block + index * M_simd * N_simd, true);
-      }
-      reach = K_splits / 6;
-    }
-    
-#pragma clang loop unroll(full)
-    for (; reach > 0; reach /= 2) {
-      threadgroup_barrier(mem_flags::mem_threadgroup);
-      if (sid.z >= reach) {
-        ushort index = sid.z - reach;
-        partial_store(sram, threadgroup_block + index * M_simd * N_simd, true);
-      }
-      threadgroup_barrier(mem_flags::mem_threadgroup);
-      if (sid.z >= reach) { return; }
-      partial_accumulate(sram, threadgroup_block + sid.z * M_simd * N_simd, true);
     }
   }
   
@@ -410,55 +414,6 @@ void _gemm_impl(device T *A [[buffer(0)]],
     auto C_block = simdgroup_matrix_storage<T>::apply_offset(threadgroup_block, N_group, C_block_offset);
     partial_accumulate(sram, C_block, false);
     threadgroup_barrier(mem_flags::mem_threadgroup);
-  }
-  
-  if (use_bias) {
-    threadgroup_barrier(mem_flags::mem_threadgroup);
-    if (sidx == 0) {
-      auto bias = (device T*)D;
-      if (batched) {
-        ulong offset = matrix_offsets[gid.z].w;
-        bias = (device T*)((device uchar*)bias + offset);
-      }
-      
-      ushort n_elements;
-      if (is_function_constant_defined(D_trans) && D_trans) {
-        bias += C_offset.y;
-        n_elements = min(uint(N_group), N - C_offset.y);
-      } else {
-        bias += C_offset.x;
-        n_elements = min(uint(M_group), M - C_offset.x);
-      }
-      
-      simdgroup_event event;
-      event.async_copy(threadgroup_block, bias, n_elements);
-      simdgroup_event::wait(1, &event);
-    }
-    
-    threadgroup_barrier(mem_flags::mem_threadgroup);
-    if (is_function_constant_defined(D_trans) && D_trans) {
-      auto bias = threadgroup_block + offset_in_simd.y;
-#pragma clang loop unroll(full)
-      for (ushort n = 0; n < N_simd; n += 8) {
-        auto D = bias[n];
-#pragma clang loop unroll(full)
-        for (ushort m = 0; m < M_simd; m += 8) {
-          auto C = C_sram(sram, ushort2(m, n));
-          *(C->thread_elements()) += D;
-        }
-      }
-    } else {
-      auto bias = threadgroup_block + offset_in_simd.x;
-#pragma clang loop unroll(full)
-      for (ushort m = 0; m < M_simd; m += 8) {
-        auto D = *(threadgroup vec<T, 2>*)(bias + m);
-#pragma clang loop unroll(full)
-        for (ushort n = 0; n < N_simd; n += 8) {
-          auto C = C_sram(sram, ushort2(m, n));
-          *(C->thread_elements()) += D;
-        }
-      }
-    }
   }
   
   if (use_activation_function) {
