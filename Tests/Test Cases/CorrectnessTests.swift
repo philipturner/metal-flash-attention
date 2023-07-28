@@ -189,7 +189,7 @@ class CorrectnessTests: MFATestCase {
     print()
     let start = CACurrentMediaTime()
     
-    let testExtension: Float = 1.000 // 0.334
+    let testExtension: Float = 0.334
     
     //  0 - 15: batch 1, K^T
     // 15 - 30: batch 1, all transposes

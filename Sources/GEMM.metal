@@ -21,6 +21,7 @@ constant uint K [[function_constant(2)]];
 // Whether each matrix is transposed.
 constant bool A_trans [[function_constant(10)]];
 constant bool B_trans [[function_constant(11)]];
+constant bool D_trans [[function_constant(13)]];
 constant uint A_leading_dim = A_trans ? M : K;
 constant uint B_leading_dim = B_trans ? K : N;
 
@@ -30,7 +31,11 @@ constant float beta [[function_constant(21)]];
 
 constant bool batched [[function_constant(100)]];
 constant bool fused_activation [[function_constant(101)]];
-constant bool batched_fused_activation = batched && fused_activation;
+constant bool bias_activation [[function_constant(50001)]]; // 102
+constant bool use_bias = is_function_constant_defined(bias_activation) ? bias_activation : false;
+constant bool use_activation_function = fused_activation && !bias_activation;
+constant bool use_activation = use_bias || use_activation_function;
+constant bool batched_activation_function = batched && use_activation_function;
 
 constant ushort M_simd [[function_constant(200)]];
 constant ushort N_simd [[function_constant(201)]];
@@ -251,19 +256,19 @@ template <typename T>
 void _gemm_impl(device T *A [[buffer(0)]],
                 device T *B [[buffer(1)]],
                 device T *C [[buffer(2)]],
-                device void *D [[buffer(3), function_constant(fused_activation)]],
+                device void *D [[buffer(3), function_constant(use_activation)]],
                 
                 threadgroup T *threadgroup_block [[threadgroup(0)]],
-                constant ulong3 *matrix_offsets [[buffer(10), function_constant(batched)]],
-                typename activation_functor<T>::function_table table [[buffer(11), function_constant(fused_activation)]],
-                constant uint *activation_function_offsets [[buffer(12), function_constant(batched_fused_activation)]],
+                constant ulong4 *matrix_offsets [[buffer(10), function_constant(batched)]],
+                typename activation_functor<T>::function_table table [[buffer(11), function_constant(use_activation_function)]],
+                constant uint *activation_function_offsets [[buffer(12), function_constant(batched_activation_function)]],
                 
                 uint3 gid [[threadgroup_position_in_grid]],
                 ushort sidx [[simdgroup_index_in_threadgroup]],
                 ushort lane_id [[thread_index_in_simdgroup]])
 {
   if (batched) {
-    ulong3 offsets = matrix_offsets[gid.z];
+    ulong3 offsets = matrix_offsets[gid.z].xyz;
     A = (device T*)((device uchar*)A + offsets[0]);
     B = (device T*)((device uchar*)B + offsets[1]);
     C = (device T*)((device uchar*)C + offsets[2]);
@@ -407,7 +412,56 @@ void _gemm_impl(device T *A [[buffer(0)]],
     threadgroup_barrier(mem_flags::mem_threadgroup);
   }
   
-  if (fused_activation) {
+  if (use_bias) {
+    threadgroup_barrier(mem_flags::mem_threadgroup);
+    if (sidx == 0) {
+      auto bias = (device T*)D;
+      if (batched) {
+        ulong offset = matrix_offsets[gid.z].w;
+        bias = (device T*)((device uchar*)bias + offset);
+      }
+      
+      ushort n_elements;
+      if (is_function_constant_defined(D_trans) && D_trans) {
+        bias += C_offset.y;
+        n_elements = min(uint(N_group), N - C_offset.y);
+      } else {
+        bias += C_offset.x;
+        n_elements = min(uint(M_group), M - C_offset.x);
+      }
+      
+      simdgroup_event event;
+      event.async_copy(threadgroup_block, bias, n_elements);
+      simdgroup_event::wait(1, &event);
+    }
+    
+    threadgroup_barrier(mem_flags::mem_threadgroup);
+    if (is_function_constant_defined(D_trans) && D_trans) {
+      auto bias = threadgroup_block + offset_in_simd.y;
+#pragma clang loop unroll(full)
+      for (ushort n = 0; n < N_simd; n += 8) {
+        auto D = bias[n];
+#pragma clang loop unroll(full)
+        for (ushort m = 0; m < M_simd; m += 8) {
+          auto C = C_sram(sram, ushort2(m, n));
+          *(C->thread_elements()) += D;
+        }
+      }
+    } else {
+      auto bias = threadgroup_block + offset_in_simd.x;
+#pragma clang loop unroll(full)
+      for (ushort m = 0; m < M_simd; m += 8) {
+        auto D = *(threadgroup vec<T, 2>*)(bias + m);
+#pragma clang loop unroll(full)
+        for (ushort n = 0; n < N_simd; n += 8) {
+          auto C = C_sram(sram, ushort2(m, n));
+          *(C->thread_elements()) += D;
+        }
+      }
+    }
+  }
+  
+  if (use_activation_function) {
     auto C_block = simdgroup_matrix_storage<T>::apply_offset(threadgroup_block, N_group, C_block_offset);
     partial_store(sram, C_block, false);
     simdgroup_barrier(mem_flags::mem_threadgroup);
@@ -418,7 +472,7 @@ void _gemm_impl(device T *A [[buffer(0)]],
     ushort2 tile_dimensions(min(uint(N_group), N - matrix_origin.x),
                             min(uint(M_group), M - matrix_origin.y));
     uint function_index = 0;
-    if (batched_fused_activation) {
+    if (batched_activation_function) {
       function_index = activation_function_offsets[gid.z];
     }
     table[function_index](C_block, D, grid_index_in_batch, matrix_origin, tile_dimensions, lane_id);
@@ -458,12 +512,12 @@ void _gemm_impl(device T *A [[buffer(0)]],
 kernel void hgemm(device half *A [[buffer(0)]],
                   device half *B [[buffer(1)]],
                   device half *C [[buffer(2)]],
-                  device void *D [[buffer(3), function_constant(fused_activation)]],
+                  device void *D [[buffer(3), function_constant(use_activation)]],
                   
                   threadgroup half *threadgroup_block [[threadgroup(0)]],
-                  constant ulong3 *matrix_offsets [[buffer(10), function_constant(batched)]],
-                  typename activation_functor<half>::function_table table [[buffer(11), function_constant(fused_activation)]],
-                  constant uint *activation_function_offsets [[buffer(12), function_constant(batched_fused_activation)]],
+                  constant ulong4 *matrix_offsets [[buffer(10), function_constant(batched)]],
+                  typename activation_functor<half>::function_table table [[buffer(11), function_constant(use_activation_function)]],
+                  constant uint *activation_function_offsets [[buffer(12), function_constant(batched_activation_function)]],
                   
                   uint3 gid [[threadgroup_position_in_grid]],
                   ushort sidx [[simdgroup_index_in_threadgroup]],
@@ -475,12 +529,12 @@ kernel void hgemm(device half *A [[buffer(0)]],
 kernel void sgemm(device float *A [[buffer(0)]],
                   device float *B [[buffer(1)]],
                   device float *C [[buffer(2)]],
-                  device void *D [[buffer(3), function_constant(fused_activation)]],
+                  device void *D [[buffer(3), function_constant(use_activation)]],
                   
                   threadgroup float *threadgroup_block [[threadgroup(0)]],
-                  constant ulong3 *matrix_offsets [[buffer(10), function_constant(batched)]],
-                  typename activation_functor<float>::function_table table [[buffer(11), function_constant(fused_activation)]],
-                  constant uint *activation_function_offsets [[buffer(12), function_constant(batched_fused_activation)]],
+                  constant ulong4 *matrix_offsets [[buffer(10), function_constant(batched)]],
+                  typename activation_functor<float>::function_table table [[buffer(11), function_constant(use_activation_function)]],
+                  constant uint *activation_function_offsets [[buffer(12), function_constant(batched_activation_function)]],
                   
                   uint3 gid [[threadgroup_position_in_grid]],
                   ushort sidx [[simdgroup_index_in_threadgroup]],

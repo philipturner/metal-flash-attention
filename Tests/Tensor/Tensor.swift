@@ -347,9 +347,10 @@ extension Tensor {
   
   // Sets this tensor's data to the product of the inputs.
   mutating func matmul(
-    _ a: Tensor<Element>, _ b: Tensor<Element>,
+    _ a: Tensor<Element>, _ b: Tensor<Element>, _ d: Tensor<Element>? = nil,
     transposeA: Bool = false, transposeB: Bool = false,
-    alpha: Float = 1.0, beta: Float = 0.0
+    transposeD: Bool = false, alpha: Float = 1.0, beta: Float = 0.0,
+    biasActivation: Bool = false
   ) {
     assert(self.typeAndBackendMatches(a))
     assert(self.typeAndBackendMatches(b))
