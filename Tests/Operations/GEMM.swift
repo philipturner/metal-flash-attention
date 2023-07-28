@@ -82,6 +82,7 @@ struct MFA_GEMM: GEMM, MFA_Operation {
     constants.setConstantValue(&pcopy.beta, type: .float, index: 21)
     constants.setConstantValue(&pcopy.batched, type: .bool, index: 100)
     constants.setConstantValue(&pcopy.fused_activation, type: .bool, index: 101)
+    constants.setConstantValue(&pcopy.fused_bias, type: .bool, index: 50001)
     
     var M_simd = Self.functionConstants["M_simd"] as! UInt16
     var N_simd = Self.functionConstants["N_simd"] as! UInt16
@@ -115,6 +116,13 @@ struct MFA_GEMM: GEMM, MFA_Operation {
       let C_block_length = M_group * N_group;
       blockElements = max(C_block_length, blockElements)
     }
+    if parameters.fused_bias {
+      if parameters.D_trans {
+        blockElements = max(blockElements, M_group)
+      } else {
+        blockElements = max(blockElements, N_group)
+      }
+    }
     let blockBytes = blockElements * UInt16(dataType.size)
     
     func ceilDivide(target: Int, granularity: UInt16) -> Int {
@@ -132,6 +140,12 @@ struct MFA_GEMM: GEMM, MFA_Operation {
     var flags: UInt32 = 0
     if parameters.batched {
       flags |= 0x1
+    }
+    if parameters.fused_activation {
+      flags |= 0x2
+    }
+    if parameters.fused_bias {
+      flags |= 0x4
     }
     return AsyncPipeline(
       functions: [function],
@@ -157,6 +171,9 @@ struct MFA_GEMM: GEMM, MFA_Operation {
     encoder.setBuffer(tensorA.buffer, offset: 0, index: 0)
     encoder.setBuffer(tensorB.buffer, offset: 0, index: 1)
     encoder.setBuffer(tensorC.buffer, offset: 0, index: 2)
+    if let tensorD = tensors.d as! MFA_TensorBuffer? {
+      encoder.setBuffer(tensorD.buffer, offset: 0, index: 3)
+    }
     
     var gridZ: Int
     if resource.flags & 0x1 > 0 {
@@ -169,6 +186,12 @@ struct MFA_GEMM: GEMM, MFA_Operation {
         batchDimensionsB == batchDimensionsA)
       assert(batchDimensionsA == batchDimensionsC)
       gridZ = batchDimensionsA.reduce(1, *)
+      
+      if let batchDimensionsD = tensors.d?.shape.dropLast(1) {
+        assert(
+          batchDimensionsD.reduce(1, *) == 1 ||
+          batchDimensionsD == batchDimensionsA)
+      }
       
       // Mixed precision will cause undefined behavior.
       let elementSize = tensors.a.dataType.size
@@ -183,14 +206,19 @@ struct MFA_GEMM: GEMM, MFA_Operation {
       let byteStrideA = byteStride(shape: tensors.a.shape)
       let byteStrideB = byteStride(shape: tensors.b.shape)
       let byteStrideC = byteStride(shape: tensors.c.shape)
+      var byteStrideD = 0
+      if let shapeD = tensors.d?.shape {
+        byteStrideD = byteStride(shape: shapeD)
+      }
       withUnsafeTemporaryAllocation(
-        of: SIMD3<UInt64>.self, capacity: gridZ
+        of: SIMD4<UInt64>.self, capacity: gridZ
       ) { buffer in
         for i in 0..<buffer.count {
-          buffer[i] = SIMD3(
+          buffer[i] = SIMD4(
             UInt64(truncatingIfNeeded: i * byteStrideA),
             UInt64(truncatingIfNeeded: i * byteStrideB),
-            UInt64(truncatingIfNeeded: i * byteStrideC))
+            UInt64(truncatingIfNeeded: i * byteStrideC),
+            UInt64(truncatingIfNeeded: i * byteStrideD))
         }
         
         let bufferLength = buffer.count * MemoryLayout<SIMD3<UInt64>>.stride
@@ -201,6 +229,9 @@ struct MFA_GEMM: GEMM, MFA_Operation {
       assert(tensors.a.shape.count == 2)
       assert(tensors.b.shape.count == 2)
       assert(tensors.c.shape.count == 2)
+      if let shapeD = tensors.d?.shape {
+        assert(shapeD.count == 1)
+      }
       gridZ = 1
     }
     
@@ -307,14 +338,23 @@ struct MPS_GEMM: GEMM, MPS_Operation {
     
     if parameters.fused_bias {
       let dBatch: [Int] = parameters.batchDimensionsD!
+      var dShapeOriginal: [Int]
       var dShape: [Int]
       if parameters.D_trans {
+        dShapeOriginal = dBatch + [parameters.M]
         dShape = dBatch + [parameters.M, 1]
       } else {
+        dShapeOriginal = dBatch + [parameters.N]
         dShape = dBatch + [1, parameters.N]
       }
       
-      let tensorD = placeholder(dShape, "D")
+      var tensorD = placeholder(dShapeOriginal, "D")
+      if parameters.D_trans {
+        tensorD = graph.expandDims(tensorD, axis: dShape.count, name: "D")
+      } else {
+        tensorD = graph.expandDims(tensorD, axis: dShape.count - 1, name: "D")
+      }
+      
       let shapedTypeD = shapedType(dShape)
       tensorC = graph.addition(tensorC, tensorD, name: "C")
       feeds[tensorD] = shapedTypeD
