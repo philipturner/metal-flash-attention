@@ -50,10 +50,20 @@ constant ushort N_padded = (N < N_simd) ? (N_modulo + 7) / 8 * 8 : N_simd;
 constant ushort M_splits [[function_constant(210)]];
 constant ushort N_splits [[function_constant(211)]];
 
+constant ushort M_bank_offset [[function_constant(50002)]]; // 220
+constant ushort N_bank_offset [[function_constant(50003)]]; // 221
+constant ushort K_bank_offset [[function_constant(50004)]]; // 222
+constant bool M_bank_offset_defined = is_function_constant_defined(M_bank_offset);
+constant bool N_bank_offset_defined = is_function_constant_defined(N_bank_offset);
+constant bool K_bank_offset_defined = is_function_constant_defined(K_bank_offset);
+
 constant ushort M_group = M_simd * M_splits;
 constant ushort N_group = N_simd * N_splits;
-constant ushort A_block_leading_dim = (A_trans ? M_group : K_simd);
-constant ushort B_block_leading_dim = (B_trans ? K_simd : N_group);
+constant ushort M_block_dim = M_group + (M_bank_offset_defined ? M_bank_offset : 0);
+constant ushort N_block_dim = N_group + (N_bank_offset_defined ? N_bank_offset : 0);
+constant ushort K_block_dim = K_simd + (K_bank_offset_defined ? K_bank_offset : 0);
+constant ushort A_block_leading_dim = (A_trans ? M_block_dim : K_block_dim);
+constant ushort B_block_leading_dim = (B_trans ? K_block_dim : N_block_dim);
 
 // There is no padding for M reads/writes.
 // There is no padding for N reads/writes.
@@ -62,8 +72,7 @@ constant ushort K_simd_padded = (K_simd_unpadded + 7) / 8 * 8;
 
 constant ushort A_sram_length = (M_simd / 8) * 1;
 constant ushort B_sram_length = 1 * (N_simd / 8);
-constant ushort A_block_length = M_group * K_simd;
-//constant ushort B_block_length = K_group * N_group;
+constant ushort A_block_length = (A_trans) ? K_simd * M_block_dim : M_group * K_block_dim;
 
 // Threadgroup block must fit entire C accumulator and partial sums.
 constant ushort A_sram_offset = 0;
@@ -369,16 +378,16 @@ void _gemm_impl(device T *A [[buffer(0)]],
     for (ushort k = 0; k < K_simd_padded; k += 8) {
       bool accumulate = use_bias || !(K <= K_simd && k == 0);
       multiply_accumulate(sram, A_block_src, B_block_src, accumulate);
-      A_block_src += A_trans ? 8 * M_group : 8;
-      B_block_src += B_trans ? 8 : 8 * N_group;
+      A_block_src += A_trans ? 8 * A_block_leading_dim : 8;
+      B_block_src += B_trans ? 8 : 8 * B_block_leading_dim;
     }
     
     if (K_floor + K_simd < K) {
 #pragma clang loop unroll(full)
       for (ushort k = K_simd_padded; k < K_simd; k += 8) {
         multiply_accumulate(sram, A_block_src, B_block_src);
-        A_block_src += A_trans ? 8 * M_group : 8;
-        B_block_src += B_trans ? 8 : 8 * N_group;
+        A_block_src += A_trans ? 8 * A_block_leading_dim : 8;
+        B_block_src += B_trans ? 8 : 8 * B_block_leading_dim;
       }
       threadgroup_barrier(mem_flags::mem_threadgroup);
       

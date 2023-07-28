@@ -17,10 +17,10 @@ class GEMMPerfTests: MFATestCase {
     // Tests the precision you set as the global testing precision. For a quick
     // smoke test, you can set a larger granularity.
     testGEMMSpeed(
-      granularity: 512, trialsExtension: 2,
-      B_trans: true, D_trans: false,
+      granularity: 8, trialsExtension: 2,
+      B_trans: false, D_trans: false,
       batchSize: nil, useBias: false,
-      large: true)
+      large: false)
   }
   
   // Covers the entire range of square matrix sizes, as well as differences

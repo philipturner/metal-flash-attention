@@ -71,10 +71,15 @@ func showMatrixTransposeTest() {
 }
 
 func showMatrixBiasTest() {
-  let M = 57
-  let N = 42
-  let K = 3
-  let batchSize: Int? = 2
+#if arch(arm64)
+  // 708x25x23xf32 (TTT, bias)
+  // Failed test: 15x1x124x (TT)
+  // Failed test: 144x927x28xf32 (TT) - nan
+  
+  let M = 48 // 708, 57
+  let N = 25 // 25, 42
+  let K = 23 // 23, 3
+  let batchSize: Int? = nil // 2
   let transposeD: Bool = Bool.random() ? true : true
   
   var shapeA: [Int]
@@ -82,7 +87,7 @@ func showMatrixBiasTest() {
   var shapeC: [Int]
   var shapeD: [Int]
   if let batchSize {
-    shapeA = [batchSize, M, K]
+    shapeA = [batchSize, K, M]
     shapeB = [batchSize, K, N]
     shapeC = [batchSize, M, N]
     if transposeD {
@@ -91,7 +96,7 @@ func showMatrixBiasTest() {
       shapeD = [batchSize, N]
     }
   } else {
-    shapeA = [M, K]
+    shapeA = [K, M]
     shapeB = [K, N]
     shapeC = [M, N]
     if transposeD {
@@ -113,7 +118,9 @@ func showMatrixBiasTest() {
   let py_D = Tensor<Real>(shape: shapeD, randomUniform: 0..<1, backend: .numpy)
   _ExecutionContext.withDefaultBackend(.numpy) {
     _ExecutionContext.profileCommands {
-      py_C.matmul(py_A, py_B, py_D, transposeD: transposeD, fusedBias: true)
+      py_C.matmul(
+        py_A, py_B, py_D,
+        transposeA: true, transposeD: transposeD, fusedBias: true)
     }
   }
   
@@ -123,7 +130,9 @@ func showMatrixBiasTest() {
   let mps_D = Tensor(copying: py_D, backend: .mps)
   _ExecutionContext.withDefaultBackend(.mps) {
     _ExecutionContext.profileCommands {
-      mps_C.matmul(mps_A, mps_B, mps_D, transposeD: transposeD, fusedBias: true)
+      mps_C.matmul(
+        mps_A, mps_B, mps_D,
+        transposeA: true, transposeD: transposeD, fusedBias: true)
     }
   }
   
@@ -133,7 +142,9 @@ func showMatrixBiasTest() {
   let mfa_D = Tensor(copying: py_D, backend: .mfa)
   _ExecutionContext.withDefaultBackend(.mfa) {
     _ExecutionContext.profileCommands {
-      mfa_C.matmul(mfa_A, mfa_B, mfa_D, transposeD: transposeD, fusedBias: true)
+      mfa_C.matmul(
+        mfa_A, mfa_B, mfa_D,
+        transposeA: true, transposeD: transposeD, fusedBias: true)
     }
   }
   
@@ -151,5 +162,7 @@ func showMatrixBiasTest() {
       mfa: mfa_C, mps: mps_C, numpy: py_C,
       parameters: .init(matrixK: K, batchSize: nil))
   }
-  
+#endif
 }
+
+

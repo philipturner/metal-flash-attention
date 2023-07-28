@@ -64,10 +64,9 @@ Scaling by square size:
 | ------ | --------- |
 | `M_splits` | 2 |
 | `N_splits` | 2 |
-| `K_splits` | 1 |
 | `M_simd` | Block M / `M_splits` |
 | `N_simd` | Block N / `N_splits` |
-| `K_simd` | Block K / `K_splits` |
+| `K_simd` | Block K |
   
 | Precision | Block M | Block N | Block K |
 | - | - | - | - |

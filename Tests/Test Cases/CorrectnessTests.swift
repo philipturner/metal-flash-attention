@@ -178,6 +178,21 @@ class CorrectnessTests: MFATestCase {
         let params = EuclideanDistanceParameters(
           matrixK: K, batchSize: batchSize)
         if !mfa_C.isApproximatelyEqual(to: mps_C, parameters: params) {
+          do {
+            var shapeRepr: String
+            if let batchSize {
+              shapeRepr = "\(batchSize)x\(M)x\(N)x\(K)x\(DTypeRepr)"
+            } else {
+              shapeRepr = "\(M)x\(N)x\(K)x\(DTypeRepr)"
+            }
+            if let extraDim {
+              shapeRepr = "\(extraDim)x\(shapeRepr)"
+            }
+            let dist = mfa_C.euclideanDistance(to: mps_C)
+            let distRepr = "- \(String(format: "%.3f", dist))"
+            print("Failed test: \(shapeRepr) (\(transRepr)) \(distRepr)")
+          }
+          
           MPL_showComparison(
             actual: mfa_C, actualName: "MFA",
             expected: mps_C, expectedName: "MPS", parameters: params)
