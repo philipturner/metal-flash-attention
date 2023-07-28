@@ -215,3 +215,5 @@ Releases:
   - Batched GEMM
 - v1.0.0
   - Attention: dense and block-sparse
+- v1.0.1
+  - GEMM: fused biases

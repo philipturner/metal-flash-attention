@@ -78,6 +78,7 @@ struct MFA_GEMM: GEMM, MFA_Operation {
     constants.setConstantValue(&pcopy.K, type: .uint, index: 2)
     constants.setConstantValue(&pcopy.A_trans, type: .bool, index: 10)
     constants.setConstantValue(&pcopy.B_trans, type: .bool, index: 11)
+    constants.setConstantValue(&pcopy.D_trans, type: .bool, index: 13)
     constants.setConstantValue(&pcopy.alpha, type: .float, index: 20)
     constants.setConstantValue(&pcopy.beta, type: .float, index: 21)
     constants.setConstantValue(&pcopy.batched, type: .bool, index: 100)
@@ -94,6 +95,17 @@ struct MFA_GEMM: GEMM, MFA_Operation {
     constants.setConstantValue(&K_simd, type: .ushort, index: 202)
     constants.setConstantValue(&M_splits, type: .ushort, index: 210)
     constants.setConstantValue(&N_splits, type: .ushort, index: 211)
+    
+    // Satisfy Metal API validation.
+    #if DEBUG
+    do {
+      var garbage: SIMD4<UInt64> = .zero
+      constants.setConstantValue(&garbage, type: .bool, index: 102)
+      constants.setConstantValue(&garbage, type: .bool, index: 103)
+      constants.setConstantValue(&garbage, type: .bool, index: 113)
+      constants.setConstantValue(&garbage, type: .bool, index: 50000)
+    }
+    #endif
     
     var name: String
     switch dataType {
@@ -173,6 +185,8 @@ struct MFA_GEMM: GEMM, MFA_Operation {
     encoder.setBuffer(tensorC.buffer, offset: 0, index: 2)
     if let tensorD = tensors.d as! MFA_TensorBuffer? {
       encoder.setBuffer(tensorD.buffer, offset: 0, index: 3)
+    } else {
+      precondition(parameters.fused_bias == false)
     }
     
     var gridZ: Int
@@ -206,9 +220,14 @@ struct MFA_GEMM: GEMM, MFA_Operation {
       let byteStrideA = byteStride(shape: tensors.a.shape)
       let byteStrideB = byteStride(shape: tensors.b.shape)
       let byteStrideC = byteStride(shape: tensors.c.shape)
+      
       var byteStrideD = 0
       if let shapeD = tensors.d?.shape {
-        byteStrideD = byteStride(shape: shapeD)
+        let rank = shapeD.count
+        byteStrideD = elementSize * shapeD[rank - 1]
+        if shapeD.dropLast(1).reduce(1, *) == 1 {
+          byteStrideD = 0
+        }
       }
       withUnsafeTemporaryAllocation(
         of: SIMD4<UInt64>.self, capacity: gridZ
@@ -348,16 +367,20 @@ struct MPS_GEMM: GEMM, MPS_Operation {
         dShape = dBatch + [1, parameters.N]
       }
       
-      var tensorD = placeholder(dShapeOriginal, "D")
+      let originalD = placeholder(dShapeOriginal, "D")
+      var postTransposeD: MPSGraphTensor
       if parameters.D_trans {
-        tensorD = graph.expandDims(tensorD, axis: dShape.count, name: "D")
+        postTransposeD = graph.expandDims(
+          originalD, axis: dShapeOriginal.count, name: "D")
       } else {
-        tensorD = graph.expandDims(tensorD, axis: dShape.count - 1, name: "D")
+        postTransposeD = graph.expandDims(
+          originalD, axis: dShapeOriginal.count - 1, name: "D")
       }
+      let actualShapeD = postTransposeD.shape!.map { $0.intValue }
+      precondition(actualShapeD == dShape)
       
-      let shapedTypeD = shapedType(dShape)
-      tensorC = graph.addition(tensorC, tensorD, name: "C")
-      feeds[tensorD] = shapedTypeD
+      tensorC = graph.addition(tensorC, postTransposeD, name: "C")
+      feeds[originalD] = shapedType(dShapeOriginal)
     }
     
     return AsyncGraph(
@@ -458,7 +481,7 @@ struct Py_GEMM: GEMM, Py_Operation {
       } else {
         d_ndarray = np.expand_dims(d_ndarray, axis: d.shape.count - 1)
       }
-      np.addition(tensorC.ndarray, d_ndarray, out: tensorC.ndarray)
+      np.add(tensorC.ndarray, d_ndarray, out: tensorC.ndarray)
     }
   }
 }
