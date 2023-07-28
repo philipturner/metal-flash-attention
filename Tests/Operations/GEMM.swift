@@ -98,31 +98,7 @@ struct MFA_GEMM: GEMM, MFA_Operation {
     
     let M_group = M_simd * M_splits
     let N_group = N_simd * N_splits
-    var M_block_dim = M_group
-    var N_block_dim = N_group
-    var K_block_dim = K_simd
-    func setBankOffset(_ dim: inout UInt16, index: Int) {
-      precondition(dim % 8 == 0, "Original dimension must be divisible by 8.")
-      let dimBytes = dim * UInt16(dataType.size)
-      
-      let dimBytesModulo = dimBytes % 64
-      if dimBytesModulo == 16 || dimBytesModulo == 48 {
-        return
-      } else if dimBytesModulo == 0 || dimBytesModulo == 32 {
-        let bankOffsetBytes: UInt16 = 16
-        var bankOffset = bankOffsetBytes / UInt16(dataType.size)
-        dim += bankOffset
-        constants.setConstantValue(&bankOffset, type: .ushort, index: index)
-      } else {
-        fatalError("This should never happen.")
-      }
-    }
-    
-    // The bank conflict fix makes GEMM slower, unlike attention.
-//    setBankOffset(&M_block_dim, index: 50002)
-//    setBankOffset(&N_block_dim, index: 50003)
-//    setBankOffset(&K_block_dim, index: 50004)
-    
+
     // Satisfy Metal API validation.
     #if DEBUG
     do {
@@ -145,19 +121,8 @@ struct MFA_GEMM: GEMM, MFA_Operation {
     let function = try! library.makeFunction(
       name: name, constantValues: constants)
     
-    var A_block_length: UInt16
-    var B_block_length: UInt16
-    
-    if parameters.A_trans {
-      A_block_length = K_simd * M_block_dim
-    } else {
-      A_block_length = M_group * K_block_dim
-    }
-    if parameters.B_trans {
-      B_block_length = N_group * K_block_dim
-    } else {
-      B_block_length = K_simd * N_block_dim
-    }
+    let A_block_length = M_group * K_simd
+    let B_block_length = K_simd * N_group
     
     var blockElements = A_block_length + B_block_length;
     if (pcopy.M % 8 != 0) && (pcopy.N % 8 != 0) {
