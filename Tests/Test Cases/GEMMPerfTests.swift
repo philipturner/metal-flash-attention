@@ -17,10 +17,10 @@ class GEMMPerfTests: MFATestCase {
     // Tests the precision you set as the global testing precision. For a quick
     // smoke test, you can set a larger granularity.
     testGEMMSpeed(
-      granularity: 2, trialsExtension: 2, B_trans: true, batchSize: 2)
-    
-    //    testGEMMSpeed(
-    //      granularity: 16, trialsExtension: 1, B_trans: true, batchSize: 2)
+      granularity: 512, trialsExtension: 2,
+      B_trans: true, D_trans: false,
+      batchSize: nil, useBias: false,
+      large: true)
   }
   
   // Covers the entire range of square matrix sizes, as well as differences
@@ -30,7 +30,10 @@ class GEMMPerfTests: MFATestCase {
     trialsExtension: Int,
     A_trans: Bool = false,
     B_trans: Bool = false,
-    batchSize: Int? = nil
+    D_trans: Bool = false,
+    batchSize: Int? = nil,
+    useBias: Bool = false,
+    large: Bool = false
   ) {
     precondition(granularity.nonzeroBitCount == 1)
     let logProgress = true
@@ -92,9 +95,20 @@ class GEMMPerfTests: MFATestCase {
       var flops: [Config: [Double]] = [:]
       var currentConfig: Config?
       
-      init(sizes: Range<Int>, iterations: Int) {
+      var granularity: Int?
+      var trialsExtension: Int?
+      
+      init(
+        sizes: Range<Int>,
+        iterations: Int,
+        granularity: Int? = nil,
+        trialsExtension: Int? = nil
+      ) {
         self.sizes = sizes
         self.iterations = iterations
+        self.granularity = granularity
+        self.trialsExtension = trialsExtension
+        
         flops[.mfa48x48] = []
         flops[.mfa32x32] = []
         flops[.mps] = []
@@ -113,7 +127,8 @@ class GEMMPerfTests: MFATestCase {
       mutating func _profile(
         sizes: Range<Int>, granularity: Int,
         trialsExtension: Int, isInitial: Bool,
-        A_trans: Bool, B_trans: Bool, batchSize: Int?
+        A_trans: Bool, B_trans: Bool, D_trans: Bool,
+        batchSize: Int?, useBias: Bool
       ) {
         func innerLoop(size: Int, reportResults: Bool) {
           if size % granularity != 0 {
@@ -144,10 +159,14 @@ class GEMMPerfTests: MFATestCase {
           var shapeA = A_trans ? [K, M] : [M, K]
           var shapeB = B_trans ? [N, K] : [K, N]
           var shapeC = [M, N]
+          var shapeD = D_trans ? [M] : [N]
           if let batchSize {
             shapeA = [batchSize] + shapeA
             if shapeA.last! % 3 == 0 {
               shapeB = [1] + shapeB
+            }
+            if shapeA.last! % 5 == 0 {
+              shapeD = [1] + shapeD
             }
             shapeC = [batchSize] + shapeC
           }
@@ -156,16 +175,28 @@ class GEMMPerfTests: MFATestCase {
             shape: shapeA, randomUniform: 0..<1, backend: .numpy)
           let py_B = Tensor<Real>(
             shape: shapeB, randomUniform: 0..<1, backend: .numpy)
+          var py_D: Tensor<Real>?
+          if useBias {
+            py_D = Tensor<Real>(
+              shape: shapeD, randomUniform: 0..<1, backend: .numpy)
+          }
           
           let A = Tensor(copying: py_A)
           let B = Tensor(copying: py_B)
           var C = Tensor<Real>(zerosLike: shapeC)
+          var D: Tensor<Real>?
+          if useBias {
+            D = Tensor<Real>(copying: py_D!)
+          }
           
           let backend = TensorBackend.default
           if isInitial {
             _ExecutionContext.executeExpression {
               backend.markFirstCommand()
-              C.matmul(A, B, transposeA: A_trans, transposeB: B_trans)
+              C.matmul(
+                A, B, D,
+                transposeA: A_trans, transposeB: B_trans, transposeD: D_trans,
+                fusedBias: useBias)
               backend.markLastCommand()
               _ = backend.synchronize()
             }
@@ -174,7 +205,10 @@ class GEMMPerfTests: MFATestCase {
             for _ in 0..<trials {
               backend.markFirstCommand()
               for _ in 0..<iterations {
-                C.matmul(A, B, transposeA: A_trans, transposeB: B_trans)
+                C.matmul(
+                  A, B, D,
+                  transposeA: A_trans, transposeB: B_trans, transposeD: D_trans,
+                  fusedBias: useBias)
               }
               backend.markLastCommand()
               minTime = min(minTime, backend.synchronize())
@@ -194,10 +228,17 @@ class GEMMPerfTests: MFATestCase {
             let mps_A = Tensor(copying: py_A, backend: .mps)
             let mps_B = Tensor(copying: py_B, backend: .mps)
             var mps_C = Tensor<Real>(zerosLike: shapeC, backend: .mps)
+            
+            var mps_D: Tensor<Real>?
+            if let py_D {
+              mps_D = Tensor(copying: py_D, backend: .mps)
+            }
             _ExecutionContext.withDefaultBackend(.mps) {
               _ExecutionContext.profileCommands {
                 mps_C.matmul(
-                  mps_A, mps_B, transposeA: A_trans, transposeB: B_trans)
+                  mps_A, mps_B, mps_D,
+                  transposeA: A_trans, transposeB: B_trans, transposeD: D_trans,
+                  fusedBias: useBias)
               }
             }
             
@@ -222,7 +263,8 @@ class GEMMPerfTests: MFATestCase {
       
       mutating func profile(
         granularity: Int, trialsExtension: Int, logProgress: Bool,
-        A_trans: Bool, B_trans: Bool, batchSize: Int?
+        A_trans: Bool, B_trans: Bool, D_trans: Bool,
+        batchSize: Int?, useBias: Bool
       ) {
         let reportGranularity = 16
         var start = self.sizes.lowerBound
@@ -240,11 +282,13 @@ class GEMMPerfTests: MFATestCase {
             _profile(
               sizes: sectionSizes, granularity: granularity,
               trialsExtension: trialsExtension, isInitial: true,
-              A_trans: A_trans, B_trans: B_trans, batchSize: batchSize)
+              A_trans: A_trans, B_trans: B_trans, D_trans: D_trans,
+              batchSize: batchSize, useBias: useBias)
             _profile(
               sizes: sectionSizes, granularity: granularity,
               trialsExtension: trialsExtension, isInitial: false,
-              A_trans: A_trans, B_trans: B_trans, batchSize: batchSize)
+              A_trans: A_trans, B_trans: B_trans, D_trans: D_trans,
+              batchSize: batchSize, useBias: useBias)
             cleanup(config: config)
           }
           
@@ -297,11 +341,34 @@ class GEMMPerfTests: MFATestCase {
       segments.append(Segment(sizes: 1024..<1536, iterations: 4))
       segments.append(Segment(sizes: 1536..<2049, iterations: 2))
     }
+    
+    if large {
+      var firstRange: Range<Int>
+      if Real.self == Float.self || (batchSize ?? 1) > 1 {
+        firstRange = 1536..<3072
+      } else {
+        firstRange = 2048..<3072
+      }
+      segments = [
+        Segment(
+          sizes: firstRange, iterations: 2,
+          granularity: 64, trialsExtension: trialsExtension),
+        Segment(
+          sizes: 3072..<4096, iterations: 2,
+          granularity: 128, trialsExtension: trialsExtension),
+        Segment(
+          sizes: 4096..<5121, iterations: 2,
+          granularity: 256, trialsExtension: trialsExtension),
+      ]
+    }
+    
     for i in 0..<segments.count {
       segments[i].profile(
-        granularity: granularity, trialsExtension: trialsExtension,
+        granularity: segments[i].granularity ?? granularity,
+        trialsExtension: segments[i].trialsExtension ?? trialsExtension,
         logProgress: logProgress,
-        A_trans: A_trans, B_trans: B_trans, batchSize: batchSize)
+        A_trans: A_trans, B_trans: B_trans, D_trans: D_trans,
+        batchSize: batchSize, useBias: useBias)
     }
     
     func extract(config: Config) -> (size: [Int], gflops: [Double]) {
@@ -312,7 +379,7 @@ class GEMMPerfTests: MFATestCase {
         var sizeIndex = 0
         for size in segment.sizes {
           defer { sizeIndex += 1 }
-          if size % granularity == 0 {
+          if size % (segment.granularity ?? granularity) == 0 {
             sizes.append(size)
             speeds.append(flopsArray[sizeIndex])
           }
@@ -360,8 +427,22 @@ class GEMMPerfTests: MFATestCase {
     plt.ylabel("GFLOPS")
     
     var configRepr = (A_trans ? "T" : "N") + (B_trans ? "T" : "N")
+    if useBias {
+      if D_trans {
+        configRepr += "T"
+      } else {
+        configRepr += "N"
+      }
+    }
     if let batchSize {
-      configRepr += ", Batched, \(batchSize)xA"
+      configRepr += ", \(batchSize)x Batched"
+    }
+    if useBias {
+      configRepr += ", Bias"
+    }
+
+    if large {
+      plt.xlim(extractions[0].sizeArray.first!, extractions[0].sizeArray.last!)
     }
 #if DEBUG
     let debugWarning = " (NOT USABLE FOR CI)"

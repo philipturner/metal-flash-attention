@@ -13,6 +13,6 @@ import PythonKit
 _ = MetalContext.global
 _ = PythonContext.global
 
-showMatrixBiasTest()
+//showMatrixBiasTest()
 
-//MFATestCase.runTests(speed: .veryLong)
+MFATestCase.runTests(speed: .veryLong)

@@ -41,7 +41,7 @@ Alternatively:
 - Fetch the Metal library from [GitHub releases](https://github.com/philipturner/metal-flash-attention/releases)
 - Run the command-line tool from this repository that validates integrity of the Metal library
 
-## Performance: Overview
+## Performance
 
 SGEMM, every square matrix from 1&ndash;1536:
 
@@ -51,40 +51,15 @@ HGEMM, every square matrix from 1&ndash;2048:
 
 ![Max GFLOPS achieved](./Documentation/HGEMM.png)
 
-GFLOPS during general matrix multiplication:
-
-| Large Square Sizes | 256 x 256 x 256 | 384 x 384 x 384 | 512 x 512 x 512 | 768 x 768 x 768 | 1024 x 1024 x 1024 | 1280 x 1280 x 1280 | 1440 x 1440 x 1440 |
-| ------------------ | ----- | ----- | ----- | ----- | ----- | ----- | ----- |
-| Accelerate F64     |   333 |   622 |   616 |   696 |   442 |
-| Accelerate F32     |  1223 |  1303 |  2282 |  2679 |  2262 |
-| MPS F32            |  1847 |  3216 |  6200 |  6157 |  8153 |  7771 |  6497 |
-| MFA F32            |  2760 |  5202 |  7007 |  7739 |  8185 |  8111 |  8472 |
-| MPS F16            |  2399 |  4066 |  5849 |  5680 |  7336 |  7102 |  6433 |
-| MFA F16            |  3185 |  5945 |  7644 |  8734 |  9353 |  9109 |  9215 |
-
-| Large Square Sizes | 2048 x 2048 x 2048 | 3072 x 3072 x 3072 | 4096 x 4096 x 4096 | 6144 x 6144 x 6144 |
-| ------------------ | ----- | ----- | ----- | ----- |
-| Accelerate F64     |   536 |   516 |   520 |   504 |
-| Accelerate F32     |  1978 |  2058 |  1957 |  1947 |
-| MPS F32            |  8472 |  8482 |  8270 | Error |
-| MFA F32            |  8992 |  9236 |  9247 |  9257 |
-| MPS F16            |  7729 |  7824 |  7771 | Error |
-| MFA F16            |  9618 |  9788 |  9778 |  9905 |
-
-## Continuous Integration
-
-Reference system:
-- 32-core Apple 7 GPU
-- threads/threadgroup:
-  $$32 \times \prod_{i=A}^{Z} i_{splits} $$
-
 ### GEMM
 
 Scaling by square size:
 - Matrix M: every even integer
 - Matrix N: every even integer
 - Matrix K: every even integer
-  
+- For 2x batched, every multiple of 4
+- For very large square matrices, granularity varies
+
 | Function Constant | Value |
 | ------ | --------- |
 | `M_splits` | 2 |
@@ -120,13 +95,21 @@ Scaling by square size:
 
 ![Float32 Utilization (NT)](./CI/float32-nt-latest.png)
 
+### Float32 Utilization (NT, Large)
+
+![Float32 Utilization (NT)](./CI/float32-nt-large-latest.png)
+
 ### Float16 Utilization (NN)
 
 ![Float16 Utilization (NN)](./CI/float16-nn-latest.png)
 
-### Float16 Utilization (NT, Batched)
+### Float16 Utilization (NT, 2x Batched)
 
-![Float16 Utilization (NT, Batched)](./CI/float16-nt-batched-latest.png)
+![Float16 Utilization (NT, 2x Batched)](./CI/float16-nt-batched-latest.png)
+
+### Float16 Utilization (NTN, 2x Batched, Bias)
+
+![Float16 Utilization (NTN, 2x Batched, Bias)](./CI/float16-ntn-batched-bias-latest.png)
 
 ### Attention
 
@@ -189,15 +172,15 @@ Dense: Stable Diffusion 2 outermost attention layer @ 512x512 (sequence length =
 
 ![FlashAttention (F16, H=5, D=64)](./CI/float16-large-sequences-latest.png)
 
+### Float32 Sequence Scaling (Causal Mask)
+
+![FlashAttention (F32, H=10, D=64)](./CI/float32-large-causal-latest.png)
+
 ### Float16 Sequence Scaling (Causal Mask)
 
 ![FlashAttention (F16, H=10, D=64)](./CI/float16-small-causal-latest.png)
 
 ![FlashAttention (F16, H=10, D=64)](./CI/float16-large-causal-latest.png)
-
-### Float32 Sequence Scaling (Causal Mask)
-
-![FlashAttention (F32, H=10, D=64)](./CI/float32-large-causal-latest.png)
 
 ### Float16 Head Scaling
 

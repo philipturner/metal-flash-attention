@@ -34,7 +34,7 @@ class MFATestCase {
     let testCases: [MFATestCase] = [
       CorrectnessTests(),
 //      AttentionPerfTests(),
-//      GEMMPerfTests(),
+      GEMMPerfTests(),
     ]
     
     for testCase in testCases {

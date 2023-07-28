@@ -71,11 +71,11 @@ func showMatrixTransposeTest() {
 }
 
 func showMatrixBiasTest() {
-  let M = 8
-  let N = 8
-  let K = 8
+  let M = 57
+  let N = 42
+  let K = 3
   let batchSize: Int? = 2
-  let transposeD: Bool = (Bool.random()) ? true : true
+  let transposeD: Bool = Bool.random() ? true : true
   
   var shapeA: [Int]
   var shapeB: [Int]

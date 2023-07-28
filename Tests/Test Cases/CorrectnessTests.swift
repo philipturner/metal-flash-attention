@@ -49,14 +49,14 @@ class CorrectnessTests: MFATestCase {
     }
     allRandomInts.append(SIMD3(77, 64, 77))
     
-    var allRandomTransposes: [(Bool, Bool)] = (0..<numTrials).map { i in
+    var allRandomTransposes: [(Bool, Bool, Bool)] = (0..<numTrials).map { i in
       if i < numNonTransposedTrials {
-        return (false, false)
+        return (false, false, false)
       } else {
-        return (Bool.random(), Bool.random())
+        return (Bool.random(), Bool.random(), Bool.random())
       }
     }
-    allRandomTransposes.append((false, false))
+    allRandomTransposes.append((false, false, false))
     
     var allRandomB: [(Int?, Int?)] = (0..<numTrials).map { i in
       if i < numNonBatchedTrials {
@@ -73,26 +73,38 @@ class CorrectnessTests: MFATestCase {
       let randomInts = allRandomInts[index]
       let randomTransposes = allRandomTransposes[index]
       let (extraDim, batchSize) = allRandomB[index]
+      let useBias = index % 3 == 0
       
       let M = randomInts[0]
       let N = randomInts[1]
       let K = randomInts[2]
       let A_trans = randomTransposes.0
       let B_trans = randomTransposes.1
+      let D_trans = randomTransposes.2
       let DTypeRepr = (Real.self == Float.self) ? "f32" : "f16"
-      let transRepr = (A_trans ? "T" : "N") + (B_trans ? "T" : "N")
+      var transRepr = (A_trans ? "T" : "N") + (B_trans ? "T" : "N")
+      if useBias {
+        if D_trans {
+          transRepr += "T, bias"
+        } else {
+          transRepr += "N, bias"
+        }
+      }
       
       var shapeA = A_trans ? [K, M] : [M, K]
       var shapeB = B_trans ? [N, K] : [K, N]
       var shapeC = [M, N]
+      var shapeD = D_trans ? [M] : [N]
       if let batchSize {
         shapeA = [batchSize] + shapeA
         if index < nonBroadcastedCutoff {
           if index % 2 == 0 {
             shapeB = [1] + shapeB
+            shapeD = [1] + shapeD
           }
         } else {
           shapeB = [batchSize] + shapeB
+          shapeD = [batchSize] + shapeD
         }
         shapeC = [batchSize] + shapeC
       }
@@ -100,6 +112,7 @@ class CorrectnessTests: MFATestCase {
         shapeA = [extraDim] + shapeA
         shapeB = [extraDim] + shapeB
         shapeC = [extraDim] + shapeC
+        shapeD = [extraDim] + shapeD
       }
       
       let mps_A = Tensor<Real>(
@@ -113,15 +126,29 @@ class CorrectnessTests: MFATestCase {
       let mfa_B = Tensor(copying: mps_B, backend: .mfa)
       var mfa_C = Tensor(copying: mps_C, backend: .mfa)
       
-      func act(A: Tensor<Real>, B: Tensor<Real>, C: inout Tensor<Real>) {
-        C.matmul(A, B, transposeA: A_trans, transposeB: B_trans)
+      var mps_D: Tensor<Real>?
+      var mfa_D: Tensor<Real>?
+      if useBias {
+        mps_D = Tensor<Real>(shape: shapeD, randomUniform: 0..<1, backend: .mps)
+        mfa_D = Tensor(copying: mps_D!, backend: .mfa)
+      }
+      
+      func act(
+        A: Tensor<Real>,
+        B: Tensor<Real>,
+        C: inout Tensor<Real>,
+        D: Tensor<Real>?) {
+        C.matmul(
+          A, B, D,
+          transposeA: A_trans, transposeB: B_trans, transposeD: D_trans,
+          fusedBias: D != nil)
       }
       
       if ghost {
         _ExecutionContext.withDefaultBackend(.mps) {
           TensorBackend.default.withGhostExecution {
             TensorBackend.default.markFirstCommand()
-            act(A: mps_A, B: mps_B, C: &mps_C)
+            act(A: mps_A, B: mps_B, C: &mps_C, D: mps_D)
             TensorBackend.default.markLastCommand()
             _ = TensorBackend.default.synchronize()
           }
@@ -129,7 +156,7 @@ class CorrectnessTests: MFATestCase {
         _ExecutionContext.withDefaultBackend(.mfa) {
           TensorBackend.default.withGhostExecution {
             TensorBackend.default.markFirstCommand()
-            act(A: mfa_A, B: mfa_B, C: &mfa_C)
+            act(A: mfa_A, B: mfa_B, C: &mfa_C, D: mfa_D)
             TensorBackend.default.markLastCommand()
             _ = TensorBackend.default.synchronize()
           }
@@ -137,13 +164,13 @@ class CorrectnessTests: MFATestCase {
       } else {
         _ExecutionContext.withDefaultBackend(.mps) {
           TensorBackend.default.markFirstCommand()
-          act(A: mps_A, B: mps_B, C: &mps_C)
+          act(A: mps_A, B: mps_B, C: &mps_C, D: mps_D)
           TensorBackend.default.markLastCommand()
           _ = TensorBackend.default.synchronize()
         }
         _ExecutionContext.withDefaultBackend(.mfa) {
           TensorBackend.default.markFirstCommand()
-          act(A: mfa_A, B: mfa_B, C: &mfa_C)
+          act(A: mfa_A, B: mfa_B, C: &mfa_C, D: mfa_D)
           TensorBackend.default.markLastCommand()
           _ = TensorBackend.default.synchronize()
         }

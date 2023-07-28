@@ -315,24 +315,24 @@ void _gemm_impl(device T *A [[buffer(0)]],
     threadgroup_barrier(mem_flags::mem_threadgroup);
     
     if (is_function_constant_defined(D_trans) && D_trans) {
-      auto bias = threadgroup_block + offset_in_simd.y;
+      auto bias = threadgroup_block + offset_in_group.y;
 #pragma clang loop unroll(full)
-      for (ushort m = 0; m < M_simd; m += 8) {
+      for (ushort m = 0; m < M_padded; m += 8) {
         auto D = bias[m];
 #pragma clang loop unroll(full)
-        for (ushort n = 0; n < N_simd; n += 8) {
-          auto C = C_sram(sram, ushort2(m, n));
+        for (ushort n = 0; n < N_padded; n += 8) {
+          auto C = C_sram(sram, ushort2(n, m));
           *(C->thread_elements()) = D;
         }
       }
     } else {
-      auto bias = threadgroup_block + offset_in_simd.x;
+      auto bias = threadgroup_block + offset_in_group.x;
 #pragma clang loop unroll(full)
-      for (ushort n = 0; n < N_simd; n += 8) {
+      for (ushort n = 0; n < N_padded; n += 8) {
         auto D = *(threadgroup vec<T, 2>*)(bias + n);
 #pragma clang loop unroll(full)
-        for (ushort m = 0; m < M_simd; m += 8) {
-          auto C = C_sram(sram, ushort2(m, n));
+        for (ushort m = 0; m < M_padded; m += 8) {
+          auto C = C_sram(sram, ushort2(n, m));
           *(C->thread_elements()) = D;
         }
       }
