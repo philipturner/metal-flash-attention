@@ -39,7 +39,7 @@ Usage:
 Alternatively:
 - Download the newest version of Xcode
 - Fetch the Metal library from [GitHub releases](https://github.com/philipturner/metal-flash-attention/releases)
-- Run the command-line tool from this repository that validates integrity of the Metal library
+- Run the unit tests from this repository
 
 ## Performance
 

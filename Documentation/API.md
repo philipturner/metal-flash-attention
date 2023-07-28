@@ -26,7 +26,7 @@ Function signatures:
   
 Function variants:
   - dimensionality of convolutions specified through numerical function constants
-  - different convolution windows (e.g. Conv1x1 vs Conv3x3) specified through numerical function constants
+  - different convolution windows (e.g. Conv3x3 vs Conv5x5) specified through numerical function constants
   - unsupported kernel variants simply do nothing at runtime
 
 ## Best Practices
