@@ -347,10 +347,15 @@ extension Tensor {
   
   // Sets this tensor's data to the product of the inputs.
   mutating func matmul(
-    _ a: Tensor<Element>, _ b: Tensor<Element>, _ d: Tensor<Element>? = nil,
-    transposeA: Bool = false, transposeB: Bool = false,
-    transposeD: Bool = false, alpha: Float = 1.0, beta: Float = 0.0,
-    biasActivation: Bool = false
+    _ a: Tensor<Element>,
+    _ b: Tensor<Element>,
+    _ d: Tensor<Element>? = nil,
+    transposeA: Bool = false,
+    transposeB: Bool = false,
+    transposeD: Bool = false,
+    alpha: Float = 1.0,
+    beta: Float = 0.0,
+    fusedBias: Bool = false
   ) {
     assert(self.typeAndBackendMatches(a))
     assert(self.typeAndBackendMatches(b))
@@ -398,13 +403,34 @@ extension Tensor {
     var parameters = GEMM_Parameters(
       dataType: Element.mtlDataType,
       M: M, N: N, K: K,
-      A_trans: transposeA, B_trans: transposeB,
-      alpha: alpha, beta: beta,
-      batched: batched, fused_activation: false)
+      A_trans: transposeA, B_trans: transposeB, D_trans: transposeD,
+      alpha: alpha, beta: beta, batched: batched,
+      fused_activation: false, fused_bias: fusedBias)
     parameters.batchDimensionsA = aShape.dropLast(2)
     parameters.batchDimensionsB = bShape.dropLast(2)
     
-    let tensors = GEMM_Tensors(a: a.buffer, b: b.buffer, c: self.buffer)
+    if !fusedBias {
+      precondition(d == nil)
+    } else {
+      guard let d else {
+        fatalError("Bias requires a D matrix.")
+      }
+      
+      let dShape = d.shape
+      precondition(dShape.count >= 1)
+      if transposeD {
+        precondition(dShape.last! == M)
+      } else {
+        precondition(dShape.last! == N)
+      }
+      parameters.batchDimensionsD = d.shape.dropLast(1)
+    }
+    
+    let tensors = GEMM_Tensors(
+      a: a.buffer,
+      b: b.buffer,
+      c: self.buffer,
+      d: d?.buffer)
     buffer.backend.dispatch(parameters: parameters, tensors: tensors)
   }
   

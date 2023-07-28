@@ -29,20 +29,24 @@ struct GEMM_Parameters: Hashable, Equatable {
   var K: Int
   var A_trans: Bool
   var B_trans: Bool
+  var D_trans: Bool
   var alpha: Float
   var beta: Float
   var batched: Bool
   var fused_activation: Bool
+  var fused_bias: Bool
   
   // These are only needed by MPSGraph; MFA supports dynamic batch size.
   var batchDimensionsA: [Int]?
   var batchDimensionsB: [Int]?
+  var batchDimensionsD: [Int]?
 }
 
 struct GEMM_Tensors {
   var a: TensorBuffer
   var b: TensorBuffer
   var c: TensorBuffer
+  var d: TensorBuffer?
 }
 
 struct MFA_GEMM: GEMM, MFA_Operation {
@@ -54,7 +58,6 @@ struct MFA_GEMM: GEMM, MFA_Operation {
     "K_simd": UInt16(32), // 24-32
     "M_splits": UInt16(2), // 2
     "N_splits": UInt16(2), // 2
-    "K_splits": UInt16(1), // 1-3
   ]
   
   init(parameters: GEMM_Parameters) {
@@ -85,13 +88,11 @@ struct MFA_GEMM: GEMM, MFA_Operation {
     var K_simd = Self.functionConstants["K_simd"] as! UInt16
     var M_splits = Self.functionConstants["M_splits"] as! UInt16
     var N_splits = Self.functionConstants["N_splits"] as! UInt16
-    var K_splits = Self.functionConstants["K_splits"] as! UInt16
     constants.setConstantValue(&M_simd, type: .ushort, index: 200)
     constants.setConstantValue(&N_simd, type: .ushort, index: 201)
     constants.setConstantValue(&K_simd, type: .ushort, index: 202)
     constants.setConstantValue(&M_splits, type: .ushort, index: 210)
     constants.setConstantValue(&N_splits, type: .ushort, index: 211)
-    constants.setConstantValue(&K_splits, type: .ushort, index: 212)
     
     var name: String
     switch dataType {
@@ -106,9 +107,8 @@ struct MFA_GEMM: GEMM, MFA_Operation {
     
     let M_group = M_simd * M_splits
     let N_group = N_simd * N_splits
-    let K_group = K_simd * K_splits
-    let A_block_length = M_group * K_group
-    let B_block_length = K_group * N_group
+    let A_block_length = M_group * K_simd
+    let B_block_length = K_simd * N_group
     
     var blockElements = A_block_length + B_block_length;
     if (pcopy.M % 8 != 0) && (pcopy.N % 8 != 0) {
@@ -125,7 +125,7 @@ struct MFA_GEMM: GEMM, MFA_Operation {
       height: ceilDivide(target: parameters.M, granularity: M_group),
       depth: 1)
     let groupSize = MTLSize(
-      width: 128 * Int(K_splits),
+      width: Int(32 * M_splits * N_splits),
       height: 1,
       depth: 1)
     
@@ -301,11 +301,28 @@ struct MPS_GEMM: GEMM, MPS_Operation {
       postTransposeB = originalB
     }
     
-    let tensorC = graph.matrixMultiplication(
+    var tensorC = graph.matrixMultiplication(
       primary: postTransposeA, secondary: postTransposeB, name: "C")
+    var feeds = [originalA: shapedTypeA, originalB: shapedTypeB]
+    
+    if parameters.fused_bias {
+      let dBatch: [Int] = parameters.batchDimensionsD!
+      var dShape: [Int]
+      if parameters.D_trans {
+        dShape = dBatch + [parameters.M, 1]
+      } else {
+        dShape = dBatch + [1, parameters.N]
+      }
+      
+      let tensorD = placeholder(dShape, "D")
+      let shapedTypeD = shapedType(dShape)
+      tensorC = graph.addition(tensorC, tensorD, name: "C")
+      feeds[tensorD] = shapedTypeD
+    }
+    
     return AsyncGraph(
       graph: graph,
-      feeds: [originalA: shapedTypeA, originalB: shapedTypeB],
+      feeds: feeds,
       targetTensors: [tensorC])
   }
   
@@ -317,7 +334,12 @@ struct MPS_GEMM: GEMM, MPS_Operation {
     let tensorA = tensors.a as! MPS_TensorBuffer
     let tensorB = tensors.b as! MPS_TensorBuffer
     let tensorC = tensors.c as! MPS_TensorBuffer
-    let inputs = [tensorA.tensorData, tensorB.tensorData]
+    var inputs = [tensorA.tensorData, tensorB.tensorData]
+    if parameters.fused_bias {
+      let tensorD = tensors.d as! MPS_TensorBuffer
+      inputs.append(tensorD.tensorData)
+    }
+    
     let results = [tensorC.tensorData]
     resource.resource(index: 0).encode(
       to: encoder,
@@ -386,6 +408,17 @@ struct Py_GEMM: GEMM, Py_Operation {
         }
       }
       np.einsum(repr!, tensorA.ndarray, tensorB.ndarray, out: tensorC.ndarray)
+    }
+    
+    if parameters.fused_bias {
+      let d = tensors.d! as! Py_TensorBuffer
+      var d_ndarray = d.ndarray
+      if parameters.D_trans {
+        d_ndarray = np.expand_dims(d_ndarray, axis: d.shape.count)
+      } else {
+        d_ndarray = np.expand_dims(d_ndarray, axis: d.shape.count - 1)
+      }
+      np.addition(tensorC.ndarray, d_ndarray, out: tensorC.ndarray)
     }
   }
 }

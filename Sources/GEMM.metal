@@ -31,9 +31,9 @@ constant float beta [[function_constant(21)]];
 
 constant bool batched [[function_constant(100)]];
 constant bool fused_activation [[function_constant(101)]];
-constant bool bias_activation [[function_constant(50001)]]; // 102
-constant bool use_bias = is_function_constant_defined(bias_activation) ? bias_activation : false;
-constant bool use_activation_function = fused_activation && !bias_activation;
+constant bool fused_bias [[function_constant(50001)]]; // 102
+constant bool use_bias = is_function_constant_defined(fused_bias) ? fused_bias : false;
+constant bool use_activation_function = fused_activation && !fused_bias;
 constant bool use_activation = use_bias || use_activation_function;
 constant bool batched_activation_function = batched && use_activation_function;
 
