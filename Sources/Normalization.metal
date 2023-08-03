@@ -12,6 +12,9 @@ using namespace metal;
 // complexity as having separate shaders. A future implementation can coalesce
 // memory accesses and cache the data inside registers for a drastic speedup.
 //
+// Although much slower than theoretically possible, this should be much
+// faster than the LLaMA.cpp implementation or an MPSGraph implementation.
+//
 // With this shader, dispatch 256 threads/threadgroup and 1 threadgroup/row.
 template <typename T>
 void _normalization_impl(device T *source [[buffer(0)]],
