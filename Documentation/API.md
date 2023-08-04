@@ -69,7 +69,11 @@ MTLCommandQueue {
     }
   }
 }
+```
 
+<!--
+
+```
 // In-place Winograd with 3.24x speedup
 // data: FP16
 // weights: 6-bit palletized FP16
@@ -99,3 +103,5 @@ MTLCommandQueue {
   }
 }
 ```
+
+-->

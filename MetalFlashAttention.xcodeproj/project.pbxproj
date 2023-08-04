@@ -11,7 +11,7 @@
 		980EDCFD2A4E10A100BC9BF0 /* CorrectnessTests.swift in Sources */ = {isa = PBXBuildFile; fileRef = 980EDCFC2A4E10A100BC9BF0 /* CorrectnessTests.swift */; };
 		9835F45A2A4A3BA40095D0D0 /* Attention.metal in Sources */ = {isa = PBXBuildFile; fileRef = 9835F4592A4A3BA40095D0D0 /* Attention.metal */; };
 		9835F45C2A4A3BAD0095D0D0 /* Convolution.metal in Sources */ = {isa = PBXBuildFile; fileRef = 9835F45B2A4A3BAD0095D0D0 /* Convolution.metal */; };
-		9835F45E2A4A81150095D0D0 /* Normalization.metal in Sources */ = {isa = PBXBuildFile; fileRef = 9835F45D2A4A81150095D0D0 /* Normalization.metal */; };
+		9835F45E2A4A81150095D0D0 /* old-normalization.metal in Sources */ = {isa = PBXBuildFile; fileRef = 9835F45D2A4A81150095D0D0 /* old-normalization.metal */; };
 		9835F4632A4B14430095D0D0 /* PythonKit in Frameworks */ = {isa = PBXBuildFile; productRef = 9835F4622A4B14430095D0D0 /* PythonKit */; };
 		9835F4672A4B35FF0095D0D0 /* AppleGPUInfo in Frameworks */ = {isa = PBXBuildFile; productRef = 9835F4662A4B35FF0095D0D0 /* AppleGPUInfo */; };
 		9835F4692A4B36DB0095D0D0 /* MetalFlashAttention.swift in Sources */ = {isa = PBXBuildFile; fileRef = 9835F4682A4B36DB0095D0D0 /* MetalFlashAttention.swift */; };
@@ -61,7 +61,7 @@
 		98325C472A6B2A7000A4D7BB /* float32-small-sequences-latest.png */ = {isa = PBXFileReference; lastKnownFileType = image.png; path = "float32-small-sequences-latest.png"; sourceTree = "<group>"; };
 		9835F4592A4A3BA40095D0D0 /* Attention.metal */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.metal; path = Attention.metal; sourceTree = "<group>"; };
 		9835F45B2A4A3BAD0095D0D0 /* Convolution.metal */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.metal; path = Convolution.metal; sourceTree = "<group>"; };
-		9835F45D2A4A81150095D0D0 /* Normalization.metal */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.metal; path = Normalization.metal; sourceTree = "<group>"; };
+		9835F45D2A4A81150095D0D0 /* old-normalization.metal */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.metal; path = "old-normalization.metal"; sourceTree = "<group>"; };
 		9835F4642A4B15300095D0D0 /* MetalFlashAttention.entitlements */ = {isa = PBXFileReference; lastKnownFileType = text.plist.entitlements; path = MetalFlashAttention.entitlements; sourceTree = "<group>"; };
 		9835F4682A4B36DB0095D0D0 /* MetalFlashAttention.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = MetalFlashAttention.swift; sourceTree = "<group>"; };
 		9835F46A2A4B36E70095D0D0 /* MetalPerformanceShadersGraph.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = MetalPerformanceShadersGraph.swift; sourceTree = "<group>"; };
@@ -211,8 +211,9 @@
 			children = (
 				98F7440F2A4A0CB200B5E60A /* API.md */,
 				987E36082A45E5D200ACACE3 /* old-simdgroup-matrix-internals.hpp */,
-				987E36052A45E5D200ACACE3 /* old-gemm.metal */,
 				987E36062A45E5D200ACACE3 /* old-flash-attention.metal */,
+				987E36052A45E5D200ACACE3 /* old-gemm.metal */,
+				9835F45D2A4A81150095D0D0 /* old-normalization.metal */,
 				987E36042A45E5D200ACACE3 /* HGEMM.png */,
 				987E36072A45E5D200ACACE3 /* SGEMM.png */,
 			);
@@ -225,7 +226,6 @@
 				9835F4592A4A3BA40095D0D0 /* Attention.metal */,
 				9835F45B2A4A3BAD0095D0D0 /* Convolution.metal */,
 				987E36142A45E90700ACACE3 /* GEMM.metal */,
-				9835F45D2A4A81150095D0D0 /* Normalization.metal */,
 				9835F4742A4B4B550095D0D0 /* metal_data_type */,
 				9802CB392A72A687004AFD03 /* metal_fault_counter */,
 				987E360D2A45E6A100ACACE3 /* metal_simdgroup_event */,
@@ -386,7 +386,7 @@
 				9835F4692A4B36DB0095D0D0 /* MetalFlashAttention.swift in Sources */,
 				9835F46F2A4B37110095D0D0 /* Matplotlib.swift in Sources */,
 				980070F62A66E4490097D21F /* AttentionPerfTests.swift in Sources */,
-				9835F45E2A4A81150095D0D0 /* Normalization.metal in Sources */,
+				9835F45E2A4A81150095D0D0 /* old-normalization.metal in Sources */,
 				98C7952A2A4B962B00DB688D /* MFATestCase.swift in Sources */,
 				9835F4712A4B39290095D0D0 /* Metal.swift in Sources */,
 				98C7952C2A4C714400DB688D /* Random.swift in Sources */,

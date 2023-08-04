@@ -17,9 +17,8 @@ Algorithms:
   - [x] FP16 (93.3% ALU)
   - [x] FP32 (87.2% ALU)
   - [ ] Fused Activations
-- [ ] Normalization
-  - [ ] Group Normalization
-
+  - [x] Fused Biases
+  
 ## Usage
 
 | Progamming Language | MFA Supports | MPSGraph Supports | PyTorch Supports |
