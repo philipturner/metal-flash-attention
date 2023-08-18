@@ -6,19 +6,21 @@ Algorithms:
 - [x] Attention
   - [x] Dense (90.5% ALU)
   - [x] Block-Sparse
-  - [ ] Triangular
 - [ ] Convolution
   - [ ] ConvGEMM 3x3
   - [ ] Winograd 4x4
   - [ ] Winograd 5x5
   - [ ] Winograd 6x6
-  - [ ] Winograd 7x7
 - [x] GEMM
   - [x] FP16 (93.3% ALU)
   - [x] FP32 (87.2% ALU)
-  - [ ] Fused Activations
+    - [ ] Complex Numbers
+    - [ ] FP64 Accumulate
   - [x] Fused Biases
-  
+- [ ] Linear Algebra
+  - [ ] Cholesky
+  - [ ] Triangular Solve
+
 ## Usage
 
 | Progamming Language | MFA Supports | MPSGraph Supports | PyTorch Supports |

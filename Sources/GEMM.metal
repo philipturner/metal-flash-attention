@@ -265,6 +265,7 @@ void _gemm_impl(device T *A [[buffer(0)]],
                 ushort lane_id [[thread_index_in_simdgroup]])
 {
   if (batched) {
+    // TODO: Re-compute every inner loop iteration for FP64 accumulate.
     ulong3 offsets = matrix_offsets[gid.z].xyz;
     A = (device T*)((device uchar*)A + offsets[0]);
     B = (device T*)((device uchar*)B + offsets[1]);
