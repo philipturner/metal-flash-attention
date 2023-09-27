@@ -9,12 +9,7 @@ Algorithms:
 - [x] GEMM
   - [x] FP16 (93.3% ALU)
   - [x] FP32 (87.2% ALU)
-    - [ ] Complex Numbers
-    - [ ] FP64 Accumulate
   - [x] Fused Biases
-- [ ] Linear Algebra
-  - [ ] Cholesky
-  - [ ] Triangular Solve
 
 ## Usage
 
