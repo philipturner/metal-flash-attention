@@ -23,6 +23,7 @@ Algorithms:
 
 Usage:
 - Download Xcode 14.2 from the Apple [developer tools archive](https://developer.apple.com/download/all/?q=xcode)
+  - Copy into `/Applications/Xcode 14.2.app`, side by side with the existing Xcode installation `/Applications/Xcode.app`
 - Run the Swift script to compile `libMetalFlashAttention.metallib`
   - Enter this repository from Terminal and type `swift build.swift`
 - Read the [API specification](./Documentation/API.md)
