@@ -24,6 +24,7 @@ Algorithms:
 Usage:
 - Download Xcode 14.2 from the Apple [developer tools archive](https://developer.apple.com/download/all/?q=xcode)
 - Run the Swift script to compile `libMetalFlashAttention.metallib`
+  - Enter this repository from Terminal and type `swift build.swift`
 - Read the [API specification](./Documentation/API.md)
 - Generate Metal shader variants at runtime
 
