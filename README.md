@@ -192,3 +192,7 @@ Releases:
   - Attention: dense and block-sparse
 - v1.0.1
   - GEMM: fused biases
+ 
+Prospective Future Goals:
+- Tune the existing GEMM and Attention kernels for new A17/M3 hardware
+- Kahan block-summation with double-single accumulate, in a manner portable to other vendors
