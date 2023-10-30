@@ -241,8 +241,8 @@ struct MFA_GEMM: GEMM, MFA_Operation {
             UInt64(truncatingIfNeeded: i * byteStrideD))
         }
         
-        let bufferLength = buffer.count * MemoryLayout<SIMD3<UInt64>>.stride
-        assert(MemoryLayout<SIMD3<UInt64>>.stride == 8 * 4)
+        let bufferLength = buffer.count * MemoryLayout<SIMD4<UInt64>>.stride
+        assert(MemoryLayout<SIMD4<UInt64>>.stride == 8 * 4)
         encoder.setBytes(buffer.baseAddress!, length: bufferLength, index: 10)
       }
     } else {
