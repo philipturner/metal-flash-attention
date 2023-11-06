@@ -81,6 +81,10 @@ final class Py_TensorBuffer: TensorBuffer {
     let uinteger = UInt(Int(pyInt)!)
     self.pointer = UnsafeMutableRawPointer(bitPattern: uinteger)!
   }
+  
+  func release() {
+    // ¯\_(ツ)_/¯
+  }
 }
 
 protocol Py_Operation {

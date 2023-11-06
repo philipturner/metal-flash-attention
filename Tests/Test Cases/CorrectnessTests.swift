@@ -213,13 +213,21 @@ class CorrectnessTests: MFATestCase {
           print("Passed test: \(shapeRepr) (\(transRepr)) \(distRepr)")
         }
       }
+      mps_A.buffer.release()
+      mps_B.buffer.release()
+      mps_C.buffer.release()
+      mps_D?.buffer.release()
     }
     
     for i in 0..<numTrials {
-      testRandomSize(index: i, ghost: true)
+      autoreleasepool {
+        testRandomSize(index: i, ghost: true)
+      }
     }
     for i in 0..<numTrials {
-      testRandomSize(index: i, ghost: false)
+      autoreleasepool {
+        testRandomSize(index: i, ghost: false)
+      }
     }
     
     let end = CACurrentMediaTime()

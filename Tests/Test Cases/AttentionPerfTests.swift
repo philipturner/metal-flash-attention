@@ -42,7 +42,7 @@ class AttentionPerfTests: MFATestCase {
     let (domain, ranges) = rangeSequenceScaling(
       duration: duration, type: .causal)
 
-    var backends = SequenceType.causal.backends
+    let backends = SequenceType.causal.backends
 //    let backends: [AttentionBackend] = [.mfa]
     
 //    backends = backends.compactMap {
@@ -518,33 +518,36 @@ class AttentionPerfTests: MFATestCase {
       trials: Int,
       iterations: Int
     ) -> Float {
-      var tensors = Tensors(config: config, backend: backend)
-      var minTime: Double = .infinity
-      let tensorBackend = TensorBackend.default
-      for _ in 0..<trials {
-        tensorBackend.markFirstCommand()
-        for _ in 0..<iterations {
-          tensors.o.attention(
-            queries: tensors.q,
-            keys: tensors.k,
-            values: tensors.v,
-            mask: tensors.mask,
-            transposeK: true,
-            blockSparse: backend == .mfaBlockSparse)
+      autoreleasepool {
+        var tensors = Tensors(config: config, backend: backend)
+        var minTime: Double = .infinity
+        let tensorBackend = TensorBackend.default
+        for _ in 0..<trials {
+          tensorBackend.markFirstCommand()
+          for _ in 0..<iterations {
+            tensors.o.attention(
+              queries: tensors.q,
+              keys: tensors.k,
+              values: tensors.v,
+              mask: tensors.mask,
+              transposeK: true,
+              blockSparse: backend == .mfaBlockSparse
+            )
+          }
+          tensorBackend.markLastCommand()
+          minTime = min(minTime, tensorBackend.synchronize())
         }
-        tensorBackend.markLastCommand()
-        minTime = min(minTime, tensorBackend.synchronize())
+        
+        var floatOps = config.B
+        floatOps *= config.R
+        floatOps *= config.C
+        floatOps *= config.H
+        floatOps *= (4 * config.D + 10)
+        floatOps *= iterations
+        
+        let flops = Double(floatOps) / minTime
+        return Float(flops / 1e9)
       }
-      
-      var floatOps = config.B
-      floatOps *= config.R
-      floatOps *= config.C
-      floatOps *= config.H
-      floatOps *= (4 * config.D + 10)
-      floatOps *= iterations
-      
-      let flops = Double(floatOps) / minTime
-      return Float(flops / 1e9)
     }
     
     func verifyResults(

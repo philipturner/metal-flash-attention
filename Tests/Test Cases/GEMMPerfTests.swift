@@ -250,6 +250,11 @@ class GEMMPerfTests: MFATestCase {
                 expected: mps_C, expectedName: "MPS", parameters: params)
               fatalError("Tensors did not match.")
             }
+            
+            mps_A.buffer.release()
+            mps_B.buffer.release()
+            mps_C.buffer.release()
+            mps_D?.buffer.release()
           }
         }
         
@@ -259,6 +264,7 @@ class GEMMPerfTests: MFATestCase {
         for size in sizes {
           innerLoop(size: size, reportResults: true)
         }
+        
       }
       
       mutating func profile(
@@ -278,18 +284,23 @@ class GEMMPerfTests: MFATestCase {
           
           let sectionSizes = start..<end
           for config in Config.fastConfigs {
-            prepare(config: config)
-            _profile(
-              sizes: sectionSizes, granularity: granularity,
-              trialsExtension: trialsExtension, isInitial: true,
-              A_trans: A_trans, B_trans: B_trans, D_trans: D_trans,
-              batchSize: batchSize, useBias: useBias)
-            _profile(
-              sizes: sectionSizes, granularity: granularity,
-              trialsExtension: trialsExtension, isInitial: false,
-              A_trans: A_trans, B_trans: B_trans, D_trans: D_trans,
-              batchSize: batchSize, useBias: useBias)
-            cleanup(config: config)
+              autoreleasepool {
+                  prepare(config: config)
+                  _profile(
+                    sizes: sectionSizes, granularity: granularity,
+                    trialsExtension: trialsExtension, isInitial: true,
+                    A_trans: A_trans, B_trans: B_trans, D_trans: D_trans,
+                    batchSize: batchSize, useBias: useBias)
+              }
+              
+              autoreleasepool {
+                  _profile(
+                    sizes: sectionSizes, granularity: granularity,
+                    trialsExtension: trialsExtension, isInitial: false,
+                    A_trans: A_trans, B_trans: B_trans, D_trans: D_trans,
+                    batchSize: batchSize, useBias: useBias)
+              }
+                  cleanup(config: config)
           }
           
           if logProgress {

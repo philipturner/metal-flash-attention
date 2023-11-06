@@ -127,6 +127,10 @@ final class MPS_TensorBuffer: TensorBuffer {
     self.tensorData = MPSGraphTensorData(
       buffer, shape: nsShape, dataType: dataType.mps)
   }
+  
+  func release() {
+    self.buffer.setPurgeableState(MTLPurgeableState.empty)
+  }
 }
 
 protocol _Has_MPS_Backend {
