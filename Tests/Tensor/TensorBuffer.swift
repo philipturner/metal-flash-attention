@@ -19,6 +19,8 @@ protocol TensorBuffer {
   var count: Int { get }
   
   init(unsafeUninitializedShape shape: [Int], dataType: MTLDataType)
+    
+  func release()
 }
 
 extension TensorBuffer {

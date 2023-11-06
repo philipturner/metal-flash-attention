@@ -144,6 +144,10 @@ final class MFA_TensorBuffer: TensorBuffer {
     let device = MetalContext.global.device
     self.buffer = device.makeBuffer(length: bufferSize)!
   }
+  
+  func release() {
+    self.buffer.setPurgeableState(MTLPurgeableState.empty)
+  }
 }
 
 protocol _Has_MFA_Backend {
