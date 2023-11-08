@@ -396,7 +396,7 @@ void _gemm_impl(device T *A [[buffer(0)]],
     for (int m = 0; m < M_padded; m += 8) {
 #pragma clang loop unroll(full)
       for (int n = 0; n < N_padded; n += 8) {
-        C_sram(sram, ushort2(n, m))->thread_elements()[0] *= alpha;
+        C_sram(sram, ushort2(n, m))->thread_elements()[0] *= T(alpha);
       }
     }
   }
@@ -497,3 +497,22 @@ kernel void sgemm(device float *A [[buffer(0)]],
 {
   _gemm_impl<float>(A, B, C, D, threadgroup_block, matrix_offsets, table, activation_function_offsets, gid, sidx, lane_id);
 }
+
+#if __METAL_VERSION__ >= 310
+kernel void bgemm(device bfloat *A [[buffer(0)]],
+  device bfloat *B [[buffer(1)]],
+  device bfloat *C [[buffer(2)]],
+  device void *D [[buffer(3), function_constant(use_activation)]],
+
+  threadgroup bfloat *threadgroup_block [[threadgroup(0)]],
+  constant ulong4 *matrix_offsets [[buffer(10), function_constant(batched)]],
+  typename activation_functor<bfloat>::function_table table [[buffer(11), function_constant(use_activation_function)]],
+  constant uint *activation_function_offsets [[buffer(12), function_constant(batched_activation_function)]],
+
+  uint3 gid [[threadgroup_position_in_grid]],
+  ushort sidx [[simdgroup_index_in_threadgroup]],
+  ushort lane_id [[thread_index_in_simdgroup]])
+{
+  _gemm_impl<bfloat>(A, B, C, D, threadgroup_block, matrix_offsets, table, activation_function_offsets, gid, sidx, lane_id);
+}
+#endif
