@@ -45,6 +45,7 @@ constant bool forward [[function_constant(110)]];
 constant bool backward [[function_constant(111)]];
 constant bool generate_block_mask [[function_constant(112)]];
 constant bool grouped_query [[function_constant(113)]];
+constant bool float_accumulator [[function_constant(114)]];
 
 constant ushort R_simd [[function_constant(200)]];
 constant ushort C_simd [[function_constant(201)]];
@@ -113,10 +114,10 @@ void gemm(ushort M, ushort N, ushort K, bool accumulate,
   }
 }
 
-template <typename T>
+template <typename T, typename U, typename TtoU>
 void apply_mask(ushort r, uint j_next, ushort2 offset_in_simd,
                 device T *mask_src,
-                thread simdgroup_matrix_storage<T>* attention_matrix)
+                thread simdgroup_matrix_storage<U>* attention_matrix)
 {
 #define LOAD_MASK \
 ushort2 origin(c, r); \
@@ -132,9 +133,9 @@ mask.load_second(mask_src, C, origin); \
 \
 auto s = get_sram(attention_matrix, C_simd, origin); \
 if (generate_block_mask) { \
-*(s->thread_elements()) = *(mask.thread_elements()); \
+*(s->thread_elements()) = TtoU(*(mask.thread_elements())); \
 } else { \
-*(s->thread_elements()) += *(mask.thread_elements()); \
+*(s->thread_elements()) += TtoU(*(mask.thread_elements())); \
 } \
 
   ushort C_edge = (C % C_simd == 0) ? C_simd : (C % C_simd);
@@ -192,9 +193,9 @@ if (generate_block_mask) { \
     
     auto s = get_sram(attention_matrix, C_simd, origin);
     if (generate_block_mask) {
-      *(s->thread_elements()) = *(mask.thread_elements());
+      *(s->thread_elements()) = TtoU(*(mask.thread_elements()));
     } else {
-      *(s->thread_elements()) += *(mask.thread_elements());
+      *(s->thread_elements()) += TtoU(*(mask.thread_elements()));
     }
   }
 }
@@ -327,18 +328,18 @@ void _generate_block_mask_impl(threadgroup T *threadgroup_block [[threadgroup(0)
   // Apply explicit mask.
 #pragma clang loop unroll(full)
   for (ushort r = 0; r < R_floor; r += 8) {
-    apply_mask(r, j_next, offset_in_simd, mask_src, attention_matrix);
+    apply_mask<T, T, vec<T, 2>>(r, j_next, offset_in_simd, mask_src, attention_matrix);
   }
   
   if (R_edge > 0) {
     if (i_in_bounds) {
 #pragma clang loop unroll(full)
       for (ushort r = R_floor; r < R_simd; r += 8) {
-        apply_mask(r, j_next, offset_in_simd, mask_src, attention_matrix);
+        apply_mask<T, T, vec<T, 2>>(r, j_next, offset_in_simd, mask_src, attention_matrix);
       }
     } else {
       if (offset_in_simd.y < R_modulo) {
-        apply_mask(R_floor, j_next, offset_in_simd, mask_src, attention_matrix);
+        apply_mask<T, T, vec<T, 2>>(R_floor, j_next, offset_in_simd, mask_src, attention_matrix);
       }
       T placeholder = attention_matrix[0].thread_elements()[0][0];
       placeholder = simd_broadcast_first(placeholder);
@@ -440,7 +441,7 @@ void _generate_block_mask_impl(threadgroup T *threadgroup_block [[threadgroup(0)
   }
 }
 
-template <typename T>
+template <typename T, typename U, typename TtoU>
 void _attention_impl(device T *Q [[buffer(0)]],
                      device T *K [[buffer(1)]],
                      device T *V [[buffer(2)]],
@@ -566,7 +567,7 @@ void _attention_impl(device T *Q [[buffer(0)]],
     
     // Multiply Q * K.
     threadgroup_barrier(mem_flags::mem_threadgroup);
-    simdgroup_matrix_storage<T> attention_matrix[128];
+    simdgroup_matrix_storage<U> attention_matrix[128];
 #pragma clang loop unroll(full)
     for (ushort d = 0; d < D_simd; d += 8) {
       simdgroup_matrix_storage<T> K_sram[128];
@@ -598,18 +599,18 @@ void _attention_impl(device T *Q [[buffer(0)]],
       
 #pragma clang loop unroll(full)
       for (ushort r = 0; r < R_floor; r += 8) {
-        apply_mask(r, j_next, offset_in_simd, mask_src, attention_matrix);
+        apply_mask<T, U, TtoU>(r, j_next, offset_in_simd, mask_src, attention_matrix);
       }
       
       if (R_edge > 0) {
         if (i_in_bounds) {
 #pragma clang loop unroll(full)
           for (ushort r = R_floor; r < R_simd; r += 8) {
-            apply_mask(r, j_next, offset_in_simd, mask_src, attention_matrix);
+            apply_mask<T, U, TtoU>(r, j_next, offset_in_simd, mask_src, attention_matrix);
           }
         } else {
           if (offset_in_simd.y < R_modulo) {
-            apply_mask(R_floor, j_next, offset_in_simd, mask_src, attention_matrix);
+            apply_mask<T, U, TtoU>(R_floor, j_next, offset_in_simd, mask_src, attention_matrix);
           }
         }
       }
@@ -628,7 +629,7 @@ void _attention_impl(device T *Q [[buffer(0)]],
 #pragma clang loop unroll(full)
           for (ushort r = 0; r < R_simd; r += 8) {
             auto s = get_sram(attention_matrix, C_simd, ushort2(c, r));
-            (s->thread_elements()[0])[index] = -numeric_limits<T>::max();
+            (s->thread_elements()[0])[index] = -numeric_limits<U>::max();
           }
         }
       }
@@ -638,7 +639,7 @@ void _attention_impl(device T *Q [[buffer(0)]],
 #pragma clang loop unroll(full)
         for (ushort r = 0; r < R_simd; r += 8) {
           auto s = get_sram(attention_matrix, C_simd, ushort2(c, r));
-          *(s->thread_elements()) = -numeric_limits<T>::max();
+          *(s->thread_elements()) = -numeric_limits<U>::max();
         }
       }
     }
@@ -664,7 +665,7 @@ void _attention_impl(device T *Q [[buffer(0)]],
       if (masked && m <= threshold) {
         for (ushort c = 0; c < C_simd; c += 8) {
           auto s = get_sram(attention_matrix, C_simd, ushort2(c, r));
-          *(s->thread_elements()) = vec<T, 2>(0);
+          *(s->thread_elements()) = vec<U, 2>(0);
         }
       } else {
         m *= alpha;
@@ -687,7 +688,7 @@ void _attention_impl(device T *Q [[buffer(0)]],
           auto s = get_sram(attention_matrix, C_simd, ushort2(c, r));
           float2 p = float2(*s->thread_elements());
           p = exp2(fma(p, alpha * M_LOG2E_F, -subtrahend));
-          *(s->thread_elements()) = vec<T, 2>(p);
+          *(s->thread_elements()) = vec<U, 2>(p);
           _l += float2(*(s->thread_elements()));
         }
         float l = _l[0] + _l[1];
@@ -917,7 +918,7 @@ void _attention_impl(device T *Q [[buffer(0)]],
   }
 }
 
-template <typename T>
+template <typename T, typename U, typename TtoU>
 void _triangular_impl(device T *Q [[buffer(0)]],
                       device T *K [[buffer(1)]],
                       device T *V [[buffer(2)]],
@@ -942,11 +943,11 @@ void _triangular_impl(device T *Q [[buffer(0)]],
     }
   }
   
-  _attention_impl(Q, K, V, O, threadgroup_block, query_offsets, mask, block_mask, locks, partials, lower_pass, gid, sidx, lane_id);
+  _attention_impl<T, U, TtoU>(Q, K, V, O, threadgroup_block, query_offsets, mask, block_mask, locks, partials, lower_pass, gid, sidx, lane_id);
   
   triangular_pass upper_pass(triangular_pass::upper, gid.x);
   if (upper_pass.can_store_o) {
-    _attention_impl(Q, K, V, O, threadgroup_block, query_offsets, mask, block_mask, locks, partials, upper_pass, gid, sidx, lane_id);
+    _attention_impl<T, U, TtoU>(Q, K, V, O, threadgroup_block, query_offsets, mask, block_mask, locks, partials, upper_pass, gid, sidx, lane_id);
   }
 }
 
@@ -986,15 +987,23 @@ kernel void attention(device void *Q [[buffer(0)]],
     triangular_pass pass(triangular_pass::none, gid.x);
     if (Q_data_type == MTLDataTypeFloat) {
       if (triangular) {
-        _triangular_impl((device float*)Q, (device float*)K, (device float*)V, (device float*)O, (threadgroup float*)threadgroup_block, query_offsets, (device float*)mask, block_mask, locks, partials, gid, sidx, lane_id);
+        _triangular_impl<float, float, vec<float, 2>>((device float*)Q, (device float*)K, (device float*)V, (device float*)O, (threadgroup float*)threadgroup_block, query_offsets, (device float*)mask, block_mask, locks, partials, gid, sidx, lane_id);
       } else {
-        _attention_impl((device float*)Q, (device float*)K, (device float*)V, (device float*)O, (threadgroup float*)threadgroup_block, query_offsets, (device float*)mask, block_mask, locks, partials, pass, gid, sidx, lane_id);
+        _attention_impl<float, float, vec<float, 2>>((device float*)Q, (device float*)K, (device float*)V, (device float*)O, (threadgroup float*)threadgroup_block, query_offsets, (device float*)mask, block_mask, locks, partials, pass, gid, sidx, lane_id);
       }
     } else if (Q_data_type == MTLDataTypeHalf) {
-      if (triangular) {
-        _triangular_impl((device half*)Q, (device half*)K, (device half*)V, (device half*)O, (threadgroup half*)threadgroup_block, query_offsets, (device half*)mask, block_mask, locks, partials, gid, sidx, lane_id);
+      if (float_accumulator) {
+        if (triangular) {
+          _triangular_impl<half, float, float2>((device half*)Q, (device half*)K, (device half*)V, (device half*)O, (threadgroup half*)threadgroup_block, query_offsets, (device half*)mask, block_mask, locks, partials, gid, sidx, lane_id);
+        } else {
+          _attention_impl<half, float, float2>((device half*)Q, (device half*)K, (device half*)V, (device half*)O, (threadgroup half*)threadgroup_block, query_offsets, (device half*)mask, block_mask, locks, partials, pass, gid, sidx, lane_id);
+        }
       } else {
-        _attention_impl((device half*)Q, (device half*)K, (device half*)V, (device half*)O, (threadgroup half*)threadgroup_block, query_offsets, (device half*)mask, block_mask, locks, partials, pass, gid, sidx, lane_id);
+        if (triangular) {
+          _triangular_impl<half, half, vec<half, 2>>((device half*)Q, (device half*)K, (device half*)V, (device half*)O, (threadgroup half*)threadgroup_block, query_offsets, (device half*)mask, block_mask, locks, partials, gid, sidx, lane_id);
+        } else {
+          _attention_impl<half, half, vec<half, 2>>((device half*)Q, (device half*)K, (device half*)V, (device half*)O, (threadgroup half*)threadgroup_block, query_offsets, (device half*)mask, block_mask, locks, partials, pass, gid, sidx, lane_id);
+        }
       }
     }
   }

@@ -531,7 +531,8 @@ class AttentionPerfTests: MFATestCase {
               values: tensors.v,
               mask: tensors.mask,
               transposeK: true,
-              blockSparse: backend == .mfaBlockSparse
+              blockSparse: backend == .mfaBlockSparse,
+              accumulateInFloat: MFATestCase.accumulateInFloat
             )
           }
           tensorBackend.markLastCommand()
@@ -566,7 +567,8 @@ class AttentionPerfTests: MFATestCase {
           values: mfaTensors.v,
           mask: mfaTensors.mask,
           transposeK: true,
-          blockSparse: backend == .mfaBlockSparse)
+          blockSparse: backend == .mfaBlockSparse,
+          accumulateInFloat: MFATestCase.accumulateInFloat)
       }
       
       _ExecutionContext.withDefaultBackend(mps) {
@@ -576,7 +578,7 @@ class AttentionPerfTests: MFATestCase {
             keys: mpsTensors.k,
             values: mpsTensors.v,
             mask: mpsTensors.mask,
-            transposeK: true)
+            transposeK: true, accumulateInFloat: MFATestCase.accumulateInFloat)
         }
       }
       

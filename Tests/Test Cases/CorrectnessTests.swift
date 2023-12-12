@@ -419,7 +419,7 @@ class CorrectnessTests: MFATestCase {
           queries: Q, keys: K, values: V, mask: mask,
           transposeQ: Q_trans, transposeK: K_trans,
           transposeV: V_trans, transposeO: O_trans,
-          blockSparse: blockSparse)
+          blockSparse: blockSparse, accumulateInFloat: MFATestCase.accumulateInFloat)
       }
       
       if ghost {

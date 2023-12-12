@@ -36,6 +36,7 @@ struct Attention_Parameters: Hashable, Equatable {
   var batched: Bool
   var masked: Bool
   var blockSparse: Bool
+  var accumulateInFloat: Bool
   
   // These are only needed by MPSGraph; MFA supports dynamic batch size.
   var batchDimensionsQ: [Int]?
@@ -83,6 +84,7 @@ struct MFA_Attention: Attention, MFA_Operation {
     constants.setConstantValue(&pcopy.batched, type: .bool, index: 100)
     constants.setConstantValue(&pcopy.masked, type: .bool, index: 50000)
     constants.setConstantValue(&pcopy.blockSparse, type: .bool, index: 102)
+    constants.setConstantValue(&pcopy.accumulateInFloat, type: .bool, index: 114)
     
     var triangular = false
     #if false
