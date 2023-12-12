@@ -110,7 +110,7 @@ func showAttentionTest() {
       expected_O.attention(
         queries: expected_Q, keys: expected_K, values: expected_V,
         mask: expected_mask,
-        transposeK: true, transposeO: true)
+        transposeK: true, transposeO: true, accumulateInFloat: MFATestCase.accumulateInFloat)
     }
   }
   
@@ -119,7 +119,7 @@ func showAttentionTest() {
       actual_O.attention(
         queries: actual_Q, keys: actual_K, values: actual_V,
         mask: actual_mask,
-        transposeK: true, transposeO: true, blockSparse: true)
+        transposeK: true, transposeO: true, blockSparse: true, accumulateInFloat: MFATestCase.accumulateInFloat)
     }
   }
   

@@ -217,7 +217,8 @@ extension Tensor {
     transposeK: Bool = true,
     transposeV: Bool = false,
     transposeO: Bool = false,
-    blockSparse: Bool = false
+    blockSparse: Bool = false,
+    accumulateInFloat: Bool = false
   ) {
     assert(self.typeAndBackendMatches(queries))
     assert(self.typeAndBackendMatches(keys))
@@ -319,7 +320,7 @@ extension Tensor {
       Q_trans: transposeQ, K_trans: transposeK,
       V_trans: transposeV, O_trans: transposeO,
       batched: batched, masked: mask != nil,
-      blockSparse: blockSparse)
+      blockSparse: blockSparse, accumulateInFloat: accumulateInFloat)
     if blockSparse {
       precondition(mask != nil, "Block sparsity requires a mask.")
     }
