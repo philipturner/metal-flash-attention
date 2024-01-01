@@ -71,6 +71,7 @@ struct MFA_Attention: Attention, MFA_Operation {
     constants.setConstantValue(&pcopy.C, type: .uint, index: 1)
     constants.setConstantValue(&pcopy.H, type: .uint, index: 2)
     constants.setConstantValue(&pcopy.D, type: .uint, index: 3)
+    constants.setConstantValue(&pcopy.H, type: .uint, index: 4)
     constants.setConstantValue(&pcopy.Q_trans, type: .bool, index: 10)
     constants.setConstantValue(&pcopy.K_trans, type: .bool, index: 11)
     constants.setConstantValue(&pcopy.V_trans, type: .bool, index: 12)

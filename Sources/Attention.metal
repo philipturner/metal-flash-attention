@@ -19,6 +19,7 @@ constant uint R [[function_constant(0)]];
 constant uint C [[function_constant(1)]];
 constant uint H [[function_constant(2)]];
 constant uint D [[function_constant(3)]];
+constant uint H_k [[function_constant(4)]];
 
 // Whether each matrix is transposed.
 constant bool Q_trans [[function_constant(10)]];
@@ -26,8 +27,8 @@ constant bool K_trans [[function_constant(11)]];
 constant bool V_trans [[function_constant(12)]];
 constant bool O_trans [[function_constant(13)]];
 constant uint Q_leading_dim = Q_trans ? R : H * D;
-constant uint K_leading_dim = K_trans ? H * D : C;
-constant uint V_leading_dim = V_trans ? C : H * D;
+constant uint K_leading_dim = K_trans ? H_k * D : C;
+constant uint V_leading_dim = V_trans ? C : H_k * D;
 constant uint O_leading_dim = O_trans ? R : H * D;
 
 // Value of `rsqrt(float(D))`.
@@ -541,7 +542,7 @@ void _attention_impl(device T *Q [[buffer(0)]],
       
       auto K_src = simdgroup_matrix_storage<T>::apply_offset(K, K_leading_dim, K_offset, K_trans);
       K_src += head_offsets[1] * (K_trans ? D : D * C);
-      K_src = apply_batch_offset(K_src, gid.z * C * H * D);
+      K_src = apply_batch_offset(K_src, gid.z * C * H_k * D);
       
       if (_fuse_async_loads) {
         uint2 V_offset(0, j_block * C_simd);
@@ -551,7 +552,7 @@ void _attention_impl(device T *Q [[buffer(0)]],
         
         auto V_src = simdgroup_matrix_storage<T>::apply_offset(V, V_leading_dim, V_offset, V_trans);
         V_src += head_offsets[2] * (V_trans ? D * C : D);
-        V_src = apply_batch_offset(V_src, gid.z * C * H * D);
+        V_src = apply_batch_offset(V_src, gid.z * C * H_k * D);
         
         simdgroup_event events[2];
         events[0].async_copy(threadgroup_block, K_block_leading_dim, K_dst_tile, K_src, K_leading_dim, K_src_tile, K_trans);
@@ -709,7 +710,7 @@ void _attention_impl(device T *Q [[buffer(0)]],
         
         auto V_src = simdgroup_matrix_storage<T>::apply_offset(V, V_leading_dim, V_offset, V_trans);
         V_src += head_offsets[2] * (V_trans ? D * C : D);
-        V_src = apply_batch_offset(V_src, gid.z * C * H * D);
+        V_src = apply_batch_offset(V_src, gid.z * C * H_k * D);
         
         simdgroup_event event;
         event.async_copy(threadgroup_block, V_block_leading_dim, dst_tile, V_src, V_leading_dim, src_tile, V_trans);
