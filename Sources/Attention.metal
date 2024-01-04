@@ -19,7 +19,8 @@ constant uint R [[function_constant(0)]];
 constant uint C [[function_constant(1)]];
 constant uint H [[function_constant(2)]];
 constant uint D [[function_constant(3)]];
-constant uint H_k [[function_constant(4)]];
+constant uint H_H_k_ratio [[function_constant(4)]];
+constant uint H_k = H / (is_function_constant_defined(H_H_k_ratio) ? H_H_k_ratio : 1);
 
 // Whether each matrix is transposed.
 constant bool Q_trans [[function_constant(10)]];
