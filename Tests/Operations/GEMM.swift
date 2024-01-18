@@ -237,7 +237,10 @@ struct MFA_GEMM: GEMM, MFA_Operation {
         UInt64(truncatingIfNeeded: byteStrideD)
       )
       let bufferLength = MemoryLayout<SIMD4<UInt64>>.size;
-      encoder.setBytes(&strideValues, length: bufferLength, index: 10)
+      withUnsafePointer(to: strideValues) { ptr in
+        let rawPtr = UnsafeRawPointer(ptr)
+        encoder.setBytes(rawPtr, length: bufferLength, index: 10)
+      }
     } else {
       assert(tensors.a.shape.count == 2)
       assert(tensors.b.shape.count == 2)
