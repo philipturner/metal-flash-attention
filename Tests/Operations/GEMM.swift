@@ -236,7 +236,7 @@ struct MFA_GEMM: GEMM, MFA_Operation {
         UInt64(truncatingIfNeeded: byteStrideC),
         UInt64(truncatingIfNeeded: byteStrideD)
       )
-      let bufferLength = MemoryLayout<SIMD4<UInt64>>.size;
+      let bufferLength = MemoryLayout<SIMD4<UInt64>>.size
       withUnsafePointer(to: strideValues) { ptr in
         let rawPtr = UnsafeRawPointer(ptr)
         encoder.setBytes(rawPtr, length: bufferLength, index: 10)
