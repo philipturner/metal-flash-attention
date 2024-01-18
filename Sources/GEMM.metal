@@ -266,7 +266,7 @@ void _gemm_impl(device T *A [[buffer(0)]],
 {
   if (batched) {
     // TODO: Re-compute every inner loop iteration for FP64 accumulate.
-    ulong3 offsets = matrix_offsets[gid.z].xyz;
+    ulong3 offsets = matrix_offsets[0].xyz * gid.z;
     A = (device T*)((device uchar*)A + offsets[0]);
     B = (device T*)((device uchar*)B + offsets[1]);
     C = (device T*)((device uchar*)C + offsets[2]);
