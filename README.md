@@ -20,6 +20,6 @@ The minimal compute cost, maximally parallel backward pass is:
 - In a second pass, use GEMM to generate `dK` and `dQ`
   - Each GEMM traverses the attention matrix along a different direction, in which it requires no synchronization between processing units
 
-Provided the head size (`D`) is 32 or greater\*, this should use less HBM bandwidth than the kernel where `dQ` is accumulated atomically. It requires the compute cost of 5 GEMMs, just like Flash2. It could also be limited to $O(processor count)$ memory instead of $O(n^2)$ memory, although doing so makes it significantly more complex to code.
+Provided the head size (`D`) is 32 or greater\*, this should use less HBM bandwidth than the kernel where `dQ` is accumulated atomically. It requires the compute cost of 5 GEMMs, just like Flash2. This variant could be limited to $O($ processor count $)$ memory instead of $O(n^2)$ memory. Doing so, without a performance regression, requires knowledge of machine-specific parameters (GPU core count, cache size, etc.). Running the algorithm in production would require more code and hardware-specific tuning.
 
 > \*On Apple silicon, where the optimal block size is 32x32 due to register pressure constraints.
