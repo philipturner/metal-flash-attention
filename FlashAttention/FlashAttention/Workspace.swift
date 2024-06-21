@@ -12,15 +12,20 @@ import QuartzCore
 /// The contents of this function have no meaning, and ideally will be blank
 /// when the 'main' branch is in a stable state. Clients can utilize this
 /// function to script tests in their fork.
-#if false
+#if true
 func executeScript() {
   print("Hello, console.")
   
   for _ in 0..<100 {
-    var randomVecFloat = SIMD3<Float>.random(in: 0..<1)
-    randomVecFloat = randomVecFloat * randomVecFloat * randomVecFloat
-    var randomInts = SIMD3<UInt32>(randomVecFloat * 1000)
-    randomInts.replace(with: .one, where: randomInts .== .zero)
+//    var randomVecFloat = SIMD3<Float>.random(in: 0..<1)
+//    randomVecFloat = randomVecFloat * randomVecFloat * randomVecFloat
+//    var randomInts = SIMD3<UInt32>(randomVecFloat * 1000)
+//    randomInts.replace(with: .one, where: randomInts .== .zero)
+    
+    let randomInts = SIMD3<UInt32>(
+      UInt32.random(in: 10..<18),
+      UInt32.random(in: 10..<18),
+      UInt32.random(in: 1000000..<1000008))
     
     // Define the problem configuration.
     let matrixDimensions = (

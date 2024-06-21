@@ -149,9 +149,6 @@ using namespace metal;
 // Dimensions of each matrix.
 // - Limitations to matrix size:
 //    - 2^32 in each dimension (M/N/K).
-//    - TODO: Test whether the maximum dimension with correct execution is
-//      actually 2^16. This will require a testing setup with non-square
-//      matrices, as 65536^3 is uncomputable.
 //    - Extending to 2^64 may require changing 'uint' to 'ulong'. There is a
 //      good chance this will significantly degrade performance, and require
 //      changing the data type of several variables that process addresses. The

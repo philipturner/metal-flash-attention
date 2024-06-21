@@ -7,47 +7,7 @@
 
 import Metal
 
-#if true
-
-// Expected performance:
-//
-// problemSize =  511 | A   B   | 1024 threads/core | 6706 GFLOPS
-// problemSize =  511 | A   B^T |  896 threads/core | 5631 GFLOPS
-// problemSize =  511 | A^T B   |  896 threads/core | 5824 GFLOPS
-// problemSize =  511 | A^T B^T | 1024 threads/core | 6991 GFLOPS
-// problemSize =  512 | A   B   | 1024 threads/core | 6842 GFLOPS
-// problemSize =  512 | A   B^T | 1024 threads/core | 6938 GFLOPS
-// problemSize =  512 | A^T B   |  896 threads/core | 5933 GFLOPS
-// problemSize =  512 | A^T B^T | 1024 threads/core | 7208 GFLOPS
-//
-// problemSize = 1488 | A   B   |  896 threads/core | 8375 GFLOPS
-// problemSize = 1488 | A   B^T | 1024 threads/core | 8685 GFLOPS
-// problemSize = 1488 | A^T B   | 1024 threads/core | 8804 GFLOPS
-// problemSize = 1488 | A^T B^T | 1024 threads/core | 9039 GFLOPS
-// problemSize = 1489 | A   B   |  768 threads/core | 8049 GFLOPS
-// problemSize = 1489 | A   B^T |  832 threads/core | 8387 GFLOPS
-// problemSize = 1489 | A^T B   |  832 threads/core | 8381 GFLOPS
-// problemSize = 1489 | A^T B^T |  832 threads/core | 8652 GFLOPS
-
-// Performance after the change:
-//
-// problemSize =  511 | A   B   | 1024 threads/core | 6784 GFLOPS
-// problemSize =  511 | A   B^T |  896 threads/core | 5651 GFLOPS
-// problemSize =  511 | A^T B   |  896 threads/core | 5818 GFLOPS
-// problemSize =  511 | A^T B^T | 1024 threads/core | 6997 GFLOPS
-// problemSize =  512 | A   B   | 1024 threads/core | 6820 GFLOPS
-// problemSize =  512 | A   B^T | 1024 threads/core | 6915 GFLOPS
-// problemSize =  512 | A^T B   |  896 threads/core | 5966 GFLOPS
-// problemSize =  512 | A^T B^T | 1024 threads/core | 7168 GFLOPS
-//
-// problemSize = 1488 | A   B   |  896 threads/core | 8369 GFLOPS
-// problemSize = 1488 | A   B^T | 1024 threads/core | 8678 GFLOPS
-// problemSize = 1488 | A^T B   | 1024 threads/core | 8808 GFLOPS
-// problemSize = 1488 | A^T B^T | 1024 threads/core | 9040 GFLOPS
-// problemSize = 1489 | A   B   |  768 threads/core | 8048 GFLOPS
-// problemSize = 1489 | A   B^T |  832 threads/core | 8391 GFLOPS
-// problemSize = 1489 | A^T B   |  832 threads/core | 8381 GFLOPS
-// problemSize = 1489 | A^T B^T |  832 threads/core | 8648 GFLOPS
+#if false
 
 func executeScript() {
   print("Hello, console.")
