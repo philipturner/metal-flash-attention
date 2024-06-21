@@ -6,27 +6,61 @@
 //
 
 import Metal
+import QuartzCore
 
 /// The repo author's own workspace for running tests and developing kernels.
 /// The contents of this function have no meaning, and ideally will be blank
 /// when the 'main' branch is in a stable state. Clients can utilize this
 /// function to script tests in their fork.
+#if false
 func executeScript() {
   print("Hello, console.")
   
-  var randomVecFloat = SIMD3<Float>.random(in: 0..<1)
-  randomVecFloat = randomVecFloat * randomVecFloat * randomVecFloat
-  var randomInts = SIMD3<UInt32>(randomVecFloat * 1000)
-  randomInts.replace(with: .one, where: randomInts .== .zero)
+  for _ in 0..<100 {
+    var randomVecFloat = SIMD3<Float>.random(in: 0..<1)
+    randomVecFloat = randomVecFloat * randomVecFloat * randomVecFloat
+    var randomInts = SIMD3<UInt32>(randomVecFloat * 1000)
+    randomInts.replace(with: .one, where: randomInts .== .zero)
+    
+    // Define the problem configuration.
+    let matrixDimensions = (
+      M: randomInts[0],
+      N: randomInts[1],
+      K: randomInts[2])
+    let transposeState = (
+      A: Bool.random(),
+      B: Bool.random())
+    
+    // Run a test.
+    var gemmDesc = GEMMDescriptor()
+    gemmDesc.matrixDimensions = matrixDimensions
+    gemmDesc.memoryPrecisions = (.FP32, .FP32, .FP32)
+    gemmDesc.transposeState = (true, true)
+    runCorrectnessTest(descriptor: gemmDesc)
+  }
+}
+
+struct MTLContext {
+  var device: MTLDevice
+  var commandQueue: MTLCommandQueue
   
-  // Define the problem configuration.
-  let matrixDimensions = (
-    M: randomInts[0],
-    N: randomInts[1],
-    K: randomInts[2])
-  let transposeState = (
-    A: Bool.random(),
-    B: Bool.random())
+  init() {
+    device = MTLCreateSystemDefaultDevice()!
+    commandQueue = device.makeCommandQueue()!
+  }
+  
+  static let global = MTLContext()
+}
+
+// Run a test with the specified configuration.
+func runCorrectnessTest(descriptor: GEMMDescriptor) {
+  print()
+  guard let matrixDimensions = descriptor.matrixDimensions,
+        let transposeState = descriptor.transposeState else {
+    fatalError("Descriptor was incomplete.")
+  }
+  
+  let checkpoint0 = CACurrentMediaTime()
   
   // Set the outputs.
   var operandA = [Float](
@@ -74,12 +108,12 @@ func executeScript() {
   let bufferB = createBuffer(operandB)
   let bufferC = createBuffer(gpuOperandC)
   
+  let checkpoint1 = CACurrentMediaTime()
+  
   // Generate the kernel.
-  var gemmDesc = GEMMDescriptor()
-  gemmDesc.matrixDimensions = matrixDimensions
-  gemmDesc.memoryPrecisions = (.FP32, .FP32, .FP32)
-  gemmDesc.transposeState = transposeState
-  let (kernel, pipeline) = retrieveGEMMKernel(descriptor: gemmDesc)
+  let (kernel, pipeline) = retrieveGEMMKernel(descriptor: descriptor)
+  
+  let checkpoint2 = CACurrentMediaTime()
   
   // Encode the GPU command.
   do {
@@ -123,6 +157,8 @@ func executeScript() {
       }
     }
   }
+  
+  let checkpoint3 = CACurrentMediaTime()
   
   // Generate the output, on the reference implementation.
   var cpuOperandC = [Float](
@@ -172,23 +208,28 @@ func executeScript() {
     }
   }
   
+  let checkpoint4 = CACurrentMediaTime()
+  
   // Choose a threshold.
   let averageMagnitude = Float(0.25) * Float(matrixDimensions.K)
   let averageDeviation = Float(0.5) * Float(matrixDimensions.K).squareRoot()
   let tolerance = max(1e-5 * averageMagnitude, 6e-7 * averageDeviation)
-  print(matrixDimensions)
-  print(1e-5 * averageMagnitude, 6e-7 * averageDeviation)
   print(maxDistance, tolerance)
-}
-
-struct MTLContext {
-  var device: MTLDevice
-  var commandQueue: MTLCommandQueue
   
-  init() {
-    device = MTLCreateSystemDefaultDevice()!
-    commandQueue = device.makeCommandQueue()!
+  let latencies = [
+    checkpoint1 - checkpoint0,
+    checkpoint2 - checkpoint1,
+    checkpoint3 - checkpoint2,
+    checkpoint4 - checkpoint3
+  ]
+  for latency in latencies {
+    let repr = String(format: "%.1f", latency * 1000)
+    print(repr, terminator: " ms | ")
   }
+  print()
   
-  static let global = MTLContext()
+  guard maxDistance < tolerance else {
+    fatalError("Failed correctness test for problem config: \(descriptor)")
+  }
 }
+#endif
