@@ -18,9 +18,9 @@ struct ContentView: View {
     .padding()
   }
   
-  // Hijack SwiftUI, so the application exits before rendering anything to
-  // the screen. This is a command-line application. It just executes within
-  // the SwiftUI run loop to be deployable on iOS.
+  /// Hijack SwiftUI, so the application exits before rendering anything to
+  /// the screen. This is a command-line application. It just executes within
+  /// the SwiftUI run loop to be deployable on iOS.
   private static func createText() -> String {
     executeScript()
     exit(0)

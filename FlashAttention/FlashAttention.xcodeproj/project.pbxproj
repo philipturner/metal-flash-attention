@@ -13,6 +13,13 @@
 		9881A9FE2C24C8240056D05C /* Preview Assets.xcassets in Resources */ = {isa = PBXBuildFile; fileRef = 9881A9FD2C24C8240056D05C /* Preview Assets.xcassets */; };
 		9881AA052C24C85E0056D05C /* Workspace.swift in Sources */ = {isa = PBXBuildFile; fileRef = 9881AA042C24C85E0056D05C /* Workspace.swift */; };
 		9881AA092C24C9610056D05C /* README.md in Resources */ = {isa = PBXBuildFile; fileRef = 9881AA082C24C9610056D05C /* README.md */; };
+		9881AA142C25AED50056D05C /* GEMMKernelDescriptor.swift in Sources */ = {isa = PBXBuildFile; fileRef = 9881AA132C25AED50056D05C /* GEMMKernelDescriptor.swift */; };
+		9881AA162C25AEF10056D05C /* GEMMOperandPrecision.swift in Sources */ = {isa = PBXBuildFile; fileRef = 9881AA152C25AEF10056D05C /* GEMMOperandPrecision.swift */; };
+		9881AA182C25B0440056D05C /* GEMMHeaders.swift in Sources */ = {isa = PBXBuildFile; fileRef = 9881AA172C25B0440056D05C /* GEMMHeaders.swift */; };
+		9881AA1A2C25B0F70056D05C /* GEMMDescriptor.swift in Sources */ = {isa = PBXBuildFile; fileRef = 9881AA192C25B0F70056D05C /* GEMMDescriptor.swift */; };
+		9881AA1C2C25B11C0056D05C /* CoreCount.swift in Sources */ = {isa = PBXBuildFile; fileRef = 9881AA1B2C25B11C0056D05C /* CoreCount.swift */; };
+		9881AA1E2C25B1ED0056D05C /* GEMMKernel.swift in Sources */ = {isa = PBXBuildFile; fileRef = 9881AA1D2C25B1ED0056D05C /* GEMMKernel.swift */; };
+		9881AA202C25B26D0056D05C /* ShaderCache.swift in Sources */ = {isa = PBXBuildFile; fileRef = 9881AA1F2C25B26D0056D05C /* ShaderCache.swift */; };
 /* End PBXBuildFile section */
 
 /* Begin PBXFileReference section */
@@ -24,6 +31,13 @@
 		9881A9FD2C24C8240056D05C /* Preview Assets.xcassets */ = {isa = PBXFileReference; lastKnownFileType = folder.assetcatalog; path = "Preview Assets.xcassets"; sourceTree = "<group>"; };
 		9881AA042C24C85E0056D05C /* Workspace.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = Workspace.swift; sourceTree = "<group>"; };
 		9881AA082C24C9610056D05C /* README.md */ = {isa = PBXFileReference; fileEncoding = 4; lastKnownFileType = net.daringfireball.markdown; name = README.md; path = ../README.md; sourceTree = "<group>"; };
+		9881AA132C25AED50056D05C /* GEMMKernelDescriptor.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = GEMMKernelDescriptor.swift; sourceTree = "<group>"; };
+		9881AA152C25AEF10056D05C /* GEMMOperandPrecision.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = GEMMOperandPrecision.swift; sourceTree = "<group>"; };
+		9881AA172C25B0440056D05C /* GEMMHeaders.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = GEMMHeaders.swift; sourceTree = "<group>"; };
+		9881AA192C25B0F70056D05C /* GEMMDescriptor.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = GEMMDescriptor.swift; sourceTree = "<group>"; };
+		9881AA1B2C25B11C0056D05C /* CoreCount.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = CoreCount.swift; sourceTree = "<group>"; };
+		9881AA1D2C25B1ED0056D05C /* GEMMKernel.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = GEMMKernel.swift; sourceTree = "<group>"; };
+		9881AA1F2C25B26D0056D05C /* ShaderCache.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = ShaderCache.swift; sourceTree = "<group>"; };
 /* End PBXFileReference section */
 
 /* Begin PBXFrameworksBuildPhase section */
@@ -57,6 +71,7 @@
 		9881A9F42C24C8230056D05C /* FlashAttention */ = {
 			isa = PBXGroup;
 			children = (
+				9881AA122C25AEA80056D05C /* GEMM */,
 				9881A9F72C24C8230056D05C /* ContentView.swift */,
 				9881A9F52C24C8230056D05C /* FlashAttentionApp.swift */,
 				9881AA042C24C85E0056D05C /* Workspace.swift */,
@@ -73,6 +88,20 @@
 				9881A9FD2C24C8240056D05C /* Preview Assets.xcassets */,
 			);
 			path = "Preview Content";
+			sourceTree = "<group>";
+		};
+		9881AA122C25AEA80056D05C /* GEMM */ = {
+			isa = PBXGroup;
+			children = (
+				9881AA1B2C25B11C0056D05C /* CoreCount.swift */,
+				9881AA192C25B0F70056D05C /* GEMMDescriptor.swift */,
+				9881AA172C25B0440056D05C /* GEMMHeaders.swift */,
+				9881AA1D2C25B1ED0056D05C /* GEMMKernel.swift */,
+				9881AA132C25AED50056D05C /* GEMMKernelDescriptor.swift */,
+				9881AA152C25AEF10056D05C /* GEMMOperandPrecision.swift */,
+				9881AA1F2C25B26D0056D05C /* ShaderCache.swift */,
+			);
+			path = GEMM;
 			sourceTree = "<group>";
 		};
 /* End PBXGroup section */
@@ -146,9 +175,16 @@
 			isa = PBXSourcesBuildPhase;
 			buildActionMask = 2147483647;
 			files = (
+				9881AA182C25B0440056D05C /* GEMMHeaders.swift in Sources */,
+				9881AA202C25B26D0056D05C /* ShaderCache.swift in Sources */,
+				9881AA1A2C25B0F70056D05C /* GEMMDescriptor.swift in Sources */,
 				9881AA052C24C85E0056D05C /* Workspace.swift in Sources */,
 				9881A9F82C24C8230056D05C /* ContentView.swift in Sources */,
+				9881AA1C2C25B11C0056D05C /* CoreCount.swift in Sources */,
 				9881A9F62C24C8230056D05C /* FlashAttentionApp.swift in Sources */,
+				9881AA1E2C25B1ED0056D05C /* GEMMKernel.swift in Sources */,
+				9881AA142C25AED50056D05C /* GEMMKernelDescriptor.swift in Sources */,
+				9881AA162C25AEF10056D05C /* GEMMOperandPrecision.swift in Sources */,
 			);
 			runOnlyForDeploymentPostprocessing = 0;
 		};
@@ -212,7 +248,7 @@
 				MTL_FAST_MATH = YES;
 				ONLY_ACTIVE_ARCH = YES;
 				SWIFT_ACTIVE_COMPILATION_CONDITIONS = "DEBUG $(inherited)";
-				SWIFT_OPTIMIZATION_LEVEL = "-Onone";
+				SWIFT_OPTIMIZATION_LEVEL = "-Ounchecked";
 			};
 			name = Debug;
 		};
@@ -265,7 +301,8 @@
 				LOCALIZATION_PREFERS_STRING_CATALOGS = YES;
 				MTL_ENABLE_DEBUG_INFO = NO;
 				MTL_FAST_MATH = YES;
-				SWIFT_COMPILATION_MODE = wholemodule;
+				SWIFT_COMPILATION_MODE = singlefile;
+				SWIFT_OPTIMIZATION_LEVEL = "-Ounchecked";
 			};
 			name = Release;
 		};
