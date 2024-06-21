@@ -100,6 +100,8 @@ func retrieveGEMMKernel(
     let kernel = createKernel(descriptor: kernelDesc)
     let pipeline = createPipeline(library: kernel.library)
     output = (kernel, pipeline)
+    
+    GEMMKernel.libraryCache[kernelDesc] = kernel
   } else {
     
     var candidates: [
@@ -146,6 +148,8 @@ func retrieveGEMMKernel(
       let kernel = createKernel(descriptor: newKernelDesc)
       let pipeline = createPipeline(library: kernel.library)
       candidates.append((newKernelDesc, kernel, pipeline))
+      
+      GEMMKernel.libraryCache[newKernelDesc] = kernel
     }
     
     // Find the maximum occupancy.
@@ -165,7 +169,6 @@ func retrieveGEMMKernel(
   }
   
   // Save the output to the cache.
-  GEMMKernel.libraryCache[kernelDesc] = output.0
   GEMMKernel.pipelineCache[gemmDesc] = output
   return output
 }

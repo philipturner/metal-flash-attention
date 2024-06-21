@@ -20,6 +20,7 @@
 		9881AA1C2C25B11C0056D05C /* CoreCount.swift in Sources */ = {isa = PBXBuildFile; fileRef = 9881AA1B2C25B11C0056D05C /* CoreCount.swift */; };
 		9881AA1E2C25B1ED0056D05C /* GEMMKernel.swift in Sources */ = {isa = PBXBuildFile; fileRef = 9881AA1D2C25B1ED0056D05C /* GEMMKernel.swift */; };
 		9881AA202C25B26D0056D05C /* ShaderCache.swift in Sources */ = {isa = PBXBuildFile; fileRef = 9881AA1F2C25B26D0056D05C /* ShaderCache.swift */; };
+		9881AA232C25C22B0056D05C /* LaplacianTest.swift in Sources */ = {isa = PBXBuildFile; fileRef = 9881AA222C25C22B0056D05C /* LaplacianTest.swift */; };
 /* End PBXBuildFile section */
 
 /* Begin PBXFileReference section */
@@ -38,6 +39,7 @@
 		9881AA1B2C25B11C0056D05C /* CoreCount.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = CoreCount.swift; sourceTree = "<group>"; };
 		9881AA1D2C25B1ED0056D05C /* GEMMKernel.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = GEMMKernel.swift; sourceTree = "<group>"; };
 		9881AA1F2C25B26D0056D05C /* ShaderCache.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = ShaderCache.swift; sourceTree = "<group>"; };
+		9881AA222C25C22B0056D05C /* LaplacianTest.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = LaplacianTest.swift; sourceTree = "<group>"; };
 /* End PBXFileReference section */
 
 /* Begin PBXFrameworksBuildPhase section */
@@ -72,6 +74,7 @@
 			isa = PBXGroup;
 			children = (
 				9881AA122C25AEA80056D05C /* GEMM */,
+				9881AA212C25C21F0056D05C /* Tests */,
 				9881A9F72C24C8230056D05C /* ContentView.swift */,
 				9881A9F52C24C8230056D05C /* FlashAttentionApp.swift */,
 				9881AA042C24C85E0056D05C /* Workspace.swift */,
@@ -102,6 +105,14 @@
 				9881AA1F2C25B26D0056D05C /* ShaderCache.swift */,
 			);
 			path = GEMM;
+			sourceTree = "<group>";
+		};
+		9881AA212C25C21F0056D05C /* Tests */ = {
+			isa = PBXGroup;
+			children = (
+				9881AA222C25C22B0056D05C /* LaplacianTest.swift */,
+			);
+			path = Tests;
 			sourceTree = "<group>";
 		};
 /* End PBXGroup section */
@@ -180,6 +191,7 @@
 				9881AA1A2C25B0F70056D05C /* GEMMDescriptor.swift in Sources */,
 				9881AA052C24C85E0056D05C /* Workspace.swift in Sources */,
 				9881A9F82C24C8230056D05C /* ContentView.swift in Sources */,
+				9881AA232C25C22B0056D05C /* LaplacianTest.swift in Sources */,
 				9881AA1C2C25B11C0056D05C /* CoreCount.swift in Sources */,
 				9881A9F62C24C8230056D05C /* FlashAttentionApp.swift in Sources */,
 				9881AA1E2C25B1ED0056D05C /* GEMMKernel.swift in Sources */,
