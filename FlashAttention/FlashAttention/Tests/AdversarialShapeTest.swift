@@ -8,7 +8,7 @@
 import Metal
 import QuartzCore
 
-#if true
+#if false
 func executeScript() {
   print("Hello, console.")
   
@@ -26,7 +26,7 @@ func executeScript() {
       case 1:
         return .FP16
       case 2:
-        return .FP32
+        return .BF16
       default:
         fatalError("")
       }
@@ -37,19 +37,19 @@ func executeScript() {
       M: randomInts[0],
       N: randomInts[1],
       K: randomInts[2])
+    let memoryPrecisions = (
+      A: randomPrecision(),
+      B: randomPrecision(),
+      C: randomPrecision())
     let transposeState = (
       A: Bool.random(),
       B: Bool.random())
-    let memoryPrecisions = (
-      A: randomPrecision(),
-      B: GEMMOperandPrecision.FP32,
-      C: GEMMOperandPrecision.FP32)
     
     // Run a test.
     var gemmDesc = GEMMDescriptor()
-    gemmDesc.matrixDimensions = (8, 8, 10_000)
-    gemmDesc.memoryPrecisions = (.FP16, .FP16, .FP16)
-    gemmDesc.transposeState = (false, false)
+    gemmDesc.matrixDimensions = matrixDimensions
+    gemmDesc.memoryPrecisions = memoryPrecisions
+    gemmDesc.transposeState = transposeState
     runCorrectnessTest(descriptor: gemmDesc)
   }
 }
@@ -68,7 +68,6 @@ struct MTLContext {
 
 // Run a test with the specified configuration.
 func runCorrectnessTest(descriptor: GEMMDescriptor) {
-  print()
   guard let matrixDimensions = descriptor.matrixDimensions,
         let memoryPrecisions = descriptor.memoryPrecisions,
         let transposeState = descriptor.transposeState else {
@@ -84,13 +83,17 @@ func runCorrectnessTest(descriptor: GEMMDescriptor) {
   var operandB = [Float](
     repeating: .zero,
     count: Int(matrixDimensions.K * matrixDimensions.N))
+  
+  // Normalize so that every dot product approaches 1.
+  let normalizationFactor = 1 / Float(matrixDimensions.K).squareRoot()
+  
   for elementID in operandA.indices {
     let randomNumber = Float.random(in: 0..<1)
-    operandA[elementID] = randomNumber
+    operandA[elementID] = randomNumber * normalizationFactor
   }
   for elementID in operandB.indices {
     let randomNumber = Float.random(in: 0..<1)
-    operandB[elementID] = randomNumber
+    operandB[elementID] = randomNumber * normalizationFactor
   }
   
   func createBuffer(
@@ -269,8 +272,6 @@ func runCorrectnessTest(descriptor: GEMMDescriptor) {
   let tolerance = createTolerance(
     memoryPrecisions: memoryPrecisions,
     accumulationDimension: matrixDimensions.K)
-  print(maxDistance, tolerance)
-  print(totalDistance, tolerance * Float(matrixDimensions.M * matrixDimensions.N))
   
   let latencies = [
     checkpoint1 - checkpoint0,
@@ -285,7 +286,7 @@ func runCorrectnessTest(descriptor: GEMMDescriptor) {
   print()
   
   guard maxDistance < tolerance else {
-    fatalError("Failed correctness test for problem config: \(descriptor)")
+    fatalError("Failed correctness test for problem config: \(descriptor)\n\(maxDistance) \(tolerance)")
   }
 }
 
@@ -298,37 +299,35 @@ fileprivate func createTolerance(
 ) -> Float {
   let precisions = [
     memoryPrecisions.A, memoryPrecisions.B, memoryPrecisions.C]
+  let randomNoise = Float(accumulationDimension).squareRoot()
   
-  // O(n) truncation error of the inputs
-  // - Dominates for large K
-  let averageMagnitude = Float(0.25) * Float(accumulationDimension)
-  var magnitudeFactor: Float = 1e-6
+  // FP32 tolerance.
+  var tolerance: Float = 3e-7
+  
+  // FP16 tolerance.
   if memoryPrecisions.A == .FP16 ||
       memoryPrecisions.B == .FP16 {
-    magnitudeFactor = max(magnitudeFactor, 1e-4)
+    tolerance = max(tolerance, 1e-5)
+    tolerance = max(tolerance, 1e-3 / randomNoise)
   }
   if memoryPrecisions.C == .FP16 {
-    magnitudeFactor = max(magnitudeFactor, 1e-3)
+    tolerance = max(tolerance, 3e-4)
   }
   if precisions.allSatisfy({ $0 == .FP16 }) {
-    magnitudeFactor = max(magnitudeFactor, 1e-1)
+    tolerance = max(tolerance, 3e-3)
+    tolerance = max(tolerance, 1e-5 * Float(accumulationDimension))
   }
   
-  // O(sqrt(n)) accumulated rounding error
-  // - Dominates for small K
-  let averageDeviation = Float(0.5) * Float(accumulationDimension).squareRoot()
-  var deviationFactor: Float = 0
-  if memoryPrecisions.A == .FP16 ||
-      memoryPrecisions.B == .FP16 {
-    deviationFactor = max(deviationFactor, 1e-3)
-  }
-  if memoryPrecisions.C == .FP16 {
-    deviationFactor = max(deviationFactor, 3e-3)
+  // BF16 tolerance.
+  if precisions.contains(where: { $0 == .BF16 }) {
+    if accumulationDimension < 1000 {
+      tolerance = max(tolerance, 2e-2)
+    } else {
+      tolerance = max(tolerance, 5e-3)
+    }
   }
   
-  return max(
-    magnitudeFactor * averageMagnitude,
-    deviationFactor * averageDeviation)
+  return tolerance
 }
 #endif
 

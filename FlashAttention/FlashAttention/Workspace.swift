@@ -12,3 +12,6 @@ import QuartzCore
 /// The contents of this function have no meaning, and ideally will be blank
 /// when the 'main' branch is in a stable state. Clients can utilize this
 /// function to script tests in their fork.
+func executeScript() {
+  print("Hello, console.") 
+}

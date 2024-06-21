@@ -8,7 +8,6 @@
 import Metal
 
 #if false
-
 func executeScript() {
   print("Hello, console.")
   
