@@ -29,6 +29,26 @@ import Metal
 // problemSize = 1489 | A^T B   |  832 threads/core | 8381 GFLOPS
 // problemSize = 1489 | A^T B^T |  832 threads/core | 8652 GFLOPS
 
+// Performance after the change:
+//
+// problemSize =  511 | A   B   | 1024 threads/core | 6784 GFLOPS
+// problemSize =  511 | A   B^T |  896 threads/core | 5651 GFLOPS
+// problemSize =  511 | A^T B   |  896 threads/core | 5818 GFLOPS
+// problemSize =  511 | A^T B^T | 1024 threads/core | 6997 GFLOPS
+// problemSize =  512 | A   B   | 1024 threads/core | 6820 GFLOPS
+// problemSize =  512 | A   B^T | 1024 threads/core | 6915 GFLOPS
+// problemSize =  512 | A^T B   |  896 threads/core | 5966 GFLOPS
+// problemSize =  512 | A^T B^T | 1024 threads/core | 7168 GFLOPS
+//
+// problemSize = 1488 | A   B   |  896 threads/core | 8369 GFLOPS
+// problemSize = 1488 | A   B^T | 1024 threads/core | 8678 GFLOPS
+// problemSize = 1488 | A^T B   | 1024 threads/core | 8808 GFLOPS
+// problemSize = 1488 | A^T B^T | 1024 threads/core | 9040 GFLOPS
+// problemSize = 1489 | A   B   |  768 threads/core | 8048 GFLOPS
+// problemSize = 1489 | A   B^T |  832 threads/core | 8391 GFLOPS
+// problemSize = 1489 | A^T B   |  832 threads/core | 8381 GFLOPS
+// problemSize = 1489 | A^T B^T |  832 threads/core | 8648 GFLOPS
+
 func executeScript() {
   print("Hello, console.")
   
@@ -136,7 +156,7 @@ func executeScript() {
     // Working on investigating BF16 performance with large matrices.
     print()
     print("Performance tests:")
-    for problemSize in 1488...1489 {
+    for problemSize in 511...512 {
       for transposeState in transposeStates {
         var testDescriptor = TestDescriptor()
         testDescriptor.precision = .BF16

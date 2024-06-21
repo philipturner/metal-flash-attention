@@ -40,9 +40,6 @@ func retrieveGEMMKernel(
 ) -> (GEMMKernel, MTLComputePipelineState) {
   // Perform the early return before anything with high latency.
   if let value = GEMMKernel.pipelineCache[gemmDesc] {
-    // These should be very rare, as I typically profile each problem
-    // configuration only once.
-    print("pipeline cache hit")
     return value
   }
   func createKernel(descriptor: GEMMKernelDescriptor) -> GEMMKernel {
@@ -50,12 +47,6 @@ func retrieveGEMMKernel(
       fatalError("Prefer async store was not set.")
     }
     if let previous = GEMMKernel.libraryCache[descriptor] {
-      // This path is rarely triggered, because the current implementation
-      // of code generation is inefficient. It requires information about
-      // problemSize / blockSize up front, and almost every tested matrix
-      // has a different divisibility. Real-world uses cases will generally
-      // all be divisible by 8 or 16.
-      print("library cache hit")
       return previous
     } else {
       return GEMMKernel(descriptor: descriptor)
@@ -129,21 +120,10 @@ func retrieveGEMMKernel(
         fatalError("This should never happen.")
       }
       
-      // Erase the data previously in the descriptor. It's now contaminated
-      // with integer divisions from a different block size. Instead, start
-      // with a fresh descriptor.
-      var newKernelDesc = GEMMKernelDescriptor()
-      newKernelDesc.device = kernelDesc.device
-      newKernelDesc.memoryPrecisions = kernelDesc.memoryPrecisions
-      newKernelDesc.preferAsyncLoad = kernelDesc.preferAsyncLoad
-      newKernelDesc.registerPrecisions = kernelDesc.registerPrecisions
-      newKernelDesc.splits = kernelDesc.splits
-      newKernelDesc.transposeState = kernelDesc.transposeState
-      
       // Set the data that's unique to this variant.
+      var newKernelDesc = kernelDesc
       newKernelDesc.blockDimensions = blockDimensions
       newKernelDesc.preferAsyncStore = preferAsyncStore
-      newKernelDesc.setMatrixDimensionsProperties(gemmDesc.matrixDimensions!)
       
       let kernel = createKernel(descriptor: newKernelDesc)
       let pipeline = createPipeline(library: kernel.library)

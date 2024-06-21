@@ -35,7 +35,7 @@ func executeScript() {
     var gemmDesc = GEMMDescriptor()
     gemmDesc.matrixDimensions = matrixDimensions
     gemmDesc.memoryPrecisions = (.FP32, .FP32, .FP32)
-    gemmDesc.transposeState = (true, true)
+    gemmDesc.transposeState = transposeState
     runCorrectnessTest(descriptor: gemmDesc)
   }
 }

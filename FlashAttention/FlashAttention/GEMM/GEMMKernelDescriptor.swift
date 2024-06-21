@@ -115,32 +115,6 @@ struct GEMMKernelDescriptor {
   /// ```
   var blockDimensions: (M: UInt16, N: UInt16, K: UInt16)?
   
-  // The next two options could technically be isolated from the
-  // GEMMKernelDescriptor stage (its philosophy is that it should know as
-  // little about the actual problem config as possible). That would improve
-  // the cache hit rate.
-  //
-  // I have done very little testing of how evaluating M_shift, etc. at compile
-  // time affects performance. From my one (failed) attempt, it **does** affect
-  // performance, and not in a good way.
-  //
-  // **Until there is solid evidence of no regression on both M1 and M3,
-  // evaluate as little as possible at compile time.** This means we will incur
-  // the full latency of compiling a new `MTLLibrary` object for slightly
-  // different matrices (e.g. 128x128, 129x129, 130x130).
-  
-  /// Whether all three matrix dimensions are greater than or equal to their
-  /// respective block dimension.
-  ///
-  /// If set to `true`, the kernel will be generated with several optimizations.
-  /// These optimizations cannot be applied safely when the matrix is smaller
-  /// than the block size.
-  var matrixDimensionsExceedBlockDimensions: Bool?
-  
-  /// The remainder of the integer division:
-  /// (M / M\_block, N / N\_block, K / K\_block).
-  var matrixDimensionsRemainder: (M: UInt16, N: UInt16, K: UInt16)?
-  
   var memoryPrecisions: (
     A: GEMMOperandPrecision, B: GEMMOperandPrecision, C: GEMMOperandPrecision)?
   
@@ -213,8 +187,6 @@ struct GEMMKernelDescriptor {
 
 struct GEMMKernelKey: Equatable, Hashable {
   var blockDimensions: SIMD3<UInt16>
-  var matrixDimensionsExceedBlockDimensions: UInt8
-  var matrixDimensionsRemainder: SIMD3<UInt16>
   var memoryPrecisions: SIMD3<UInt16>
   var paddedBlockDimensions: SIMD8<UInt16>
   var preferAsyncLoad: UInt8
@@ -225,10 +197,6 @@ struct GEMMKernelKey: Equatable, Hashable {
   
   init(copying source: GEMMKernelDescriptor) {
     blockDimensions = Self.createBlockDimensions(source.blockDimensions)
-    matrixDimensionsExceedBlockDimensions = Self.createBoolean(
-      source.matrixDimensionsExceedBlockDimensions)
-    matrixDimensionsRemainder = Self.createBlockDimensions(
-      source.matrixDimensionsRemainder)
     memoryPrecisions = Self.createPrecisions(source.memoryPrecisions)
     
     paddedBlockDimensions = SIMD8(repeating: .max)

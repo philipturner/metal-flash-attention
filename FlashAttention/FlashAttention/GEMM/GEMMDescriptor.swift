@@ -218,27 +218,6 @@ extension GEMMKernelDescriptor {
       coreCount: coreCount,
       matrixDimensions: matrixDimensions,
       batchDimension: descriptor.batchDimension)
-    setMatrixDimensionsProperties(matrixDimensions)
-  }
-  
-  mutating func setMatrixDimensionsProperties(
-    _ matrixDimensions: (M: UInt32, N: UInt32, K: UInt32)
-  ) {
-    guard let blockDimensions else {
-      fatalError("Block dimensions were not set.")
-    }
-    matrixDimensionsRemainder = (
-      UInt16(matrixDimensions.M % UInt32(blockDimensions.M)),
-      UInt16(matrixDimensions.N % UInt32(blockDimensions.N)),
-      UInt16(matrixDimensions.K % UInt32(blockDimensions.K))
-    )
-    if matrixDimensions.M >= blockDimensions.M,
-       matrixDimensions.N >= blockDimensions.N,
-       matrixDimensions.K >= blockDimensions.K {
-      matrixDimensionsExceedBlockDimensions = true
-    } else {
-      matrixDimensionsExceedBlockDimensions = false
-    }
   }
   
   // Implementation of the block size selection heuristic.

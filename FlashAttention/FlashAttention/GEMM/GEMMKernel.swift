@@ -25,10 +25,6 @@ struct GEMMKernel {
   init(descriptor: GEMMKernelDescriptor) {
     guard let blockDimensions = descriptor.blockDimensions,
           let device = descriptor.device,
-          let matrixDimensionsExceedBlockDimensions =
-            descriptor.matrixDimensionsExceedBlockDimensions,
-          let matrixDimensionsRemainder =
-            descriptor.matrixDimensionsRemainder,
           let memoryPrecisions = descriptor.memoryPrecisions,
           let preferAsyncStore = descriptor.preferAsyncStore,
           let registerPrecisions = descriptor.registerPrecisions,
@@ -111,22 +107,6 @@ using namespace metal;
     let registerM: UInt16 = blockDimensions.M / splits.M
     let registerN: UInt16 = blockDimensions.N / splits.N
     
-    // Find the number of elements in the final block. If the matrix
-    // dimensions are perfectly divisibly by block dimensions, we don't want
-    // this value to be zero. The final block is a full block.
-    var remainderM = matrixDimensionsRemainder.M % registerM
-    var remainderN = matrixDimensionsRemainder.N % registerN
-    var remainderK = matrixDimensionsRemainder.K
-    if remainderM == 0 {
-      remainderM = registerM
-    }
-    if remainderN == 0 {
-      remainderN = registerN
-    }
-    if remainderK == 0 {
-      remainderK = blockDimensions.K
-    }
-    
     // Retrieve the "padded" block dimensions, otherwise compute analytically
     // from the true block dimensions.
     var paddedBlockDimensionsA: (M: UInt16, K: UInt16)
@@ -141,17 +121,6 @@ using namespace metal;
       paddedBlockDimensionsB = (blockDimensions.K, blockDimensions.N)
       paddedBlockDimensionsC = (blockDimensions.M, blockDimensions.N)
     }
-    
-    // Pad the reads and writes from device memory. The following constants
-    // describe modifications to the block size ('K_group') at the edge of an
-    // unaligned matrix.
-    //
-    // The remaining block dimensions (M/N) are not zero-padded. They simply read
-    // from garbage data in threadgroup memory. We only need to verify that there
-    // are no out-of-bounds accesses (e.g. reading past the edge of the matrix in
-    // device memory, which causes IOCommandBuffer errors). I think MPS pads M/N
-    // with zero, harms performance for unaligned matrix sizes.
-    let paddedRemainderK = (remainderK + 7) / 8 * 8
     
     // Determine the block dimensions from the transpose state.
     var leadingDimensionA: String
@@ -171,14 +140,6 @@ using namespace metal;
     } else {
       leadingDimensionB = "N"
       leadingBlockDimensionB = paddedBlockDimensionsB.N
-    }
-    
-    // Shift the base address of blocks on the matrix edge.
-    var shiftM: UInt16 = .zero
-    var shiftN: UInt16 = .zero
-    if matrixDimensionsExceedBlockDimensions {
-      shiftM = registerM - remainderM
-      shiftN = registerN - remainderN
     }
     
     // Add the function constants.
@@ -229,8 +190,23 @@ constant ushort N_group = \(blockDimensions.N);
 constant ushort K_group = \(blockDimensions.K);
 
 // Thresholds that mark the matrix edge.
-constant uint M_edge = M - \(matrixDimensionsRemainder.M);
-constant uint N_edge = N - \(matrixDimensionsRemainder.N);
+constant uint M_edge = M - (M % M_group);
+constant uint N_edge = N - (N % N_group);
+
+// Find the number of elements in the final block. If the matrix
+// dimensions are perfectly divisibly by block dimensions, we don't want
+// this value to be zero. The final block is a full block.
+constant ushort M_remainder = (M % \(registerM) == 0)
+  ? \(registerM) : M % \(registerM);
+constant ushort N_remainder = (N % \(registerN) == 0)
+  ? \(registerN) : N % \(registerN);
+constant ushort K_remainder = (K % K_group == 0)
+  ? K_group : K % K_group;
+constant ushort K_remainder_padded = (K_remainder + 7) / 8 * 8;
+
+// Shift the final block, so it doesn't access out-of-bounds memory.
+constant ushort M_shift = (M < M_group) ? 0 : \(registerM) - M_remainder;
+constant ushort N_shift = (N < N_group) ? 0 : \(registerN) - N_remainder;
 """
     }
     
@@ -469,11 +445,11 @@ kernel void gemm(device \(memoryNameA) *A [[buffer(0)]],
                           sid.y * \(registerM) + morton_offset.y);
   
   // Shift the matrix block within bounds, if possible.
-  if (\(shiftM != 0) && (gid.y * M_group >= M_edge)) {
-    M_offset -= \(shiftM);
+  if ((M_shift != 0) && (gid.y * M_group >= M_edge)) {
+    M_offset -= M_shift;
   }
-  if (\(shiftN != 0) && (gid.x * N_group >= N_edge)) {
-    N_offset -= \(shiftN);
+  if ((N_shift != 0) && (gid.x * N_group >= N_edge)) {
+    N_offset -= N_shift;
   }
 
 """
@@ -511,9 +487,9 @@ kernel void gemm(device \(memoryNameA) *A [[buffer(0)]],
       if descriptor.preferAsyncLoad {
         asyncIterationsStart = "0"
       } else {
-        asyncIterationsStart = "(K - \(matrixDimensionsRemainder.K))"
+        asyncIterationsStart = "(K - (K % K_group))"
       }
-      let paddedCeilingK = "(K + \(paddedRemainderK) - \(remainderK))"
+      let paddedCeilingK = "(K + K_remainder_padded - K_remainder)"
       
       source += """
 
@@ -575,7 +551,7 @@ kernel void gemm(device \(memoryNameA) *A [[buffer(0)]],
     simdgroup_matrix_storage<\(registerNameA)> A_sram[\(registerM / 8) * (K_group / 8)];
     simdgroup_matrix_storage<\(registerNameB)> B_sram[(K_group / 8) * \(registerN / 8)];
 #pragma clang loop unroll(full)
-    for (ushort k = 0; k < \(paddedRemainderK); k += 8) {
+    for (ushort k = 0; k < K_remainder_padded; k += 8) {
       multiply_accumulate(A_block_src, B_block_src,
                           A_sram, B_sram, C_sram, k);
     }
@@ -584,7 +560,7 @@ kernel void gemm(device \(memoryNameA) *A [[buffer(0)]],
     if (k + K_group < K) {
       // If so, we haven't reached the edge of either input matrix yet.
 #pragma clang loop unroll(full)
-      for (ushort k = \(paddedRemainderK); k < K_group; k += 8) {
+      for (ushort k = K_remainder_padded; k < K_group; k += 8) {
         multiply_accumulate(A_block_src, B_block_src,
                             A_sram, B_sram, C_sram, k);
       }
@@ -605,9 +581,16 @@ kernel void gemm(device \(memoryNameA) *A [[buffer(0)]],
         storeFunctionC = "store"
       }
       
-      if matrixDimensionsExceedBlockDimensions && !preferAsyncStore {
-        source += """
+      var condition: String
+      if preferAsyncStore {
+        condition = "false"
+      } else {
+        condition = "(M >= M_group) && (N >= N_group)"
+      }
+      
+      source += """
 
+if (\(condition)) {
   // Fast path for matrices that qualify.
   uint2 C_offset(N_offset + offset_in_group.x,
                  M_offset + offset_in_group.y);
@@ -624,11 +607,7 @@ kernel void gemm(device \(memoryNameA) *A [[buffer(0)]],
       C->\(storeFunctionC)(C_dst, N, origin);
     }
   }
-
-"""
-      } else {
-        source += """
-
+} else {
   // Slow path for when memory must be handled more carefully.
   auto C_block = (threadgroup \(memoryNameC)*)(threadgroup_block);
   auto C_block_dst = simdgroup_matrix_storage<\(memoryNameC)>::apply_offset(
@@ -657,22 +636,23 @@ kernel void gemm(device \(memoryNameA) *A [[buffer(0)]],
     
     // If we shift successfully, the garbage zone moves from the bottom right
     // to the top left.
-    ushort2 C_block_shift(0, 0);
-    if (\(shiftM != 0) && (C_offset.y >= M_edge)) {
-      C_block_shift.y = \(shiftM);
+    if ((M_shift != 0) || (N_shift != 0)) {
+      ushort2 C_block_shift(0, 0);
+      if ((M_shift != 0) && (C_offset.y >= M_edge)) {
+        C_block_shift.y = M_shift;
+      }
+      if ((N_shift != 0) && (C_offset.x >= N_edge)) {
+        C_block_shift.x = N_shift;
+      }
+      C_block = simdgroup_matrix_storage<\(memoryNameC)>::apply_offset(
+        C_block, N_group, C_block_shift);
     }
-    if (\(shiftN != 0) && (C_offset.x >= N_edge)) {
-      C_block_shift.x = \(shiftN);
-    }
-    C_block = simdgroup_matrix_storage<\(memoryNameC)>::apply_offset(
-      C_block, N_group, C_block_shift);
     
     simdgroup_event event;
     event.async_copy(C_dst, N, C_tile, C_block, N_group, C_tile);
   }
-
+}
 """
-      }
     }
     
     // Add the final closing brace of the Metal function.
