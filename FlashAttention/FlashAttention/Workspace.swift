@@ -60,4 +60,37 @@ func executeScript() {
   // - ∂Φ/∂X = ΔΦ/ΔX
   // - ΔΦ/ΔX = (Φ(+0.001) - Φ(-0.001)) / (X + 0.001 - (X - 0.001))
   // - ΔΦ/ΔX = (Φ(+0.001) - Φ(-0.001)) / 0.002
+  
+  // Forward attention layer:
+  // - Randomly initialize Q, K, V ∈ R^{NxD}
+  //   - Batch the random initialization of C, to avoid an extra call to the
+  //     Box-Muller transform.
+  // - S = QK^T
+  // - P = softmax(S)
+  // - O = PV
+  
+  // TODO: Create single-core, scalar CPU code that randomly initializes the
+  // input matrices. Then, it multiplies the relevant matrices and performs a
+  // softmax operation. To enable finite differencing, the code should work in
+  // FP32 (no 16-bit types).
+  
+  let N: Int = 10
+  let D: Int = 3
+  
+  var Q = [Float](repeating: .zero, count: N * D)
+  var K = [Float](repeating: .zero, count: N * D)
+  var V = [Float](repeating: .zero, count: N * D)
+  var C = [Float](repeating: .zero, count: N * D)
+  
+  func boxMullerTransform() -> SIMD2<Float> {
+    let randomUniform = SIMD2<Float>.random(in: 0..<1)
+    fatalError("Not implemented.")
+  }
+  
+  for n in 0..<N {
+    for d in 0..<D {
+      let matrixAddress = n * D + d
+      
+    }
+  }
 }
