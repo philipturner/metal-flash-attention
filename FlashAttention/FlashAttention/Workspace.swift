@@ -203,4 +203,24 @@ func executeScript() {
   print()
   print("O^T:")
   printMatrix(O)
+  
+  print()
+  print("C^T:")
+  printMatrix(C)
+  
+  // Loss function layer:
+  // - Φ = Σ_n Σ_d C[n][d] * O[n][d]
+  var Φ: Float = .zero
+  for n in 0..<1 {
+    for d in 0..<D {
+      let address = n * D + d
+      Φ += O[address] * C[address]
+    }
+  }
+  print()
+  print("Φ:", Φ)
+  
+  // TODO: Wrap the above code in a function, which accepts Q/K/V/O as
+  // (descriptor) arguments. Use it as a primitive for finite differencing.
+  // Show the limit of the derivative for each variable as h approaches 0.
 }
