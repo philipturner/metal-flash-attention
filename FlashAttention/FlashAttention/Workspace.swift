@@ -61,23 +61,12 @@ func executeScript() {
   // - ∂Φ/∂X = ΔΦ/ΔX
   // - ΔΦ/ΔX = (Φ(+0.001) - Φ(-0.001)) / (X + 0.001 - (X - 0.001))
   // - ΔΦ/ΔX = (Φ(+0.001) - Φ(-0.001)) / 0.002
+   
+  // Define the problem dimensions.
+  let N: Int = 10
+  let D: Int = 3
   
-  // Forward attention layer:
-  // - Randomly initialize Q, K, V ∈ R^{NxD}
-  //   - Batch the random initialization of C with Q/K/V. We will use C in the
-  //     next layer.
-  // - S = QK^T
-  // - P = softmax(S)
-  // - O = PV
-  
-  // TODO: Create single-core, scalar CPU code that randomly initializes the
-  // input matrices. Then, it multiplies the relevant matrices and performs a
-  // softmax operation. To enable finite differencing, the code should work in
-  // FP32 (no 16-bit types).
-  
-  let N: Int = 128
-  let D: Int = 16
-  
+  // Randomly initialize Q, K, V, C ∈ R^{NxD}
   var Q = [Float](repeating: .zero, count: N * D)
   var K = [Float](repeating: .zero, count: N * D)
   var V = [Float](repeating: .zero, count: N * D)
@@ -111,54 +100,107 @@ func executeScript() {
     }
   }
   
-  // Generate a histogram from all the values in Q/K/V/C. Confirm that they
-  // match the bell curve.
-  do {
-    var histogram = [Int](repeating: .zero, count: 200)
-    let population = Q + K + V + C
-    for sample in population {
-      var output = sample
-      
-      // Shift the average from x = 0 to x = 10.
-      output += 10
-      
-      // Scale from 8 < x < 12 to 80 < x < 120.
-      output *= 10
-      
-      // Round toward negative infinity.
-      var slotID = Int(output.rounded(.down))
-      
-      // Clamp to within array bounds.
-      slotID = max(0, min(199, slotID))
-      
-      histogram[slotID] += 1
+  // Forward attention layer:
+  // - S = QK^T
+  // - P = softmax(S)
+  // - O = PV
+  var O = [Float](repeating: .zero, count: N * D)
+  
+  print()
+  print("attention matrix:")
+  for rowID in 0..<N {
+    var attentionMatrixRow = [Float](repeating: .zero, count: N)
+    
+    // Q * K
+    for columnID in 0..<N {
+      var dotProduct: Float = .zero
+      for d in 0..<D {
+        let addressQ = rowID * D + d
+        let addressK = columnID * D + d
+        dotProduct += Q[addressQ] * K[addressK]
+      }
+      attentionMatrixRow[columnID] = dotProduct
     }
     
-    var cumulativeSum: Int = .zero
-    for slotID in histogram.indices {
-      var slotRepr = "\(slotID)"
-      while slotRepr.count < 3 {
-        slotRepr = " " + slotRepr
+    // softmax
+    do {
+      var maximum: Float = -.greatestFiniteMagnitude
+      for columnID in 0..<N {
+        let value = attentionMatrixRow[columnID]
+        maximum = max(maximum, value)
       }
-      print("histogram[\(slotRepr)]", terminator: " | ")
       
-      let lowerBound = Float(slotID) / 10 - 10
-      let upperBound = lowerBound + 0.1
-      var upperBoundRepr = String(format: "%.2f", upperBound)
-      while upperBoundRepr.count < 5 {
-        upperBoundRepr = " " + upperBoundRepr
+      var sum: Float = .zero
+      for columnID in 0..<N {
+        let value = attentionMatrixRow[columnID]
+        let expTerm = Float.exp(value - maximum)
+        sum += expTerm
       }
-      print("x = \(upperBoundRepr)", terminator: " | ")
       
-      let histogramValue = histogram[slotID]
-      cumulativeSum += histogramValue
-      let proportion = Float(cumulativeSum) / Float(population.count)
-      let percentage = 100 * proportion
-      var percentageRepr = String(format: "%.1f", percentage)
-      while percentageRepr.count < 5 {
-        percentageRepr = " " + percentageRepr
+      for columnID in 0..<N {
+        let value = attentionMatrixRow[columnID]
+        let expTerm = Float.exp(value - maximum)
+        attentionMatrixRow[columnID] = expTerm / sum
+        
+        // Display the attention matrix.
+        let matrixValue = attentionMatrixRow[columnID]
+        var repr = String(format: "%.3f", matrixValue)
+        while repr.count < 8 {
+          repr = " " + repr
+        }
+        print(repr, terminator: " ")
       }
-      print(percentageRepr + "%")
+      print()
+    }
+    
+    // P * V
+    var outputMatrixRow = [Float](repeating: .zero, count: D)
+    for d in 0..<D {
+      var dotProduct: Float = .zero
+      for columnID in 0..<N {
+        let attentionMatrixValue = attentionMatrixRow[columnID]
+        let addressV = columnID * D + d
+        dotProduct += attentionMatrixValue * V[addressV]
+      }
+      outputMatrixRow[d] = dotProduct
+    }
+    
+    for d in 0..<D {
+      let outputMatrixValue = outputMatrixRow[d]
+      let addressO = rowID * D + d
+      O[addressO] = outputMatrixValue
     }
   }
+  
+  // Displays a matrix with dimensions N * d.
+  func printMatrix(_ matrix: [Float]) {
+    for d in 0..<D {
+      for n in 0..<N {
+        let matrixAddress = n * D + d
+        let matrixValue = matrix[matrixAddress]
+        var repr = String(format: "%.3f", matrixValue)
+        while repr.count < 8 {
+          repr = " " + repr
+        }
+        print(repr, terminator: " ")
+      }
+      print()
+    }
+  }
+  
+  print()
+  print("Q^T:")
+  printMatrix(Q)
+  
+  print()
+  print("K^T:")
+  printMatrix(K)
+  
+  print()
+  print("V^T:")
+  printMatrix(V)
+  
+  print()
+  print("O^T:")
+  printMatrix(O)
 }
