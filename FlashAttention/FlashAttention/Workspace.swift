@@ -6,6 +6,7 @@
 //
 
 import Metal
+import Numerics
 import QuartzCore
 
 /// The repo author's own workspace for running tests and developing kernels.
@@ -63,8 +64,8 @@ func executeScript() {
   
   // Forward attention layer:
   // - Randomly initialize Q, K, V ∈ R^{NxD}
-  //   - Batch the random initialization of C, to avoid an extra call to the
-  //     Box-Muller transform.
+  //   - Batch the random initialization of C with Q/K/V. We will use C in the
+  //     next layer.
   // - S = QK^T
   // - P = softmax(S)
   // - O = PV
@@ -74,8 +75,8 @@ func executeScript() {
   // softmax operation. To enable finite differencing, the code should work in
   // FP32 (no 16-bit types).
   
-  let N: Int = 10
-  let D: Int = 3
+  let N: Int = 128
+  let D: Int = 16
   
   var Q = [Float](repeating: .zero, count: N * D)
   var K = [Float](repeating: .zero, count: N * D)
@@ -84,13 +85,80 @@ func executeScript() {
   
   func boxMullerTransform() -> SIMD2<Float> {
     let randomUniform = SIMD2<Float>.random(in: 0..<1)
-    fatalError("Not implemented.")
+    let logPart = Float.log(randomUniform[0])
+    let magnitudePart = (-2 * logPart).squareRoot()
+    
+    // This is an inefficient way to compute trigonometric quantities, but
+    // we're not particularly focused on efficiency here.
+    let anglePart = 2 * Float.pi * randomUniform[1]
+    let cosPart = Float.cos(anglePart)
+    let sinPart = Float.sin(anglePart)
+    
+    return SIMD2(
+      magnitudePart * cosPart,
+      magnitudePart * sinPart)
   }
   
   for n in 0..<N {
     for d in 0..<D {
       let matrixAddress = n * D + d
+      let randomQK = boxMullerTransform()
+      let randomVC = boxMullerTransform()
+      Q[matrixAddress] = randomQK[0]
+      K[matrixAddress] = randomQK[1]
+      V[matrixAddress] = randomVC[0]
+      C[matrixAddress] = randomVC[1]
+    }
+  }
+  
+  // Generate a histogram from all the values in Q/K/V/C. Confirm that they
+  // match the bell curve.
+  do {
+    var histogram = [Int](repeating: .zero, count: 200)
+    let population = Q + K + V + C
+    for sample in population {
+      var output = sample
       
+      // Shift the average from x = 0 to x = 10.
+      output += 10
+      
+      // Scale from 8 < x < 12 to 80 < x < 120.
+      output *= 10
+      
+      // Round toward negative infinity.
+      var slotID = Int(output.rounded(.down))
+      
+      // Clamp to within array bounds.
+      slotID = max(0, min(199, slotID))
+      
+      histogram[slotID] += 1
+    }
+    
+    var cumulativeSum: Int = .zero
+    for slotID in histogram.indices {
+      var slotRepr = "\(slotID)"
+      while slotRepr.count < 3 {
+        slotRepr = " " + slotRepr
+      }
+      print("histogram[\(slotRepr)]", terminator: " | ")
+      
+      let lowerBound = Float(slotID) / 10 - 10
+      let upperBound = lowerBound + 0.1
+      var upperBoundRepr = String(format: "%.2f", upperBound)
+      while upperBoundRepr.count < 5 {
+        upperBoundRepr = " " + upperBoundRepr
+      }
+      print("x = \(upperBoundRepr)", terminator: " | ")
+      
+      let histogramValue = histogram[slotID]
+      cumulativeSum += histogramValue
+      let proportion = Float(cumulativeSum) / Float(population.count)
+      let percentage = 100 * proportion
+      var percentageRepr = String(format: "%.1f", percentage)
+      while percentageRepr.count < 5 {
+        percentageRepr = " " + percentageRepr
+      }
+      print(percentageRepr + "%")
     }
   }
 }
