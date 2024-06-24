@@ -13,9 +13,6 @@ import QuartzCore
 /// when the 'main' branch is in a stable state. Clients can utilize this
 /// function to script tests in their fork.
 func executeScript() {
-  // TODO: Preserve this commentary in the source file where the test is
-  // archived/maintained.
-  //
   // How do I even evaluate the gradient of a transformer?
   //
   // Attempt to find a simple model to compute and take the gradient of:
@@ -29,14 +26,14 @@ func executeScript() {
   // idea 1: Φ = Σ_n Σ_d O[n][d]
   // idea 2: Φ = Σ_n Σ_d C[n][d] * O[n][d]
   //
-  // The first idea is the simplest. ∂O/∂Φ will be a rectangular matrix, where
+  // The first idea is the simplest. ∂Φ/∂O will be a rectangular matrix, where
   // every element is 1. The second idea allows more rigorous validation tests.
-  // There could be a bug that doesn't show itself when ∂O/∂Φ has a specific
+  // There could be a bug that doesn't show itself when ∂Φ/∂O has a specific
   // structure. The pointwise summation with a C matrix would allow more
-  // variation in what values ∂O/∂Φ takes.
+  // variation in what values ∂Φ/∂O takes.
   //
   // idea 1: (∂O/∂Φ)[n][d] = 1
-  // idea 2: (∂O/∂Φ)[n][d] = 1 / C[n][d]
+  // idea 2: (∂O/∂Φ)[n][d] = C[n][d]
   //
   // I now have the following:
   // - Explicit functional form for the gradients.
@@ -46,9 +43,7 @@ func executeScript() {
   // - Analytical method for finding derivatives (backpropagation formula)
   //
   // I can set up a test, which compares the numerical and analytical gradients
-  // and confirms they are the same. If the output doesn't depend on a certain
-  // variable very much, the finite difference might end up dividing by zero.
-  // Therefore, the reciprocal of ∂X/∂Φ may be important for analysis.
+  // and confirms they are the same.
   //
   // Numerical method:
   // - Peel back the neural network, removing the layers that generated Q/K/V.
@@ -62,14 +57,7 @@ func executeScript() {
   // - Revert the change.
   //
   // - Finite difference formula for gradient:
-  // - ∂X/∂Φ = ΔX/ΔΦ
-  // - ΔX/ΔΦ = (X + 0.001 - (X - 0.001)) / (Φ(+0.001) - Φ(-0.001))
-  // - ΔX/ΔΦ = 0.002 / (Φ(+0.001) - Φ(-0.001))
-  //
-  // I know from solving SCF problems, that you minimize the energy
-  // functional by finding the derivative ∂E/∂X. Here, we're computing the
-  // reciprocal for some reason (∂X/∂E where E = Φ). I would assume that
-  // when updating MLP weights, you invert the value ∂X/∂Φ. You now have ∂Φ/∂X,
-  // the rate of change in the loss function with respect to the variational
-  // parameter. If this rate is very high, you change the variable very much.
+  // - ∂Φ/∂X = ΔΦ/ΔX
+  // - ΔΦ/ΔX = (Φ(+0.001) - Φ(-0.001)) / (X + 0.001 - (X - 0.001))
+  // - ΔΦ/ΔX = (Φ(+0.001) - Φ(-0.001)) / 0.002
 }
