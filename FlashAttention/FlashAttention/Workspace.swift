@@ -28,10 +28,6 @@ func executeScript() {
   //   - "use async store" becomes "load previous C value with async copy"
   //   - C will always be written to threadgroup memory
   //
-  // Task 1:
-  // - Modify the finite differencing test and "network" to correctly scale
-  //   the GEMM output by sqrt(D).
-  //
   // Task 2:
   // - Design a theoretically optimal softmax kernel.
   //

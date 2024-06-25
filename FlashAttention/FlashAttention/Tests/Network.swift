@@ -120,6 +120,7 @@ struct Network {
 extension Network {
   func createAttentionMatrixRow(rowID: Int) -> [Float] {
     var output = [Float](repeating: .zero, count: N)
+    let scaleFactor = 1 / Float(D).squareRoot()
     
     // Q * K
     for columnID in 0..<N {
@@ -129,6 +130,7 @@ extension Network {
         let addressK = columnID * D + d
         dotProduct += Q[addressQ] * K[addressK]
       }
+      dotProduct *= scaleFactor
       output[columnID] = dotProduct
     }
     
@@ -196,12 +198,16 @@ extension Network {
       derivativePRow[columnID] = dotProduct
     }
     
+    let scaleFactor = 1 / Float(D).squareRoot()
+    
     // dS = P * (dP - D)
     var derivativeSRow = [Float](repeating: .zero, count: N)
     for n in 0..<N {
       let valueP = attentionMatrixRow[n]
       let valueDerivativeP = derivativePRow[n]
-      let valueS = valueP * (valueDerivativeP - termD)
+      var valueS = valueP * (valueDerivativeP - termD)
+      
+      valueS *= scaleFactor
       derivativeSRow[n] = valueS
     }
     
