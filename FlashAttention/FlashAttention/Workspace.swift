@@ -63,8 +63,8 @@ func executeScript() {
   // - ΔΦ/ΔX = (Φ(+0.001) - Φ(-0.001)) / 0.002
    
   // Define the problem dimensions.
-  let N: Int = 10
-  let D: Int = 3
+  let N: Int = 64
+  let D: Int = 8
   
   var networkDesc = NetworkDescriptor()
   networkDesc.N = N
@@ -103,8 +103,16 @@ func executeScript() {
   
   print()
   print("dS:")
-  for n in 0..<N {
-    network.createDerivativeSRow(rowID: n)
+  for rowID in 0..<N {
+    let derivativeSRow = network.createDerivativeSRow(rowID: rowID)
+    for n in 0..<N {
+      var repr = String(format: "%.3f", derivativeSRow[n])
+      while repr.count < 8 {
+        repr = " " + repr
+      }
+      print(repr, terminator: " ")
+    }
+    print()
   }
   
   print()
@@ -127,12 +135,12 @@ func executeScript() {
   }
   
   do {
-    let derivativeV = network.derivativeV()
+    let derivativeK = network.derivativeK()
     
     print()
     for elementID in 0..<(N * D) {
       // Test the correctness of the derivatives component-by-component.
-      let savedValue = network.V[elementID]
+      let savedValue = network.K[elementID]
       
       // When comparing against the analytical formula, show the numerical
       // derivatives for each step size. There doesn't appear to be a
@@ -140,18 +148,18 @@ func executeScript() {
       let stepSizes: [Float] = [1, 0.1, 0.01, 0.001]
       var derivatives: [Float] = []
       for stepSize in stepSizes {
-        network.V[elementID] = savedValue + stepSize
+        network.K[elementID] = savedValue + stepSize
         let O1 = network.inferenceAttention()
         let Φ1 = network.loss(O: O1)
         
-        network.V[elementID] = savedValue - stepSize
+        network.K[elementID] = savedValue - stepSize
         let O2 = network.inferenceAttention()
         let Φ2 = network.loss(O: O2)
         
         let derivative = (Φ1 - Φ2) / (stepSize - (-stepSize))
         derivatives.append(derivative)
       }
-      network.V[elementID] = savedValue
+      network.K[elementID] = savedValue
       
       var elementIDRepr = "\(elementID)"
       while elementIDRepr.count < 5 {
@@ -168,7 +176,7 @@ func executeScript() {
       }
       
       do {
-        var repr = String(format: "%.3f", derivativeV[elementID])
+        var repr = String(format: "%.3f", derivativeK[elementID])
         while repr.count < 8 {
           repr = " " + repr
         }
@@ -236,6 +244,7 @@ struct Network {
   }
 }
 
+// Utilities for materializing the attention matrix, one row at a time.
 extension Network {
   func createAttentionMatrixRow(rowID: Int) -> [Float] {
     var output = [Float](repeating: .zero, count: N)
@@ -276,6 +285,59 @@ extension Network {
     return output
   }
   
+  func createDerivativeSRow(rowID: Int) -> [Float] {
+    let attentionMatrixRow = createAttentionMatrixRow(rowID: rowID)
+    
+    // P * V
+    var outputMatrixRow = [Float](repeating: .zero, count: D)
+    for d in 0..<D {
+      var dotProduct: Float = .zero
+      for columnID in 0..<N {
+        let attentionMatrixValue = attentionMatrixRow[columnID]
+        let addressV = columnID * D + d
+        dotProduct += attentionMatrixValue * V[addressV]
+      }
+      outputMatrixRow[d] = dotProduct
+    }
+    
+    // dO = C
+    var derivativeORow = [Float](repeating: .zero, count: D)
+    for d in 0..<D {
+      let addressC = rowID * D + d
+      derivativeORow[d] = C[addressC]
+    }
+    
+    // D = dO^T O
+    var termD: Float = .zero
+    for d in 0..<D {
+      termD += outputMatrixRow[d] * derivativeORow[d]
+    }
+    
+    // dP = dO V^T
+    var derivativePRow = [Float](repeating: .zero, count: N)
+    for columnID in 0..<N {
+      var dotProduct: Float = .zero
+      for d in 0..<D {
+        let addressV = columnID * D + d
+        dotProduct += derivativeORow[d] * V[addressV]
+      }
+      derivativePRow[columnID] = dotProduct
+    }
+    
+    // dS = P * (dP - D)
+    var derivativeSRow = [Float](repeating: .zero, count: N)
+    for n in 0..<N {
+      let valueP = attentionMatrixRow[n]
+      let valueDerivativeP = derivativePRow[n]
+      let valueS = valueP * (valueDerivativeP - termD)
+      derivativeSRow[n] = valueS
+    }
+    
+    return derivativeSRow
+  }
+}
+
+extension Network {
   // Performs self-attention with the current values of Q, K, and V.
   // - S = QK^T
   // - P = softmax(S)
@@ -342,52 +404,23 @@ extension Network {
     return output
   }
   
-  func createDerivativeSRow(rowID: Int) -> [Float] {
-    let attentionMatrixRow = createAttentionMatrixRow(rowID: rowID)
-    
-    // P * V
-    var outputMatrixRow = [Float](repeating: .zero, count: D)
-    for d in 0..<D {
-      var dotProduct: Float = .zero
-      for columnID in 0..<N {
-        let attentionMatrixValue = attentionMatrixRow[columnID]
-        let addressV = columnID * D + d
-        dotProduct += attentionMatrixValue * V[addressV]
-      }
-      outputMatrixRow[d] = dotProduct
-    }
-    
-    // dO
-    var derivativeORow = [Float](repeating: .zero, count: D)
-    for d in 0..<D {
-      let addressC = rowID * D + d
-      derivativeORow[d] = C[addressC]
-    }
-    
-    // dO^T O
-    var termD: Float = .zero
-    for d in 0..<D {
-      termD += outputMatrixRow[d] * derivativeORow[d]
-    }
-    
-    // dP = dO V^T
-    var derivativePRow = [Float](repeating: .zero, count: N)
+  // dΦ/dK = dS^T Q
+  func derivativeK() -> [Float] {
+    var output = [Float](repeating: .zero, count: N * D)
     for columnID in 0..<N {
-      var dotProduct: Float = .zero
-      for d in 0..<D {
-        let addressV = columnID * D + d
-        dotProduct += derivativeORow[d] * V[addressV]
-      }
-      derivativePRow[columnID] = dotProduct
+      let derivativeSRow = createDerivativeSRow(rowID: columnID)
       
-      var repr = String(format: "%.3f", derivativePRow[columnID])
-      while repr.count < 8 {
-        repr = " " + repr
+      for n in 0..<N {
+        for d in 0..<D {
+          let addressK = n * D + d
+          let addressQ = columnID * D + d
+          
+          var dotProduct = output[addressK]
+          dotProduct += derivativeSRow[n] * Q[addressQ]
+          output[addressK] = dotProduct
+        }
       }
-      print(repr, terminator: " ")
     }
-    print()
-    
-    return []
+    return output
   }
 }
