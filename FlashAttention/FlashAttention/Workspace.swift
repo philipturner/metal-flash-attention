@@ -34,4 +34,13 @@ func executeScript() {
   // Task 3:
   // - Make a copy of the in-tree GEMM kernel, which fuses some operations
   //   during computation of dS.
+  
+  // Define the problem dimensions.
+  let N: Int = 10
+  let D: Int = 3
+  
+  var networkDesc = NetworkDescriptor()
+  networkDesc.N = N
+  networkDesc.D = D
+  var network = Network(descriptor: networkDesc)
 }
