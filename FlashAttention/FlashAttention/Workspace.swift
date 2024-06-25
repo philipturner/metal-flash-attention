@@ -88,8 +88,22 @@ func executeScript() {
   }
   
   print()
-  print("Q^T")
-  printMatrix(network.Q)
+  print("attention matrix:")
+  for rowID in 0..<N {
+    let attentionMatrixRow = network.createAttentionMatrixRow(rowID: rowID)
+    for n in 0..<N {
+      var repr = String(format: "%.3f", attentionMatrixRow[n])
+      while repr.count < 8 {
+        repr = " " + repr
+      }
+      print(repr, terminator: " ")
+    }
+    print()
+  }
+  
+  print()
+  print("C^T")
+  printMatrix(network.C)
   
   do {
     let O = network.inferenceAttention()
@@ -99,6 +113,8 @@ func executeScript() {
   }
   
   do {
+    let derivativeV = network.derivativeV()
+    
     print()
     for elementID in 0..<(N * D) {
       // Test the correctness of the derivatives component-by-component.
@@ -136,7 +152,14 @@ func executeScript() {
         }
         print(repr, terminator: " ")
       }
-      print()
+      
+      do {
+        var repr = String(format: "%.3f", derivativeV[elementID])
+        while repr.count < 8 {
+          repr = " " + repr
+        }
+        print("| ", repr)
+      }
     }
   }
 }
@@ -200,6 +223,45 @@ struct Network {
 }
 
 extension Network {
+  func createAttentionMatrixRow(rowID: Int) -> [Float] {
+    var output = [Float](repeating: .zero, count: N)
+    
+    // Q * K
+    for columnID in 0..<N {
+      var dotProduct: Float = .zero
+      for d in 0..<D {
+        let addressQ = rowID * D + d
+        let addressK = columnID * D + d
+        dotProduct += Q[addressQ] * K[addressK]
+      }
+      output[columnID] = dotProduct
+    }
+    
+    // softmax
+    do {
+      var maximum: Float = -.greatestFiniteMagnitude
+      for columnID in 0..<N {
+        let value = output[columnID]
+        maximum = max(maximum, value)
+      }
+      
+      var sum: Float = .zero
+      for columnID in 0..<N {
+        let value = output[columnID]
+        let expTerm = Float.exp(value - maximum)
+        sum += expTerm
+      }
+      
+      for columnID in 0..<N {
+        let value = output[columnID]
+        let expTerm = Float.exp(value - maximum)
+        output[columnID] = expTerm / sum
+      }
+    }
+    
+    return output
+  }
+  
   // Performs self-attention with the current values of Q, K, and V.
   // - S = QK^T
   // - P = softmax(S)
@@ -209,40 +271,7 @@ extension Network {
   func inferenceAttention() -> [Float] {
     var output = [Float](repeating: .zero, count: N * D)
     for rowID in 0..<N {
-      var attentionMatrixRow = [Float](repeating: .zero, count: N)
-      
-      // Q * K
-      for columnID in 0..<N {
-        var dotProduct: Float = .zero
-        for d in 0..<D {
-          let addressQ = rowID * D + d
-          let addressK = columnID * D + d
-          dotProduct += Q[addressQ] * K[addressK]
-        }
-        attentionMatrixRow[columnID] = dotProduct
-      }
-      
-      // softmax
-      do {
-        var maximum: Float = -.greatestFiniteMagnitude
-        for columnID in 0..<N {
-          let value = attentionMatrixRow[columnID]
-          maximum = max(maximum, value)
-        }
-        
-        var sum: Float = .zero
-        for columnID in 0..<N {
-          let value = attentionMatrixRow[columnID]
-          let expTerm = Float.exp(value - maximum)
-          sum += expTerm
-        }
-        
-        for columnID in 0..<N {
-          let value = attentionMatrixRow[columnID]
-          let expTerm = Float.exp(value - maximum)
-          attentionMatrixRow[columnID] = expTerm / sum
-        }
-      }
+      let attentionMatrixRow = createAttentionMatrixRow(rowID: rowID)
       
       // P * V
       var outputMatrixRow = [Float](repeating: .zero, count: D)
@@ -274,6 +303,26 @@ extension Network {
       for d in 0..<D {
         let address = n * D + d
         output += C[address] * O[address]
+      }
+    }
+    return output
+  }
+  
+  // dΦ/dV = P^T dΦ/dO
+  func derivativeV() -> [Float] {
+    var output = [Float](repeating: .zero, count: N * D)
+    for columnID in 0..<N {
+      let attentionMatrixRow = createAttentionMatrixRow(rowID: columnID)
+      
+      for n in 0..<N {
+        for d in 0..<D {
+          let addressV = n * D + d
+          let addressC = columnID * D + d
+          
+          var dotProduct = output[addressV]
+          dotProduct += attentionMatrixRow[n] * C[addressC]
+          output[addressV] = dotProduct
+        }
       }
     }
     return output
