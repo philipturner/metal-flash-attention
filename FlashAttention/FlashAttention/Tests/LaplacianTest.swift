@@ -7,6 +7,9 @@
 
 import Metal
 
+// Tests the performance of large matrix multiplications, using the
+// second-order Laplacian in direct matrix form.
+
 #if false
 func executeScript() {
   print("Hello, console.")
@@ -231,7 +234,7 @@ func profileProblemSize(
   var occupancy: Int = .zero
   do {
     // Generate the kernel.
-    let (kernel, pipeline) = retrieveGEMMKernel(descriptor: descriptor)
+    let (kernel, pipeline) = GEMMKernel.fetchKernel(descriptor: descriptor)
     occupancy = pipeline.maxTotalThreadsPerThreadgroup
     
     // Create the buffers.

@@ -8,6 +8,9 @@
 import Metal
 import QuartzCore
 
+// Test the correctness of the GEMM kernel, in edge cases where the matrix
+// size is indivisible by the block size.
+
 #if false
 func executeScript() {
   print("Hello, console.")
@@ -146,7 +149,7 @@ func runCorrectnessTest(descriptor: GEMMDescriptor) {
   let checkpoint1 = CACurrentMediaTime()
   
   // Generate the kernel.
-  let (kernel, pipeline) = retrieveGEMMKernel(descriptor: descriptor)
+  let (kernel, pipeline) = GEMMKernel.fetchKernel(descriptor: descriptor)
   
   let checkpoint2 = CACurrentMediaTime()
   

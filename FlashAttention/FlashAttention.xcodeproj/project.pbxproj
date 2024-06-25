@@ -25,6 +25,8 @@
 		98DA5B302C29F04A000F4E06 /* ComplexModule in Frameworks */ = {isa = PBXBuildFile; productRef = 98DA5B2F2C29F04A000F4E06 /* ComplexModule */; };
 		98DA5B322C29F04A000F4E06 /* Numerics in Frameworks */ = {isa = PBXBuildFile; productRef = 98DA5B312C29F04A000F4E06 /* Numerics */; };
 		98DA5B342C29F04A000F4E06 /* RealModule in Frameworks */ = {isa = PBXBuildFile; productRef = 98DA5B332C29F04A000F4E06 /* RealModule */; };
+		98DA5B362C2AFD65000F4E06 /* Network.swift in Sources */ = {isa = PBXBuildFile; fileRef = 98DA5B352C2AFD65000F4E06 /* Network.swift */; };
+		98DA5B382C2AFF9E000F4E06 /* FiniteDifferencingTest.swift in Sources */ = {isa = PBXBuildFile; fileRef = 98DA5B372C2AFF9E000F4E06 /* FiniteDifferencingTest.swift */; };
 /* End PBXBuildFile section */
 
 /* Begin PBXFileReference section */
@@ -45,6 +47,8 @@
 		9881AA1F2C25B26D0056D05C /* ShaderCache.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = ShaderCache.swift; sourceTree = "<group>"; };
 		9881AA222C25C22B0056D05C /* LaplacianTest.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = LaplacianTest.swift; sourceTree = "<group>"; };
 		9881AA242C25FDC20056D05C /* AdversarialShapeTest.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = AdversarialShapeTest.swift; sourceTree = "<group>"; };
+		98DA5B352C2AFD65000F4E06 /* Network.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = Network.swift; sourceTree = "<group>"; };
+		98DA5B372C2AFF9E000F4E06 /* FiniteDifferencingTest.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = FiniteDifferencingTest.swift; sourceTree = "<group>"; };
 /* End PBXFileReference section */
 
 /* Begin PBXFrameworksBuildPhase section */
@@ -119,7 +123,9 @@
 			isa = PBXGroup;
 			children = (
 				9881AA242C25FDC20056D05C /* AdversarialShapeTest.swift */,
+				98DA5B372C2AFF9E000F4E06 /* FiniteDifferencingTest.swift */,
 				9881AA222C25C22B0056D05C /* LaplacianTest.swift */,
+				98DA5B352C2AFD65000F4E06 /* Network.swift */,
 			);
 			path = Tests;
 			sourceTree = "<group>";
@@ -203,7 +209,9 @@
 			isa = PBXSourcesBuildPhase;
 			buildActionMask = 2147483647;
 			files = (
+				98DA5B362C2AFD65000F4E06 /* Network.swift in Sources */,
 				9881AA182C25B0440056D05C /* GEMMHeaders.swift in Sources */,
+				98DA5B382C2AFF9E000F4E06 /* FiniteDifferencingTest.swift in Sources */,
 				9881AA202C25B26D0056D05C /* ShaderCache.swift in Sources */,
 				9881AA1A2C25B0F70056D05C /* GEMMDescriptor.swift in Sources */,
 				9881AA052C24C85E0056D05C /* Workspace.swift in Sources */,
