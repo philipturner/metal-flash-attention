@@ -63,8 +63,8 @@ func executeScript() {
   // - ΔΦ/ΔX = (Φ(+0.001) - Φ(-0.001)) / 0.002
    
   // Define the problem dimensions.
-  let N: Int = 64
-  let D: Int = 8
+  let N: Int = 10
+  let D: Int = 3
   
   var networkDesc = NetworkDescriptor()
   networkDesc.N = N
@@ -102,11 +102,25 @@ func executeScript() {
   }
   
   print()
+  print("dS:")
+  for n in 0..<N {
+    network.createDerivativeSRow(rowID: n)
+  }
+  
+  print()
+  print("V^T")
+  printMatrix(network.V)
+  
+  print()
   print("C^T")
   printMatrix(network.C)
   
   do {
+    print()
+    print("O")
     let O = network.inferenceAttention()
+    printMatrix(O)
+    
     let Φ = network.loss(O: O)
     print()
     print("Φ:", Φ)
@@ -326,5 +340,54 @@ extension Network {
       }
     }
     return output
+  }
+  
+  func createDerivativeSRow(rowID: Int) -> [Float] {
+    let attentionMatrixRow = createAttentionMatrixRow(rowID: rowID)
+    
+    // P * V
+    var outputMatrixRow = [Float](repeating: .zero, count: D)
+    for d in 0..<D {
+      var dotProduct: Float = .zero
+      for columnID in 0..<N {
+        let attentionMatrixValue = attentionMatrixRow[columnID]
+        let addressV = columnID * D + d
+        dotProduct += attentionMatrixValue * V[addressV]
+      }
+      outputMatrixRow[d] = dotProduct
+    }
+    
+    // dO
+    var derivativeORow = [Float](repeating: .zero, count: D)
+    for d in 0..<D {
+      let addressC = rowID * D + d
+      derivativeORow[d] = C[addressC]
+    }
+    
+    // dO^T O
+    var termD: Float = .zero
+    for d in 0..<D {
+      termD += outputMatrixRow[d] * derivativeORow[d]
+    }
+    
+    // dP = dO V^T
+    var derivativePRow = [Float](repeating: .zero, count: N)
+    for columnID in 0..<N {
+      var dotProduct: Float = .zero
+      for d in 0..<D {
+        let addressV = columnID * D + d
+        dotProduct += derivativeORow[d] * V[addressV]
+      }
+      derivativePRow[columnID] = dotProduct
+      
+      var repr = String(format: "%.3f", derivativePRow[columnID])
+      while repr.count < 8 {
+        repr = " " + repr
+      }
+      print(repr, terminator: " ")
+    }
+    print()
+    
+    return []
   }
 }
