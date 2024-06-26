@@ -118,7 +118,7 @@ struct Network {
 
 // Utilities for materializing the attention matrix, one row at a time.
 extension Network {
-  func createAttentionMatrixRow(rowID: Int) -> [Float] {
+  func createMatrixSRow(rowID: Int) -> [Float] {
     var output = [Float](repeating: .zero, count: N)
     let scaleFactor = 1 / Float(D).squareRoot()
     
@@ -133,6 +133,12 @@ extension Network {
       dotProduct *= scaleFactor
       output[columnID] = dotProduct
     }
+    
+    return output
+  }
+  
+  func createMatrixPRow(rowID: Int) -> [Float] {
+    var output = createMatrixSRow(rowID: rowID)
     
     // softmax
     do {
@@ -160,16 +166,16 @@ extension Network {
   }
   
   func createDerivativeSRow(rowID: Int) -> [Float] {
-    let attentionMatrixRow = createAttentionMatrixRow(rowID: rowID)
+    let matrixPRow = createMatrixPRow(rowID: rowID)
     
     // P * V
     var outputMatrixRow = [Float](repeating: .zero, count: D)
     for d in 0..<D {
       var dotProduct: Float = .zero
       for columnID in 0..<N {
-        let attentionMatrixValue = attentionMatrixRow[columnID]
+        let valueP = matrixPRow[columnID]
         let addressV = columnID * D + d
-        dotProduct += attentionMatrixValue * V[addressV]
+        dotProduct += valueP * V[addressV]
       }
       outputMatrixRow[d] = dotProduct
     }
@@ -203,7 +209,7 @@ extension Network {
     // dS = P * (dP - D)
     var derivativeSRow = [Float](repeating: .zero, count: N)
     for n in 0..<N {
-      let valueP = attentionMatrixRow[n]
+      let valueP = matrixPRow[n]
       let valueDerivativeP = derivativePRow[n]
       var valueS = valueP * (valueDerivativeP - termD)
       
@@ -225,24 +231,24 @@ extension Network {
   func inferenceAttention() -> [Float] {
     var output = [Float](repeating: .zero, count: N * D)
     for rowID in 0..<N {
-      let attentionMatrixRow = createAttentionMatrixRow(rowID: rowID)
+      let matrixPRow = createMatrixPRow(rowID: rowID)
       
       // P * V
-      var outputMatrixRow = [Float](repeating: .zero, count: D)
+      var matrixORow = [Float](repeating: .zero, count: D)
       for d in 0..<D {
         var dotProduct: Float = .zero
         for columnID in 0..<N {
-          let attentionMatrixValue = attentionMatrixRow[columnID]
+          let valueP = matrixPRow[columnID]
           let addressV = columnID * D + d
-          dotProduct += attentionMatrixValue * V[addressV]
+          dotProduct += valueP * V[addressV]
         }
-        outputMatrixRow[d] = dotProduct
+        matrixORow[d] = dotProduct
       }
       
       for d in 0..<D {
-        let outputMatrixValue = outputMatrixRow[d]
+        let valueO = matrixORow[d]
         let addressO = rowID * D + d
-        output[addressO] = outputMatrixValue
+        output[addressO] = valueO
       }
     }
     
@@ -266,7 +272,7 @@ extension Network {
   func derivativeV() -> [Float] {
     var output = [Float](repeating: .zero, count: N * D)
     for columnID in 0..<N {
-      let attentionMatrixRow = createAttentionMatrixRow(rowID: columnID)
+      let matrixPRow = createMatrixPRow(rowID: columnID)
       
       for n in 0..<N {
         for d in 0..<D {
@@ -274,7 +280,7 @@ extension Network {
           let addressC = columnID * D + d
           
           var dotProduct = output[addressV]
-          dotProduct += attentionMatrixRow[n] * C[addressC]
+          dotProduct += matrixPRow[n] * C[addressC]
           output[addressV] = dotProduct
         }
       }

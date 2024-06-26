@@ -42,5 +42,29 @@ func executeScript() {
   var networkDesc = NetworkDescriptor()
   networkDesc.N = N
   networkDesc.D = D
-  var network = Network(descriptor: networkDesc)
+  let network = Network(descriptor: networkDesc)
+  
+  let matrixSRow = network.createMatrixSRow(rowID: 0)
+  let matrixPRow = network.createMatrixPRow(rowID: 0)
+  
+  func printRow(_ row: [Float]) {
+    for element in row {
+      var repr = String(format: "%.3f", element)
+      while repr.count < 8 {
+        repr = " " + repr
+      }
+      print(repr, terminator: " ")
+    }
+    print()
+  }
+  
+  print()
+  print("S[0]")
+  printRow(matrixSRow)
+  print(matrixSRow.reduce(0, +))
+  
+  print()
+  print("P[0]")
+  printRow(matrixPRow)
+  print(matrixPRow.reduce(0, +))
 }
