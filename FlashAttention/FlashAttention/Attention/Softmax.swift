@@ -48,34 +48,93 @@ struct SoftmaxKernel {
       fatalError("Unsupported precision.")
     }
     
-    // Allocate enough registers to cache the entire matrix row.
+    // Check that the threadgroup size is compatible with the shader.
     guard threadgroupSize % 32 == 0,
-          threadgroupSize >= 64 else {
+          threadgroupSize >= 64,
+          threadgroupSize.nonzeroBitCount == 1 else {
       fatalError("Invalid group size.")
     }
-    var paddedProblemSize = matrixDimensions.N + threadgroupSize - 1
-    paddedProblemSize = (paddedProblemSize / threadgroupSize) * threadgroupSize
+    
+
+    
+    // Allocate enough registers to cache the entire matrix row.
+    let C = matrixDimensions.N
+    var paddedC = C + threadgroupSize - 1
+    paddedC = (paddedC / threadgroupSize) * threadgroupSize
+    
+    // Apply the "scale" in scaled dot product attention.
+    let scaleFactor = 1 / Float(matrixDimensions.D).squareRoot()
+    
+
     
     source = """
-  kernel void softmax(
-    device \(precision) *attentionMatrix [[buffer(0)]],
-    
-    uint gid [[threadgroup_position_in_grid]],
-    ushort sidx [[simdgroup_index_in_threadgroup]],
-    ushort lane_id [[thread_index_in_simdgroup]])
-  {
-    \(precision) elements[\(paddedProblemSize / threadgroupSize)];
+#include <metal_stdlib>
+using namespace metal;
 
-    // Initial proof of concept:
-    // - Allocate the number of registers required.
-    // - Run a kernel that doesn't do anything
-    // - Run the dumb softmax that reads from RAM multiple times.
-    // - Run an alternative dumb softmax that writes to TG memory.
-    // - Prove that my softmax kernel has better performance.
+kernel void softmax(
+  device \(precision) *attentionMatrix [[buffer(0)]],
+  
+  uint gid [[threadgroup_position_in_grid]],
+  ushort sidx [[simdgroup_index_in_threadgroup]],
+  ushort lane_id [[thread_index_in_simdgroup]])
+{
+  \(precision) elements[\(paddedC / threadgroupSize)];
+  threadgroup float simd_messages[\(threadgroupSize / 32)];
 
-    attentionMatrix[0] = 1;
+  // Initial proof of concept:
+  // - Allocate the number of registers required.
+  // - Run a kernel that doesn't do anything
+  // - Run the dumb softmax that reads from RAM multiple times.
+  // - Run an alternative dumb softmax that writes to TG memory.
+  // - Prove that my softmax kernel has better performance.
+
+  ushort thread_id = sidx * 32 + lane_id;
+  auto baseAddress = attentionMatrix + gid * \(C);
+
+  // Accumulate the maximum.
+  float m = -numeric_limits<float>::max();
+  for (uint c = thread_id; c < \(C); c += \(threadgroupSize)) {
+    \(precision) value = \(scaleFactor) * baseAddress[c];
+    m = max(m, value);
   }
+  m = simd_max(m);
+  \(createReduction("m") { "max(\($0), \($1))" })
+  
+  // Accumulate the sum.
 
-  """
+  // Write the output.
+  baseAddress[thread_id] = m;
+  
+}
+
+"""
+  }
+  
+  // Utility function for reducing across simds.
+  private func createReduction(
+    _ registerName: String,
+    _ operation: (String, String) -> String
+  ) -> String {
+    var output = """
+simd_messages[sidx] = \(registerName);
+threadgroup_barrier(mem_flags::mem_threadgroup);
+if (lane_id < \(threadgroupSize / 32)) {
+  \(registerName) = simd_messages[lane_id];
+} else {
+  \(registerName) = 0;
+}
+"""
+    
+    var shiftAmount = 1
+    while shiftAmount < threadgroupSize / 32 {
+      let lhs = registerName
+      let rhs = "simd_shuffle_xor(\(registerName), \(shiftAmount))"
+      output += "\(registerName) = \(operation(lhs, rhs));"
+      output += "\n"
+      
+      shiftAmount *= 2
+    }
+    
+    return output
   }
 }

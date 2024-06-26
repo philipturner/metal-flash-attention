@@ -38,9 +38,9 @@ func executeScript() {
   print()
   print("attention matrix:")
   for rowID in 0..<N {
-    let attentionMatrixRow = network.createAttentionMatrixRow(rowID: rowID)
+    let matrixPRow = network.createMatrixPRow(rowID: rowID)
     for n in 0..<N {
-      var repr = String(format: "%.3f", attentionMatrixRow[n])
+      var repr = String(format: "%.3f", matrixPRow[n])
       while repr.count < 8 {
         repr = " " + repr
       }

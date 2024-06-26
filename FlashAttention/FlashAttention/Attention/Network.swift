@@ -120,7 +120,6 @@ struct Network {
 extension Network {
   func createMatrixSRow(rowID: Int) -> [Float] {
     var output = [Float](repeating: .zero, count: N)
-    let scaleFactor = 1 / Float(D).squareRoot()
     
     // Q * K
     for columnID in 0..<N {
@@ -130,7 +129,6 @@ extension Network {
         let addressK = columnID * D + d
         dotProduct += Q[addressQ] * K[addressK]
       }
-      dotProduct *= scaleFactor
       output[columnID] = dotProduct
     }
     
@@ -139,24 +137,25 @@ extension Network {
   
   func createMatrixPRow(rowID: Int) -> [Float] {
     var output = createMatrixSRow(rowID: rowID)
+    let scaleFactor = 1 / Float(D).squareRoot()
     
     // softmax
     do {
       var maximum: Float = -.greatestFiniteMagnitude
       for columnID in 0..<N {
-        let value = output[columnID]
+        let value = scaleFactor * output[columnID]
         maximum = max(maximum, value)
       }
       
       var sum: Float = .zero
       for columnID in 0..<N {
-        let value = output[columnID]
+        let value = scaleFactor * output[columnID]
         let expTerm = Float.exp(value - maximum)
         sum += expTerm
       }
       
       for columnID in 0..<N {
-        let value = output[columnID]
+        let value = scaleFactor * output[columnID]
         let expTerm = Float.exp(value - maximum)
         output[columnID] = expTerm / sum
       }

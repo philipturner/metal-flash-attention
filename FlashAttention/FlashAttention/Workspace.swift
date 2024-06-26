@@ -39,7 +39,7 @@ func executeScript() {
   //   accumulator. This would require heavy testing to ensure no regressions.
   
   // Define the problem dimensions.
-  let N: Int = 10
+  let N: Int = 130
   let D: Int = 3
   
   var networkDesc = NetworkDescriptor()
