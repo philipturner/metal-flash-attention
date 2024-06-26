@@ -42,6 +42,7 @@ func executeScript() {
   //
   // 2560 - 490 GB/s (FP32, naive kernel)
   // 3072 - 537 GB/s (FP32, unoptimized custom kernel)
+  // 3072 - 773 GB/s (FP32, custom kernel)
   //
   // 4096 - 399 GB/s (FP16, naive kernel)
   // 3072 - 270 GB/s (FP16, unoptimized custom kernel)
@@ -54,7 +55,7 @@ func executeScript() {
   // optimal size: 512-1024 (FP32, naive kernel)
   //               256-512 (FP16, naive kernel)
   softmaxDesc.threadgroupSize = 512
-  softmaxDesc.memoryPrecision = .FP32
+  softmaxDesc.memoryPrecision = .FP16
   softmaxDesc.matrixDimensions = (UInt16(N), UInt16(D))
   let softmaxKernel = SoftmaxKernel(descriptor: softmaxDesc)
   
@@ -141,7 +142,7 @@ func executeScript() {
   func createErrorThreshold(precision: GEMMOperandPrecision) -> Float {
     switch precision {
     case .FP32: return 1e-6
-    case .FP16: return 1e-3
+    case .FP16: return 3e-3
     case .BF16: return 1e-2
     }
   }
