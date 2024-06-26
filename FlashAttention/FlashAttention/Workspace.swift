@@ -39,8 +39,8 @@ func executeScript() {
   //   accumulator. This would require heavy testing to ensure no regressions.
   
   // Define the problem dimensions.
-  let N: Int = 10
-  let D: Int = 3
+  let N: Int = 777
+  let D: Int = 300
   
   var networkDesc = NetworkDescriptor()
   networkDesc.N = N
@@ -71,14 +71,6 @@ func executeScript() {
       print()
     }
   }
-  
-  print()
-  print("S")
-  printMatrix(matrixS)
-  
-  print()
-  print("P")
-  printMatrix(matrixP)
   
   // Create the kernel.
   var softmaxDesc = SoftmaxDescriptor()
@@ -149,8 +141,34 @@ func executeScript() {
     }
   }
   
-  print()
-  print("result")
-  printMatrix(result)
+  // Choose an error threshold.
+  func createErrorThreshold(precision: GEMMOperandPrecision) -> Float {
+    switch precision {
+    case .FP32: return 1e-6
+    case .FP16: return 1e-3
+    case .BF16: return 1e-2
+    }
+  }
+  
+  // Check the results.
+  let errorThreshold = createErrorThreshold(
+    precision: softmaxDesc.memoryPrecision!)
+  var errorCount: Int = .zero
+  for r in 0..<N {
+    for c in 0..<N {
+      let address = r * N + c
+      let expected = matrixP[address]
+      let actual = result[address]
+      
+      // Report whether it is correct.
+      let error = (expected - actual).magnitude
+      if error > errorThreshold {
+        if errorCount < 10 {
+          print("error: \(error) / ~1.000")
+          errorCount += 1
+        }
+      }
+    }
+  }
 }
 #endif
