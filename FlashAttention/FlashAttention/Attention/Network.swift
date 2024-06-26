@@ -164,11 +164,26 @@ extension Network {
     return output
   }
   
+  func createDerivativePRow(rowID: Int) -> [Float] {
+    // dP = dO V^T
+    var output = [Float](repeating: .zero, count: N)
+    for columnID in 0..<N {
+      var dotProduct: Float = .zero
+      for d in 0..<D {
+        let addressO = rowID * D + d
+        let addressV = columnID * D + d
+        dotProduct += C[addressO] * V[addressV]
+      }
+      output[columnID] = dotProduct
+    }
+    return output
+  }
+  
   func createDerivativeSRow(rowID: Int) -> [Float] {
     let matrixPRow = createMatrixPRow(rowID: rowID)
     
     // P * V
-    var outputMatrixRow = [Float](repeating: .zero, count: D)
+    var matrixORow = [Float](repeating: .zero, count: D)
     for d in 0..<D {
       var dotProduct: Float = .zero
       for columnID in 0..<N {
@@ -176,7 +191,7 @@ extension Network {
         let addressV = columnID * D + d
         dotProduct += valueP * V[addressV]
       }
-      outputMatrixRow[d] = dotProduct
+      matrixORow[d] = dotProduct
     }
     
     // dO = C
@@ -189,24 +204,14 @@ extension Network {
     // D = dO^T O
     var termD: Float = .zero
     for d in 0..<D {
-      termD += outputMatrixRow[d] * derivativeORow[d]
+      let addressC = rowID * D + d
+      termD += matrixORow[d] * C[addressC]
     }
-    
-    // dP = dO V^T
-    var derivativePRow = [Float](repeating: .zero, count: N)
-    for columnID in 0..<N {
-      var dotProduct: Float = .zero
-      for d in 0..<D {
-        let addressV = columnID * D + d
-        dotProduct += derivativeORow[d] * V[addressV]
-      }
-      derivativePRow[columnID] = dotProduct
-    }
-    
-    let scaleFactor = 1 / Float(D).squareRoot()
     
     // dS = P * (dP - D)
     var derivativeSRow = [Float](repeating: .zero, count: N)
+    let derivativePRow = createDerivativePRow(rowID: rowID)
+    let scaleFactor = 1 / Float(D).squareRoot()
     for n in 0..<N {
       let valueP = matrixPRow[n]
       let valueDerivativeP = derivativePRow[n]

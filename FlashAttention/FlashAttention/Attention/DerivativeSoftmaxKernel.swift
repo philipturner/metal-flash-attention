@@ -1,15 +1,13 @@
 //
-//  GEMMKernel.swift
+//  DerivativeSoftmaxKernel.swift
 //  FlashAttention
 //
-//  Created by Philip Turner on 6/21/24.
+//  Created by Philip Turner on 6/26/24.
 //
 
-import protocol Metal.MTLLibrary
-
-struct GEMMKernel {
-  var library: MTLLibrary
-  
+// Fuses the generation of dP (GEMM) with the generation of dS (elementwise).
+struct DerivativeSoftmaxKernel {
+  // The source code to compile.
   var source: String = ""
   
   // A copy of the block dimensions from the descriptor.
@@ -24,9 +22,7 @@ struct GEMMKernel {
   
   init(descriptor: GEMMKernelDescriptor) {
     guard let blockDimensions = descriptor.blockDimensions,
-          let device = descriptor.device,
           let memoryPrecisions = descriptor.memoryPrecisions,
-          let preferAsyncStore = descriptor.preferAsyncStore,
           let registerPrecisions = descriptor.registerPrecisions,
           let splits = descriptor.splits,
           let transposeState = descriptor.transposeState else {
@@ -35,64 +31,43 @@ struct GEMMKernel {
     self.blockDimensions = blockDimensions
     self.threadgroupSize = 32 * splits.M * splits.N
     
-    // Validate the correctness of register precisions.
-    func checkOperandPair(
-      memory: GEMMOperandPrecision,
-      register: GEMMOperandPrecision
-    ) -> Bool {
-      // Truth table:
-      //
-      // memory | register | valid |
-      // ------ | -------- | ----- |
-      // FP32   | FP32     | yes   |
-      // FP32   | FP16     | no    |
-      // FP32   | BF16     | no    |
-      // FP16   | FP32     | yes   |
-      // FP16   | FP16     | yes   |
-      // FP16   | BF16     | no    |
-      // BF16   | FP32     | yes   |
-      // BF16   | FP16     | no    |
-      // BF16   | BF16     | yes   |
-      //
-      // Optimized form of the logic:
-      //
-      // If the register precision matches the memory precision,
-      //   return true
-      // If the register precision equals FP32,
-      //   return true
-      // Otherwise,
-      //   return false
-      //
-      // The logic statements will change if you introduce custom quantized
-      // formats. The truth table will grow exponentially. You'll need to add
-      // more restrictions on accepted pairs to overcome the combinatorial
-      // explosion.
-      if register == memory {
-        return true
-      } else if register == .FP32 {
-        return true
-      } else {
-        return false
-      }
+    // Validate the correctness of the dO precision.
+    switch (memoryPrecisions.A, registerPrecisions.A) {
+    case (.FP32, .FP32):
+      // 32-bit training.
+      break
+    case (.BF16, .FP32):
+      // Mixed precision training (M1).
+      break
+    case (.BF16, .BF16):
+      // Mixed precision training (M3).
+      break
+    default:
+      fatalError("Operand A had an invalid precision.")
     }
     
-    guard checkOperandPair(
-      memory: memoryPrecisions.A, register: registerPrecisions.A) else {
-      fatalError("Operand A had an invalid register precision.")
+    // Validate the correctness of the V precision.
+    switch (memoryPrecisions.B, registerPrecisions.B) {
+    case (.FP32, .FP32):
+      // 32-bit training.
+      break
+    case (.FP16, .FP16):
+      // Mixed precision training.
+      break
+    default:
+      fatalError("Operand B had an invalid precision.")
     }
-    guard checkOperandPair(
-      memory: memoryPrecisions.B, register: registerPrecisions.B) else {
-      fatalError("Operand B had an invalid register precision.")
-    }
-    guard checkOperandPair(
-      memory: memoryPrecisions.C, register: registerPrecisions.C) else {
-      fatalError("Operand C had an invalid register precision.")
-    }
-    if registerPrecisions.C == .BF16 {
-      // BF16 has too few mantissa bits to be an accurate accumulator. In
-      // addition, switching from FP32 accumulator to BF16 accumulator slows
-      // down execution speed on both M1/M2 and M3+.
-      fatalError("BF16 cannot be used as the register precision for C.")
+    
+    // Validate the correctness of the dS precision.
+    switch (memoryPrecisions.C, registerPrecisions.C) {
+    case (.FP32, .FP32):
+      // 32-bit training.
+      break
+    case (.BF16, .FP32):
+      // Mixed precision training.
+      break
+    default:
+      fatalError("Operand C had an invalid precision.")
     }
     
     // Inject the contents of the headers.
@@ -218,7 +193,6 @@ constant ushort N_shift = (N < N_group) ? 0 : \(registerN) - N_remainder;
     // is allocated by embedding the precision into the assembly code.
     let registerNameA = registerPrecisions.A.name
     let registerNameB = registerPrecisions.B.name
-    let registerNameC = registerPrecisions.C.name
     
     // Add the utility functions.
     source += """
@@ -296,7 +270,7 @@ METAL_FUNC void multiply_accumulate(
   const \(addressSpace) \(memoryNameB) *B_src,
   thread simdgroup_matrix_storage<\(registerNameA)> *A_sram,
   thread simdgroup_matrix_storage<\(registerNameB)> *B_sram,
-  thread simdgroup_matrix_storage<\(registerNameC)> *C_sram,
+  thread simdgroup_matrix_storage<float> *C_sram,
   ushort k
 ) {
 #pragma clang loop unroll(full)
@@ -434,7 +408,7 @@ kernel void gemm(device \(memoryNameA) *A [[buffer(0)]],
       
       source += """
 
-  simdgroup_matrix_storage<\(registerNameC)> C_sram[\(arrayElementsC)];
+  simdgroup_matrix_storage<float> C_sram[\(arrayElementsC)];
   
   // Initialize the accumulator.
 #pragma clang loop unroll(full)
@@ -443,7 +417,7 @@ kernel void gemm(device \(memoryNameA) *A [[buffer(0)]],
     for (ushort n = 0; n < \(registerN); n += 8) {
       ushort2 origin(n, m);
       auto C = get_sram(C_sram, \(registerN), origin);
-      *C = simdgroup_matrix_storage<\(registerNameC)>(0);
+      *C = simdgroup_matrix_storage<float>(0);
     }
   }
 
@@ -544,31 +518,22 @@ kernel void gemm(device \(memoryNameA) *A [[buffer(0)]],
 """
     }
     
-    // Add the cleanup portion where the accumulator is stored.
+    // Overwrite the accumulator with dS.
     do {
-      var storeFunctionC: String
-      if memoryPrecisions.C == .BF16,
-         registerPrecisions.C == .FP32 {
-        storeFunctionC = "store_bfloat"
+      var memoryNameP: String
+      if memoryPrecisions.C == .BF16 {
+        memoryNameP = "half"
       } else {
-        storeFunctionC = "store"
-      }
-      
-      var condition: String
-      if preferAsyncStore {
-        condition = "false"
-      } else {
-        condition = "(M >= M_group) && (N >= N_group)"
+        memoryNameP = "float"
       }
       
       source += """
 
-if (\(condition)) {
-  // Fast path for matrices that qualify.
+if ((M >= M_group) && (N >= N_group)) {
   uint2 C_offset(N_offset + offset_in_group.x,
                  M_offset + offset_in_group.y);
-  auto C_dst = simdgroup_matrix_storage<\(memoryNameC)>::apply_offset(
-    C, N, C_offset);
+  auto C_src = simdgroup_matrix_storage<\(memoryNameP)>::apply_offset(
+    (device \(memoryNameP)*)C, N, C_offset);
   
   // Write the accumulator to device memory.
 #pragma clang loop unroll(full)
@@ -576,12 +541,38 @@ if (\(condition)) {
 #pragma clang loop unroll(full)
     for (ushort n = 0; n < \(registerN); n += 8) {
       ushort2 origin(n, m);
-      auto C = get_sram(C_sram, \(registerN), origin);
-      C->\(storeFunctionC)(C_dst, N, origin);
+      auto dP = get_sram(C_sram, \(registerN), origin);
+      
+      // dS = P * (dP - D);
+      simdgroup_matrix_storage<\(memoryNameP)> P;
+      P->load(C_src, N, origin);
+      auto P_elements = *(P->thread_elements());
+      *(dP->thread_elements()) *= float2(P_elements);
     }
   }
 } else {
-  // Slow path for when memory must be handled more carefully.
+  // For simplicity, require that all matrices are large enough to employ the
+  // shifting optimization. This means the sequence length must be >= 32.
+  return;
+}
+
+"""
+    }
+    
+    // Store the accumulator.
+    do {
+      var storeFunctionC: String
+      if memoryPrecisions.C == .BF16 {
+        storeFunctionC = "store_bfloat"
+      } else {
+        storeFunctionC = "store"
+      }
+      
+      source += """
+
+{
+  // Always take the slow path. The shifting optimization will produce
+  // incorrect results when two conflicting threads write the same value.
   auto C_block = (threadgroup \(memoryNameC)*)(threadgroup_block);
   auto C_block_dst = simdgroup_matrix_storage<\(memoryNameC)>::apply_offset(
     C_block, N_group, offset_in_group);
@@ -630,8 +621,5 @@ if (\(condition)) {
     
     // Add the final closing brace of the Metal function.
     source += "}" + "\n"
-    
-    // Compile the shader source.
-    library = try! device.makeLibrary(source: source, options: nil)
   }
 }
