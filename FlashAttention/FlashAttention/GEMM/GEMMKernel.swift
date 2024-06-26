@@ -210,39 +210,15 @@ constant ushort N_shift = (N < N_group) ? 0 : \(registerN) - N_remainder;
     // Allocate threadgroup memory, using the 'memory precision'. This memory
     // is allocated at runtime, either by the user (explicit API call) or by
     // the driver (behind the scenes).
-    func createPrecisionSize(_ precision: GEMMOperandPrecision) -> UInt16 {
-      // NOTE: Exotic precisions like some LLaMA quantization formats and ezm8
-      // have the exponent deinterleaved from the mantissa. Such precisions
-      // would require careful consideration of the meaning of per-scalar
-      // memory footprint.
-      switch precision {
-      case .FP32: return 4
-      case .FP16: return 2
-      case .BF16: return 2
-      }
-    }
+    let memoryNameA = memoryPrecisions.A.name
+    let memoryNameB = memoryPrecisions.B.name
+    let memoryNameC = memoryPrecisions.C.name
     
     // Allocate thread memory, using the 'register precision'. This memory
     // is allocated by embedding the precision into the assembly code.
-    func createPrecisionName(_ precision: GEMMOperandPrecision) -> String {
-      // Exotic precisions would not require any special handling here. Good
-      // practices dictate that you decode to floating point while filling
-      // up the registers. Therefore, the registers will always be floating
-      // point.
-      switch precision {
-      case .FP32: return "float"
-      case .FP16: return "half"
-      case .BF16: return "bfloat"
-      }
-    }
-    
-    // Determine the names of the operands.
-    let memoryNameA = createPrecisionName(memoryPrecisions.A)
-    let memoryNameB = createPrecisionName(memoryPrecisions.B)
-    let memoryNameC = createPrecisionName(memoryPrecisions.C)
-    let registerNameA = createPrecisionName(registerPrecisions.A)
-    let registerNameB = createPrecisionName(registerPrecisions.B)
-    let registerNameC = createPrecisionName(registerPrecisions.C)
+    let registerNameA = registerPrecisions.A.name
+    let registerNameB = registerPrecisions.B.name
+    let registerNameC = registerPrecisions.C.name
     
     // Add the utility functions.
     source += """
@@ -380,9 +356,9 @@ METAL_FUNC void multiply_accumulate(
       var blockBytesA = paddedBlockDimensionsA.M * paddedBlockDimensionsA.K
       var blockBytesB = paddedBlockDimensionsB.K * paddedBlockDimensionsB.N
       var blockBytesC = paddedBlockDimensionsC.M * paddedBlockDimensionsC.N
-      blockBytesA *= createPrecisionSize(memoryPrecisions.A)
-      blockBytesB *= createPrecisionSize(memoryPrecisions.B)
-      blockBytesC *= createPrecisionSize(memoryPrecisions.C)
+      blockBytesA *= UInt16(memoryPrecisions.A.size)
+      blockBytesB *= UInt16(memoryPrecisions.B.size)
+      blockBytesC *= UInt16(memoryPrecisions.C.size)
       threadgroupMemoryAllocation = max(blockBytesA + blockBytesB, blockBytesC)
       
       source += """

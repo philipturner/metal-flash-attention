@@ -39,7 +39,7 @@ func executeScript() {
   //   accumulator. This would require heavy testing to ensure no regressions.
   
   // Define the problem dimensions.
-  let N: Int = 40
+  let N: Int = 10
   let D: Int = 3
   
   var networkDesc = NetworkDescriptor()
@@ -47,34 +47,43 @@ func executeScript() {
   networkDesc.D = D
   let network = Network(descriptor: networkDesc)
   
-  let matrixSRow = network.createMatrixSRow(rowID: 0)
-  let matrixPRow = network.createMatrixPRow(rowID: 0)
+  var matrixS: [Float] = []
+  var matrixP: [Float] = []
+  for rowID in 0..<N {
+    let matrixSRow = network.createMatrixSRow(rowID: rowID)
+    let matrixPRow = network.createMatrixPRow(rowID: rowID)
+    matrixS += matrixSRow
+    matrixP += matrixPRow
+  }
   
-  func printRow(_ row: [Float]) {
-    for element in row {
-      var repr = String(format: "%.3f", element)
-      while repr.count < 8 {
-        repr = " " + repr
+  // Displays a matrix with dimensions N * N.
+  func printMatrix(_ matrix: [Float]) {
+    for r in 0..<N {
+      for c in 0..<N {
+        let matrixAddress = r * N + c
+        let matrixValue = matrix[matrixAddress]
+        var repr = String(format: "%.3f", matrixValue)
+        while repr.count < 8 {
+          repr = " " + repr
+        }
+        print(repr, terminator: " ")
       }
-      print(repr, terminator: " ")
+      print()
     }
-    print()
   }
   
   print()
-  print("S[0]")
-  printRow(matrixSRow)
-  print(matrixSRow.reduce(0, +))
+  print("S")
+  printMatrix(matrixS)
   
   print()
-  print("P[0]")
-  printRow(matrixPRow)
-  print(matrixPRow.reduce(0, +))
+  print("P")
+  printMatrix(matrixP)
   
   // Create the kernel.
   var softmaxDesc = SoftmaxDescriptor()
   softmaxDesc.threadgroupSize = 128
-  softmaxDesc.memoryPrecision = .FP16
+  softmaxDesc.memoryPrecision = .FP32
   softmaxDesc.matrixDimensions = (UInt16(N), UInt16(D))
   let softmaxKernel = SoftmaxKernel(descriptor: softmaxDesc)
   
@@ -90,7 +99,7 @@ func executeScript() {
   
   // Create the buffer.
   let attentionMatrixBuffer = MTLContext.global
-    .createBuffer(matrixSRow, softmaxDesc.memoryPrecision!)
+    .createBuffer(matrixS, softmaxDesc.memoryPrecision!)
   
   do {
     // Encode the GPU command.
@@ -100,7 +109,7 @@ func executeScript() {
     encoder.setBuffer(attentionMatrixBuffer, offset: 0, index: 0)
     do {
       let gridSize = MTLSize(
-        width: Int(1), height: 1, depth: 1)
+        width: Int(N), height: 1, depth: 1)
       let groupSize = MTLSize(
         width: Int(softmaxKernel.threadgroupSize), height: 1, depth: 1)
       encoder.dispatchThreadgroups(
@@ -112,13 +121,13 @@ func executeScript() {
   }
   
   // Copy the results.
-  var resultRow = [Float](repeating: .zero, count: N)
+  var result = [Float](repeating: .zero, count: N * N)
   do {
     let precision = softmaxDesc.memoryPrecision!
     let raw = attentionMatrixBuffer.contents()
-    for rowID in 0..<1 {
-      for columnID in 0..<N {
-        let address = rowID * N + columnID
+    for r in 0..<N {
+      for c in 0..<N {
+        let address = r * N + c
         var entry32: Float
         
         switch precision {
@@ -135,14 +144,13 @@ func executeScript() {
           let entry16x2 = SIMD2<UInt16>(.zero, entry16)
           entry32 = unsafeBitCast(entry16x2, to: Float.self)
         }
-        resultRow[address] = entry32
+        result[address] = entry32
       }
     }
   }
   
   print()
-  print("result[0]")
-  printRow(resultRow)
-  print(resultRow.reduce(0, +))
+  print("result")
+  printMatrix(result)
 }
 #endif

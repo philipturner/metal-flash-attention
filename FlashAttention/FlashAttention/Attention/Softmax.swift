@@ -37,16 +37,9 @@ struct SoftmaxKernel {
     }
     self.threadgroupSize = threadgroupSize
     
-    // Find the MSL keyword corresponding to the precision.
-    var precision: String
-    switch memoryPrecision {
-    case .FP32:
-      precision = "float"
-    case .FP16:
-      precision = "half"
-    case .BF16:
-      precision = "bfloat"
-    }
+    // Shorten some names to keep the code within 80 spaces.
+    let precision = memoryPrecision.name
+    let C = matrixDimensions.N
     
     // Check that the threadgroup size is compatible with the shader.
     guard threadgroupSize % 32 == 0,
@@ -55,10 +48,7 @@ struct SoftmaxKernel {
       fatalError("Invalid group size.")
     }
     
-
-    
     // Allocate enough registers to cache the entire matrix row.
-    let C = matrixDimensions.N
     var paddedC = C + threadgroupSize - 1
     paddedC = (paddedC / threadgroupSize) * threadgroupSize
     
