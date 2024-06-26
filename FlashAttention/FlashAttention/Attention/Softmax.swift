@@ -84,11 +84,25 @@ kernel void softmax(
   ushort thread_id = sidx * 32 + lane_id;
   auto baseAddress = attentionMatrix + gid * \(C);
   
+  for (uint c = 0; c < \(C / threadgroupSize); ++c) {
+    elements[c] = baseAddress[c * \(threadgroupSize) + thread_id];
+  }
+  if (thread_id < \(threadgroupSize - (paddedC - C))) {
+    uint c = \(paddedC / threadgroupSize - 1);
+    elements[c] = baseAddress[c * \(threadgroupSize) + thread_id];
+  } else {
+    elements[\(paddedC / threadgroupSize - 1)] = 0;
+  }
+
+"""
+    
+    source += """
+  
   // Accumulate the maximum.
   float m = -numeric_limits<float>::max();
 #pragma clang loop unroll(full)
   for (uint c = thread_id; c < \(C); c += \(threadgroupSize)) {
-    \(precision) value = \(scaleFactor) * baseAddress[c];
+    \(precision) value = \(scaleFactor) * elements[c / \(threadgroupSize)];
     m = max(m, float(value));
   }
   m = simd_max(m);
@@ -98,7 +112,7 @@ kernel void softmax(
   float l = 0;
 #pragma clang loop unroll(full)
   for (uint c = thread_id; c < \(C); c += \(threadgroupSize)) {
-    \(precision) value = \(scaleFactor) * baseAddress[c];
+    \(precision) value = \(scaleFactor) * elements[c / \(threadgroupSize)];
     float exp_term = exp(float(value) - m);
     l += exp_term;
   }
@@ -110,7 +124,7 @@ kernel void softmax(
   \(precision) l_recip = \(precision)(1 / l);
 #pragma clang loop unroll(full)
   for (uint c = thread_id; c < \(C); c += \(threadgroupSize)) {
-    \(precision) value = \(scaleFactor) * baseAddress[c];
+    \(precision) value = \(scaleFactor) * elements[c / \(threadgroupSize)];
     float exp_term = exp(float(value) - m);
 
     // Emulate the rounding error from compressing in registers.
