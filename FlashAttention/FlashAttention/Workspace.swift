@@ -39,7 +39,7 @@ func executeScript() {
   //   accumulator. This would require heavy testing to ensure no regressions.
   
   // Define the problem dimensions.
-  let N: Int = 130
+  let N: Int = 40
   let D: Int = 3
   
   var networkDesc = NetworkDescriptor()
@@ -74,7 +74,7 @@ func executeScript() {
   // Create the kernel.
   var softmaxDesc = SoftmaxDescriptor()
   softmaxDesc.threadgroupSize = 128
-  softmaxDesc.memoryPrecision = .FP32
+  softmaxDesc.memoryPrecision = .FP16
   softmaxDesc.matrixDimensions = (UInt16(N), UInt16(D))
   let softmaxKernel = SoftmaxKernel(descriptor: softmaxDesc)
   

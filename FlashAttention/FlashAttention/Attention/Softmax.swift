@@ -44,8 +44,8 @@ struct SoftmaxKernel {
       precision = "float"
     case .FP16:
       precision = "half"
-    default:
-      fatalError("Unsupported precision.")
+    case .BF16:
+      precision = "bfloat"
     }
     
     // Check that the threadgroup size is compatible with the shader.
@@ -63,9 +63,8 @@ struct SoftmaxKernel {
     paddedC = (paddedC / threadgroupSize) * threadgroupSize
     
     // Apply the "scale" in scaled dot product attention.
-    let scaleFactor = 1 / Float(matrixDimensions.D).squareRoot()
-    
-
+    let scaleFactorValue = 1 / Float(matrixDimensions.D).squareRoot()
+    let scaleFactor = "\(precision)(\(scaleFactorValue))"
     
     source = """
 #include <metal_stdlib>
@@ -80,31 +79,49 @@ kernel void softmax(
 {
   \(precision) elements[\(paddedC / threadgroupSize)];
   threadgroup float simd_messages[\(threadgroupSize / 32)];
-
+  
   // Initial proof of concept:
   // - Allocate the number of registers required.
   // - Run a kernel that doesn't do anything
-  // - Run the dumb softmax that reads from RAM multiple times.
-  // - Run an alternative dumb softmax that writes to TG memory.
-  // - Prove that my softmax kernel has better performance.
-
+  // - Run the simple softmax that reads from RAM multiple times.
+  //   - Measure bandwidth utilization.
+  //   - Find a way to profile multiple variants simultaneously.
+  // - Run the efficient softmax that caches in registers.
+  //   - Measure bandwidth utilization.
+  //   - Force-unroll the loops, test for a performance improvement.
+  // - Benchmark on M4.
+  
   ushort thread_id = sidx * 32 + lane_id;
   auto baseAddress = attentionMatrix + gid * \(C);
-
+  
   // Accumulate the maximum.
   float m = -numeric_limits<float>::max();
   for (uint c = thread_id; c < \(C); c += \(threadgroupSize)) {
     \(precision) value = \(scaleFactor) * baseAddress[c];
-    m = max(m, value);
+    m = max(m, float(value));
   }
   m = simd_max(m);
   \(createReduction("m") { "max(\($0), \($1))" })
   
   // Accumulate the sum.
-
-  // Write the output.
-  baseAddress[thread_id] = m;
+  float l = 0;
+  for (uint c = thread_id; c < \(C); c += \(threadgroupSize)) {
+    \(precision) value = \(scaleFactor) * baseAddress[c];
+    float exp_term = exp(float(value) - m);
+    l += exp_term;
+  }
+  l = simd_sum(l);
+  \(createReduction("l") { "\($0) + \($1)" })
   
+  // Write the output.
+  \(precision) l_recip = \(precision)(1 / l);
+  for (uint c = thread_id; c < \(C); c += \(threadgroupSize)) {
+    \(precision) value = \(scaleFactor) * baseAddress[c];
+    float exp_term = exp(float(value) - m);
+
+    // Emulate the rounding error from compressing in registers.
+    baseAddress[c] = \(precision)(exp_term) * l_recip;
+  }
 }
 
 """
@@ -118,11 +135,7 @@ kernel void softmax(
     var output = """
 simd_messages[sidx] = \(registerName);
 threadgroup_barrier(mem_flags::mem_threadgroup);
-if (lane_id < \(threadgroupSize / 32)) {
-  \(registerName) = simd_messages[lane_id];
-} else {
-  \(registerName) = 0;
-}
+\(registerName) = simd_messages[lane_id & \(threadgroupSize / 32 - 1)];
 """
     
     var shiftAmount = 1
