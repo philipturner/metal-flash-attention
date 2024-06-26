@@ -28,6 +28,7 @@
 		98DA5B362C2AFD65000F4E06 /* Network.swift in Sources */ = {isa = PBXBuildFile; fileRef = 98DA5B352C2AFD65000F4E06 /* Network.swift */; };
 		98DA5B382C2AFF9E000F4E06 /* FiniteDifferencingTest.swift in Sources */ = {isa = PBXBuildFile; fileRef = 98DA5B372C2AFF9E000F4E06 /* FiniteDifferencingTest.swift */; };
 		98DA5B3A2C2B3A6D000F4E06 /* Softmax.swift in Sources */ = {isa = PBXBuildFile; fileRef = 98DA5B392C2B3A6D000F4E06 /* Softmax.swift */; };
+		98DA5B3D2C2C5086000F4E06 /* MTLContext.swift in Sources */ = {isa = PBXBuildFile; fileRef = 98DA5B3C2C2C5086000F4E06 /* MTLContext.swift */; };
 /* End PBXBuildFile section */
 
 /* Begin PBXFileReference section */
@@ -51,6 +52,7 @@
 		98DA5B352C2AFD65000F4E06 /* Network.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = Network.swift; sourceTree = "<group>"; };
 		98DA5B372C2AFF9E000F4E06 /* FiniteDifferencingTest.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = FiniteDifferencingTest.swift; sourceTree = "<group>"; };
 		98DA5B392C2B3A6D000F4E06 /* Softmax.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = Softmax.swift; sourceTree = "<group>"; };
+		98DA5B3C2C2C5086000F4E06 /* MTLContext.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = MTLContext.swift; sourceTree = "<group>"; };
 /* End PBXFileReference section */
 
 /* Begin PBXFrameworksBuildPhase section */
@@ -89,6 +91,7 @@
 			children = (
 				98DA5B3B2C2B3A81000F4E06 /* Attention */,
 				9881AA122C25AEA80056D05C /* GEMM */,
+				98DA5B3E2C2C5101000F4E06 /* Utillities */,
 				9881AA212C25C21F0056D05C /* Tests */,
 				9881A9F72C24C8230056D05C /* ContentView.swift */,
 				9881A9F52C24C8230056D05C /* FlashAttentionApp.swift */,
@@ -139,6 +142,14 @@
 				98DA5B392C2B3A6D000F4E06 /* Softmax.swift */,
 			);
 			path = Attention;
+			sourceTree = "<group>";
+		};
+		98DA5B3E2C2C5101000F4E06 /* Utillities */ = {
+			isa = PBXGroup;
+			children = (
+				98DA5B3C2C2C5086000F4E06 /* MTLContext.swift */,
+			);
+			path = Utillities;
 			sourceTree = "<group>";
 		};
 /* End PBXGroup section */
@@ -233,6 +244,7 @@
 				9881A9F62C24C8230056D05C /* FlashAttentionApp.swift in Sources */,
 				9881AA1E2C25B1ED0056D05C /* GEMMKernel.swift in Sources */,
 				9881AA142C25AED50056D05C /* GEMMKernelDescriptor.swift in Sources */,
+				98DA5B3D2C2C5086000F4E06 /* MTLContext.swift in Sources */,
 				9881AA162C25AEF10056D05C /* GEMMOperandPrecision.swift in Sources */,
 				98DA5B3A2C2B3A6D000F4E06 /* Softmax.swift in Sources */,
 			);

@@ -57,18 +57,6 @@ func executeScript() {
   }
 }
 
-struct MTLContext {
-  var device: MTLDevice
-  var commandQueue: MTLCommandQueue
-  
-  init() {
-    device = MTLCreateSystemDefaultDevice()!
-    commandQueue = device.makeCommandQueue()!
-  }
-  
-  static let global = MTLContext()
-}
-
 // Run a test with the specified configuration.
 func runCorrectnessTest(descriptor: GEMMDescriptor) {
   guard let matrixDimensions = descriptor.matrixDimensions,
@@ -99,52 +87,13 @@ func runCorrectnessTest(descriptor: GEMMDescriptor) {
     operandB[elementID] = randomNumber * normalizationFactor
   }
   
-  func createBuffer(
-    _ originalData: [Float],
-    _ precision: GEMMOperandPrecision
-  ) -> MTLBuffer {
-    // Add random numbers to expose out-of-bounds accesses.
-    var augmentedData = originalData
-    for _ in 0..<originalData.count {
-      let randomNumber = Float.random(in: -20...20)
-      augmentedData.append(randomNumber)
-    }
-    
-    // Allocate enough memory to store everything in Float32.
-    let bufferSize = augmentedData.count * 4
-    let device = MTLContext.global.device
-    let buffer = device.makeBuffer(length: bufferSize)!
-    
-    // Copy the data into the buffer.
-    switch precision {
-    case .FP32:
-      let pointer = buffer.contents().assumingMemoryBound(to: Float.self)
-      for i in augmentedData.indices {
-        pointer[i] = augmentedData[i]
-      }
-    case .FP16:
-      let pointer = buffer.contents().assumingMemoryBound(to: Float16.self)
-      for i in augmentedData.indices {
-        pointer[i] = Float16(augmentedData[i])
-      }
-    case .BF16:
-      let pointer = buffer.contents().assumingMemoryBound(to: UInt16.self)
-      for i in augmentedData.indices {
-        let value32 = augmentedData[i].bitPattern
-        let value16 = unsafeBitCast(value32, to: SIMD2<UInt16>.self)[1]
-        pointer[i] = value16
-      }
-    }
-    return buffer
-  }
-  
   // Create the buffers.
   var gpuOperandC = [Float](
     repeating: .zero,
     count: Int(matrixDimensions.M * matrixDimensions.N))
-  let bufferA = createBuffer(operandA, memoryPrecisions.A)
-  let bufferB = createBuffer(operandB, memoryPrecisions.B)
-  let bufferC = createBuffer(gpuOperandC, memoryPrecisions.C)
+  let bufferA = MTLContext.global.createBuffer(operandA, memoryPrecisions.A)
+  let bufferB = MTLContext.global.createBuffer(operandB, memoryPrecisions.B)
+  let bufferC = MTLContext.global.createBuffer(gpuOperandC, memoryPrecisions.C)
   
   let checkpoint1 = CACurrentMediaTime()
   
