@@ -70,17 +70,6 @@ kernel void softmax(
   \(precision) elements[\(paddedC / threadgroupSize)];
   threadgroup float simd_messages[\(threadgroupSize / 32)];
   
-  // Initial proof of concept:
-  // - Allocate the number of registers required.
-  // - Run a kernel that doesn't do anything
-  // - Run the simple softmax that reads from RAM multiple times.
-  //   - Measure bandwidth utilization.
-  //   - Find a way to profile multiple variants simultaneously.
-  // - Run the efficient softmax that caches in registers.
-  //   - Measure bandwidth utilization.
-  //   - Force-unroll the loops, test for a performance improvement.
-  // - Benchmark on M4.
-  
   ushort thread_id = sidx * 32 + lane_id;
   auto baseAddress = attentionMatrix + gid * \(C) + thread_id;
   
