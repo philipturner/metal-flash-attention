@@ -86,6 +86,7 @@ kernel void softmax(
   
   // Accumulate the maximum.
   float m = -numeric_limits<float>::max();
+#pragma clang loop unroll(full)
   for (uint c = thread_id; c < \(C); c += \(threadgroupSize)) {
     \(precision) value = \(scaleFactor) * baseAddress[c];
     m = max(m, float(value));
@@ -95,16 +96,19 @@ kernel void softmax(
   
   // Accumulate the sum.
   float l = 0;
+#pragma clang loop unroll(full)
   for (uint c = thread_id; c < \(C); c += \(threadgroupSize)) {
     \(precision) value = \(scaleFactor) * baseAddress[c];
     float exp_term = exp(float(value) - m);
     l += exp_term;
   }
   l = simd_sum(l);
+  threadgroup_barrier(mem_flags::mem_threadgroup);
   \(createReduction("l") { "\($0) + \($1)" })
   
   // Write the output.
   \(precision) l_recip = \(precision)(1 / l);
+#pragma clang loop unroll(full)
   for (uint c = thread_id; c < \(C); c += \(threadgroupSize)) {
     \(precision) value = \(scaleFactor) * baseAddress[c];
     float exp_term = exp(float(value) - m);

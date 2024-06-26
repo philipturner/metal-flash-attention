@@ -39,14 +39,28 @@ func executeScript() {
   //   accumulator. This would require heavy testing to ensure no regressions.
   
   // Define the problem dimensions.
-  let N: Int = 777
-  let D: Int = 300
+  // 2560 (FP32, naive kernel) - 490 GB/s
+  // 4096 (FP16, naive kernel) - 399 GB/s
+  let N: Int = 4096
+  let D: Int = 16
   
+  // Create the kernel.
+  var softmaxDesc = SoftmaxDescriptor()
+  
+  // optimal size: 512-1024 (FP32, naive kernel)
+  //               256-512 (FP16, naive kernel)
+  softmaxDesc.threadgroupSize = 512
+  softmaxDesc.memoryPrecision = .FP16
+  softmaxDesc.matrixDimensions = (UInt16(N), UInt16(D))
+  let softmaxKernel = SoftmaxKernel(descriptor: softmaxDesc)
+  
+  // Create the reference implementation.
   var networkDesc = NetworkDescriptor()
   networkDesc.N = N
   networkDesc.D = D
   let network = Network(descriptor: networkDesc)
   
+  // Generate attention matrices with the reference implementation.
   var matrixS: [Float] = []
   var matrixP: [Float] = []
   for rowID in 0..<N {
@@ -55,29 +69,6 @@ func executeScript() {
     matrixS += matrixSRow
     matrixP += matrixPRow
   }
-  
-  // Displays a matrix with dimensions N * N.
-  func printMatrix(_ matrix: [Float]) {
-    for r in 0..<N {
-      for c in 0..<N {
-        let matrixAddress = r * N + c
-        let matrixValue = matrix[matrixAddress]
-        var repr = String(format: "%.3f", matrixValue)
-        while repr.count < 8 {
-          repr = " " + repr
-        }
-        print(repr, terminator: " ")
-      }
-      print()
-    }
-  }
-  
-  // Create the kernel.
-  var softmaxDesc = SoftmaxDescriptor()
-  softmaxDesc.threadgroupSize = 128
-  softmaxDesc.memoryPrecision = .FP32
-  softmaxDesc.matrixDimensions = (UInt16(N), UInt16(D))
-  let softmaxKernel = SoftmaxKernel(descriptor: softmaxDesc)
   
   // Create the pipeline state object.
   var pipeline: MTLComputePipelineState
@@ -89,10 +80,11 @@ func executeScript() {
       .makeComputePipelineState(function: computeFunction)
   }
   
+  // MARK: - Correctness Test
+  
   // Create the buffer.
   let attentionMatrixBuffer = MTLContext.global
     .createBuffer(matrixS, softmaxDesc.memoryPrecision!)
-  
   do {
     // Encode the GPU command.
     let commandBuffer = MTLContext.global.commandQueue.makeCommandBuffer()!
@@ -170,5 +162,66 @@ func executeScript() {
       }
     }
   }
+  if errorCount > 0 {
+    print("Could not benchmark performance because results were incorrect.")
+    return
+  }
+  
+  // MARK: - Performance Test
+  
+  var maxBandwidth: Float = .zero
+  var minLatency: Int = .max
+  for _ in 0..<25 {
+    let duplicatedCommandCount: Int = 50
+    
+    // Encode the GPU command.
+    let commandBuffer = MTLContext.global.commandQueue.makeCommandBuffer()!
+    let encoder = commandBuffer.makeComputeCommandEncoder()!
+    encoder.setComputePipelineState(pipeline)
+    encoder.setBuffer(attentionMatrixBuffer, offset: 0, index: 0)
+    for _ in 0..<duplicatedCommandCount {
+      let gridSize = MTLSize(
+        width: Int(N), height: 1, depth: 1)
+      let groupSize = MTLSize(
+        width: Int(softmaxKernel.threadgroupSize), height: 1, depth: 1)
+      encoder.dispatchThreadgroups(
+        gridSize, threadsPerThreadgroup: groupSize)
+    }
+    encoder.endEncoding()
+    commandBuffer.commit()
+    commandBuffer.waitUntilCompleted()
+    
+    // Determine the time taken.
+    let start = commandBuffer.gpuStartTime
+    let end = commandBuffer.gpuEndTime
+    let latency = (end - start) / Double(duplicatedCommandCount)
+    let latencyMicroseconds = Int(latency / 1e-6)
+    
+    // Determine the amount of work done.
+    var bytes = 2 * N * N
+    bytes *= softmaxDesc.memoryPrecision!.size
+    let bandwidth = Float(bytes) / Float(latency) / 1e9
+    
+    // Accumulate the results.
+    maxBandwidth = max(maxBandwidth, bandwidth)
+    minLatency = min(minLatency, latencyMicroseconds)
+  }
+  
+  // Report the results.
+  func pad(_ string: String) -> String {
+    var output = string
+    while output.count < 8 {
+      output = " " + output
+    }
+    return output
+  }
+  var problemSizeRepr = "\(N)"
+  var latencyRepr = "\(minLatency)"
+  var bandwidthRepr = String(format: "%.3f", maxBandwidth)
+  problemSizeRepr = pad(problemSizeRepr)
+  latencyRepr = pad(latencyRepr)
+  bandwidthRepr = pad(bandwidthRepr)
+  
+  print("N = \(problemSizeRepr) | \(latencyRepr) μs | \(bandwidthRepr) GB/s")
 }
 #endif
