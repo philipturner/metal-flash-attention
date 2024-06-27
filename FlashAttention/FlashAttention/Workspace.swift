@@ -36,13 +36,13 @@ func executeScript() {
   //   accumulator. This would require heavy testing to ensure no regressions.
   
   // Set up a correctness test with matrix dimensions typical for attention.
-  let N: Int = 320
-  let D: Int = 800
+  let N: Int = 1496
+  let D: Int = 48
   
   // Create the GEMM kernel.
   var gemmDesc = GEMMDescriptor()
   gemmDesc.matrixDimensions = (UInt32(N), UInt32(N), UInt32(D))
-  gemmDesc.memoryPrecisions = (.BF16, .FP16, .BF16)
+  gemmDesc.memoryPrecisions = (.FP32, .FP32, .FP32)
   gemmDesc.transposeState = (false, true)
   var kernelDesc = GEMMKernelDescriptor(descriptor: gemmDesc)
   kernelDesc.device = nil
@@ -143,6 +143,8 @@ func executeScript() {
   let pipeline = DerivativeSoftmaxKernel.createPipeline(
     source: kernel.source, matrixDimensions: gemmDesc.matrixDimensions!)
   
+  // MARK: - Correctness Test
+  
   // Encode a single Metal command.
   do {
     let commandBuffer = MTLContext.global.commandQueue.makeCommandBuffer()!
@@ -240,5 +242,134 @@ func executeScript() {
     print("Could not benchmark performance because results were incorrect.")
     return
   }
+  
+  // MARK: - Performance Test
+  
+  // Test the GEMM throughput on M1 and M4.
+  //
+  // M1 Max, FP32:
+  //
+  // N = 1496 | D =   48 |       74 μs | 3000 GFLOPS
+  // N = 1498 | D =   48 |       77 μs | 2881 GFLOPS
+  // N = 1500 | D =   48 |       76 μs | 2940 GFLOPS
+  // N = 1502 | D =   48 |       77 μs | 2911 GFLOPS
+  // N = 1504 | D =   48 |       71 μs | 3154 GFLOPS
+  //
+  // N = 3000 | D =   48 |      165 μs | 5451 GFLOPS
+  // N = 3000 | D =   50 |      319 μs | 2928 GFLOPS
+  // N = 3000 | D =   52 |      270 μs | 3595 GFLOPS
+  // N = 3000 | D =   54 |      237 μs | 4236 GFLOPS
+  // N = 3000 | D =   56 |      185 μs | 5631 GFLOPS
+  //
+  // N = 3000 | D =   96 |      262 μs | 6707 GFLOPS
+  // N = 3000 | D =   98 |      429 μs | 4188 GFLOPS
+  // N = 3000 | D =  100 |      370 μs | 4961 GFLOPS
+  // N = 3000 | D =  102 |      334 μs | 5595 GFLOPS
+  // N = 3000 | D =  104 |      281 μs | 6783 GFLOPS
+  //
+  // N = 3000 | D =  248 |      572 μs | 7865 GFLOPS
+  // N = 3000 | D =  250 |      754 μs | 6015 GFLOPS
+  // N = 3000 | D =  252 |      689 μs | 6628 GFLOPS
+  // N = 3000 | D =  254 |      661 μs | 6969 GFLOPS
+  // N = 3000 | D =  256 |      599 μs | 7744 GFLOPS
+  //
+  // M1 Max, BF16 and FP16:
+  //
+  // N = 1496 | D =   48 |      123 μs | 1811 GFLOPS
+  // N = 1498 | D =   48 |      124 μs | 1798 GFLOPS
+  // N = 1500 | D =   48 |      124 μs | 1804 GFLOPS
+  // N = 1502 | D =   48 |      124 μs | 1808 GFLOPS
+  // N = 1504 | D =   48 |      122 μs | 1853 GFLOPS
+  //
+  // N = 3000 | D =   48 |      129 μs | 6975 GFLOPS
+  // N = 3000 | D =   50 |      235 μs | 3975 GFLOPS
+  // N = 3000 | D =   52 |      195 μs | 4961 GFLOPS
+  // N = 3000 | D =   54 |      159 μs | 6325 GFLOPS
+  // N = 3000 | D =   56 |      170 μs | 6139 GFLOPS
+  //
+  // N = 3000 | D =   96 |      223 μs | 7884 GFLOPS
+  // N = 3000 | D =  100 |      279 μs | 6563 GFLOPS
+  // N = 3000 | D =  104 |      247 μs | 7723 GFLOPS
+  //
+  // N = 3000 | D =  248 |      536 μs | 8393 GFLOPS
+  // N = 3000 | D =  250 |      588 μs | 7703 GFLOPS
+  // N = 3000 | D =  256 |      551 μs | 8426 GFLOPS
+  //
+  // M4, FP32:
+  
+  var maxGFLOPS: Int = .zero
+  var minLatency: Int = .max
+  for _ in 0..<10 {
+    let duplicatedCommandCount: Int = 10
+    
+    // Encode the GPU command.
+    let commandBuffer = MTLContext.global.commandQueue.makeCommandBuffer()!
+    let encoder = commandBuffer.makeComputeCommandEncoder()!
+    encoder.setComputePipelineState(pipeline)
+    encoder.setThreadgroupMemoryLength(
+      Int(kernel.threadgroupMemoryAllocation), index: 0)
+    encoder.setBuffer(bufferA, offset: 0, index: 0)
+    encoder.setBuffer(bufferB, offset: 0, index: 1)
+    encoder.setBuffer(bufferC, offset: 0, index: 2)
+    encoder.setBuffer(bufferDTerms, offset: 0, index: 3)
+    
+    for _ in 0..<duplicatedCommandCount {
+      func ceilDivide(_ target: Int, _ granularity: UInt16) -> Int {
+        (target + Int(granularity) - 1) / Int(granularity)
+      }
+      let gridSize = MTLSize(
+        width: ceilDivide(N, kernel.blockDimensions.N),
+        height: ceilDivide(N, kernel.blockDimensions.M),
+        depth: 1)
+      let groupSize = MTLSize(
+        width: Int(kernel.threadgroupSize),
+        height: 1,
+        depth: 1)
+      encoder.dispatchThreadgroups(
+        gridSize, threadsPerThreadgroup: groupSize)
+    }
+    encoder.endEncoding()
+    commandBuffer.commit()
+    commandBuffer.waitUntilCompleted()
+    
+    // Determine the time taken.
+    let start = commandBuffer.gpuStartTime
+    let end = commandBuffer.gpuEndTime
+    let latency = (end - start) / Double(duplicatedCommandCount)
+    let latencyMicroseconds = Int(latency / 1e-6)
+    
+    // Determine the amount of work done.
+    let instructions = (1 + D + 1) * N * N
+    let operations = 2 * instructions
+    let gflops = Int(Double(operations) / Double(latency) / 1e9)
+    
+    // Accumulate the results.
+    maxGFLOPS = max(maxGFLOPS, gflops)
+    minLatency = min(minLatency, latencyMicroseconds)
+  }
+  
+  // Report the results.
+  func pad(_ string: String, length: Int) -> String {
+    var output = string
+    while output.count < length {
+      output = " " + output
+    }
+    return output
+  }
+  
+  var problemSizeRepr = "\(N)"
+  var headSizeRepr = "\(D)"
+  var latencyRepr = "\(minLatency)"
+  var gflopsRepr = "\(maxGFLOPS)"
+  problemSizeRepr = pad(problemSizeRepr, length: 4)
+  headSizeRepr = pad(headSizeRepr, length: 4)
+  latencyRepr = pad(latencyRepr, length: 8)
+  gflopsRepr = pad(gflopsRepr, length: 4)
+  
+  print()
+  print("N = \(problemSizeRepr)", terminator: " | ")
+  print("D = \(headSizeRepr)", terminator: " | ")
+  print("\(latencyRepr) μs", terminator: " | ")
+  print("\(gflopsRepr) GFLOPS")
 }
 #endif
