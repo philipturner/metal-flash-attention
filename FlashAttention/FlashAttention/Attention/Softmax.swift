@@ -7,13 +7,13 @@
 
 // A configuration for a softmax kernel.
 struct SoftmaxDescriptor {
-  // The precision of the attention matrix in memory.
-  var memoryPrecision: GEMMOperandPrecision?
-  
   // Only working with square attention matrices for simplicity. Also, this
   // kernel will fail when N is larger than 16 bits, because you can't fit
   // that many registers on a GPU core with reasonable performance.
   var matrixDimensions: (N: UInt16, D: UInt16)?
+  
+  // The precision of the attention matrix in memory.
+  var memoryPrecision: GEMMOperandPrecision?
   
   // The number of threads per threadgroup.
   var threadgroupSize: UInt16?
@@ -30,9 +30,9 @@ struct SoftmaxKernel {
   var threadgroupSize: UInt16
   
   init(descriptor: SoftmaxDescriptor) {
-    guard let threadgroupSize = descriptor.threadgroupSize,
-          let matrixDimensions = descriptor.matrixDimensions,
-          let memoryPrecision = descriptor.memoryPrecision else {
+    guard let matrixDimensions = descriptor.matrixDimensions,
+          let memoryPrecision = descriptor.memoryPrecision,
+          let threadgroupSize = descriptor.threadgroupSize else {
       fatalError("Descriptor was incomplete.")
     }
     self.threadgroupSize = threadgroupSize

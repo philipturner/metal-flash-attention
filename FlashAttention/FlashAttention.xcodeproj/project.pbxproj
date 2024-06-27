@@ -30,7 +30,8 @@
 		98DA5B3A2C2B3A6D000F4E06 /* Softmax.swift in Sources */ = {isa = PBXBuildFile; fileRef = 98DA5B392C2B3A6D000F4E06 /* Softmax.swift */; };
 		98DA5B3D2C2C5086000F4E06 /* MTLContext.swift in Sources */ = {isa = PBXBuildFile; fileRef = 98DA5B3C2C2C5086000F4E06 /* MTLContext.swift */; };
 		98DA5B402C2C91BF000F4E06 /* SoftmaxTest.swift in Sources */ = {isa = PBXBuildFile; fileRef = 98DA5B3F2C2C91BF000F4E06 /* SoftmaxTest.swift */; };
-		98DA5B422C2CA75D000F4E06 /* DerivativeSoftmaxKernel.swift in Sources */ = {isa = PBXBuildFile; fileRef = 98DA5B412C2CA75D000F4E06 /* DerivativeSoftmaxKernel.swift */; };
+		98DA5B422C2CA75D000F4E06 /* DerivativeSoftmax.swift in Sources */ = {isa = PBXBuildFile; fileRef = 98DA5B412C2CA75D000F4E06 /* DerivativeSoftmax.swift */; };
+		98DA5B442C2DB893000F4E06 /* DerivativeSoftmaxTest.swift in Sources */ = {isa = PBXBuildFile; fileRef = 98DA5B432C2DB893000F4E06 /* DerivativeSoftmaxTest.swift */; };
 /* End PBXBuildFile section */
 
 /* Begin PBXFileReference section */
@@ -56,7 +57,8 @@
 		98DA5B392C2B3A6D000F4E06 /* Softmax.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = Softmax.swift; sourceTree = "<group>"; };
 		98DA5B3C2C2C5086000F4E06 /* MTLContext.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = MTLContext.swift; sourceTree = "<group>"; };
 		98DA5B3F2C2C91BF000F4E06 /* SoftmaxTest.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = SoftmaxTest.swift; sourceTree = "<group>"; };
-		98DA5B412C2CA75D000F4E06 /* DerivativeSoftmaxKernel.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = DerivativeSoftmaxKernel.swift; sourceTree = "<group>"; };
+		98DA5B412C2CA75D000F4E06 /* DerivativeSoftmax.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = DerivativeSoftmax.swift; sourceTree = "<group>"; };
+		98DA5B432C2DB893000F4E06 /* DerivativeSoftmaxTest.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = DerivativeSoftmaxTest.swift; sourceTree = "<group>"; };
 /* End PBXFileReference section */
 
 /* Begin PBXFrameworksBuildPhase section */
@@ -133,6 +135,7 @@
 			isa = PBXGroup;
 			children = (
 				9881AA242C25FDC20056D05C /* AdversarialShapeTest.swift */,
+				98DA5B432C2DB893000F4E06 /* DerivativeSoftmaxTest.swift */,
 				98DA5B372C2AFF9E000F4E06 /* FiniteDifferencingTest.swift */,
 				9881AA222C25C22B0056D05C /* LaplacianTest.swift */,
 				98DA5B3F2C2C91BF000F4E06 /* SoftmaxTest.swift */,
@@ -143,7 +146,7 @@
 		98DA5B3B2C2B3A81000F4E06 /* Attention */ = {
 			isa = PBXGroup;
 			children = (
-				98DA5B412C2CA75D000F4E06 /* DerivativeSoftmaxKernel.swift */,
+				98DA5B412C2CA75D000F4E06 /* DerivativeSoftmax.swift */,
 				98DA5B352C2AFD65000F4E06 /* Network.swift */,
 				98DA5B392C2B3A6D000F4E06 /* Softmax.swift */,
 			);
@@ -245,9 +248,10 @@
 				9881AA052C24C85E0056D05C /* Workspace.swift in Sources */,
 				9881AA252C25FDC20056D05C /* AdversarialShapeTest.swift in Sources */,
 				9881A9F82C24C8230056D05C /* ContentView.swift in Sources */,
-				98DA5B422C2CA75D000F4E06 /* DerivativeSoftmaxKernel.swift in Sources */,
+				98DA5B422C2CA75D000F4E06 /* DerivativeSoftmax.swift in Sources */,
 				9881AA232C25C22B0056D05C /* LaplacianTest.swift in Sources */,
 				9881AA1C2C25B11C0056D05C /* CoreCount.swift in Sources */,
+				98DA5B442C2DB893000F4E06 /* DerivativeSoftmaxTest.swift in Sources */,
 				9881A9F62C24C8230056D05C /* FlashAttentionApp.swift in Sources */,
 				98DA5B402C2C91BF000F4E06 /* SoftmaxTest.swift in Sources */,
 				9881AA1E2C25B1ED0056D05C /* GEMMKernel.swift in Sources */,
