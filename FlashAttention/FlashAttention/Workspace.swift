@@ -35,14 +35,9 @@ func executeScript() {
   // - Alternatively, modify 'GEMMKernel' to enable fused operations on the
   //   accumulator. This would require heavy testing to ensure no regressions.
   
-  // 2) Reproduce the Laplacian test, but remove the profiling parts. Make it
-  //    just a correctness test. Set the current value of P to a constant
-  //    multiplicative factor.
-  // 3) Include the D[i] term when initializing the accumulator.
-  
   // Set up a correctness test with matrix dimensions typical for attention.
-  let N: Int = 32
-  let D: Int = 8
+  let N: Int = 320
+  let D: Int = 800
   
   // Create the GEMM kernel.
   var gemmDesc = GEMMDescriptor()
@@ -52,7 +47,8 @@ func executeScript() {
   var kernelDesc = GEMMKernelDescriptor(descriptor: gemmDesc)
   kernelDesc.device = nil
   kernelDesc.preferAsyncStore = nil
-  let kernel = DerivativeSoftmaxKernel(descriptor: kernelDesc)
+  let kernel = DerivativeSoftmaxKernel(
+    descriptor: kernelDesc, D: D)
   
   // Create the reference implementation.
   var networkDesc = NetworkDescriptor()
@@ -71,6 +67,22 @@ func executeScript() {
     matrixP += matrixPRow
     derivativeP += derivativePRow
     derivativeS += derivativeSRow
+  }
+  
+  // Generate the D[i] terms.
+  var termsD = [Float](repeating: .zero, count: N)
+  do {
+    let O = network.inferenceAttention()
+    
+    // Iterate over the rows.
+    for n in 0..<N {
+      var dotProduct: Float = .zero
+      for d in 0..<D {
+        let matrixAddress = n * D + d
+        dotProduct += O[matrixAddress] * network.C[matrixAddress]
+      }
+      termsD[n] = dotProduct
+    }
   }
   
   // Displays the first 8x8 block of the matrix.
@@ -101,17 +113,19 @@ func executeScript() {
   print("dS:")
   printMatrix(derivativeS)
   
-  // Create Metal buffers from the dO and V matrices.
+  // Create Metal buffers from dO, V, and the D[i] terms.
   let bufferA = MTLContext.global
     .createBuffer(network.C, kernelDesc.memoryPrecisions!.A)
   let bufferB = MTLContext.global
     .createBuffer(network.V, kernelDesc.memoryPrecisions!.B)
+  let bufferDTerms = MTLContext.global
+    .createBuffer(termsD, .FP32)
   
   // Generate an initial value for P (until we advance to dS, where the actual
   // value will be used).
   var bufferC: MTLBuffer
   do {
-    let inputMatrixP = [Float](repeating: 2.0, count: N * N)
+    let inputMatrixP = matrixP // [Float](repeating: 1.0, count: N * N)
     var inputPrecisionP: GEMMOperandPrecision
     switch kernelDesc.memoryPrecisions!.C {
     case .FP32:
@@ -139,6 +153,7 @@ func executeScript() {
     encoder.setBuffer(bufferA, offset: 0, index: 0)
     encoder.setBuffer(bufferB, offset: 0, index: 1)
     encoder.setBuffer(bufferC, offset: 0, index: 2)
+    encoder.setBuffer(bufferDTerms, offset: 0, index: 3)
     
     func ceilDivide(_ target: Int, _ granularity: UInt16) -> Int {
       (target + Int(granularity) - 1) / Int(granularity)
@@ -191,5 +206,39 @@ func executeScript() {
   print()
   print("result:")
   printMatrix(result)
+  
+  // Choose an error threshold.
+  // - Only parametrized for (FP32, FP32, FP32) and (BF16, FP16, BF16).
+  func createErrorThreshold(precision: GEMMOperandPrecision) -> Float {
+    var empiricalMaxError: Float
+    switch precision {
+    case .FP32: empiricalMaxError = max(1.5e-7, Float(D).squareRoot() * 2.2e-8)
+    case .FP16: fatalError("Accumulator cannot be FP16.")
+    case .BF16: empiricalMaxError = 5e-3
+    }
+    return 2 * empiricalMaxError
+  }
+  
+  // Check the results.
+  var maxError: Float = .zero
+  for r in 0..<N {
+    for c in 0..<N {
+      let address = r * N + c
+      let expected = derivativeS[address]
+      let actual = result[address]
+      
+      // Report whether it is correct.
+      let error = (expected - actual).magnitude
+      maxError = max(maxError, error)
+    }
+  }
+  let errorThreshold = createErrorThreshold(
+    precision: kernelDesc.memoryPrecisions!.C)
+  if maxError > errorThreshold {
+    print()
+    print("max error: \(maxError) / ~1.000")
+    print("Could not benchmark performance because results were incorrect.")
+    return
+  }
 }
 #endif

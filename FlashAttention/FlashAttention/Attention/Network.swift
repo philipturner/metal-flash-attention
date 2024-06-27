@@ -194,13 +194,6 @@ extension Network {
       matrixORow[d] = dotProduct
     }
     
-    // dO = C
-    var derivativeORow = [Float](repeating: .zero, count: D)
-    for d in 0..<D {
-      let addressC = rowID * D + d
-      derivativeORow[d] = C[addressC]
-    }
-    
     // D = dO^T O
     var termD: Float = .zero
     for d in 0..<D {
@@ -212,6 +205,7 @@ extension Network {
     var derivativeSRow = [Float](repeating: .zero, count: N)
     let derivativePRow = createDerivativePRow(rowID: rowID)
     let scaleFactor = 1 / Float(D).squareRoot()
+    
     for n in 0..<N {
       let valueP = matrixPRow[n]
       let valueDerivativeP = derivativePRow[n]

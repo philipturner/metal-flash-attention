@@ -22,7 +22,10 @@ struct DerivativeSoftmaxKernel {
   // The number of threads per group.
   var threadgroupSize: UInt16
   
-  init(descriptor: GEMMKernelDescriptor) {
+  init(
+    descriptor: GEMMKernelDescriptor,
+    D: Int
+  ) {
     guard let blockDimensions = descriptor.blockDimensions,
           let memoryPrecisions = descriptor.memoryPrecisions,
           let registerPrecisions = descriptor.registerPrecisions,
@@ -358,12 +361,19 @@ METAL_FUNC void multiply_accumulate(
 // - memory precision: memC
 // - register precision: regC
 //
+// D_terms: the array of D[i] terms
+// - dimensions: N
+// - memory precision: FP32
+// - register precision: FP32
+// - named 'D_terms' to avoid a name conflict with the head dimension, 'D'
+//
 // threadgroup_block: the chunk of threadgroup memory allocated at runtime
 // - ideally 10 KB or less
 // - precision: void/8-bit integer to make the pointer arithmetic more legible
 kernel void gemm(device \(memoryNameA) *A [[buffer(0)]],
                  device \(memoryNameB) *B [[buffer(1)]],
                  device \(memoryNameC) *C [[buffer(2)]],
+                 device float *D_terms [[buffer(3)]],
                  
                  threadgroup uchar *threadgroup_block [[threadgroup(0)]],
                  
@@ -413,13 +423,18 @@ kernel void gemm(device \(memoryNameA) *A [[buffer(0)]],
   simdgroup_matrix_storage<float> C_sram[\(arrayElementsC)];
   
   // Initialize the accumulator.
+  {
+    device float* D_terms_src = D_terms + (M_offset + offset_in_group.y);
+
 #pragma clang loop unroll(full)
-  for (ushort m = 0; m < \(registerM); m += 8) {
+    for (ushort m = 0; m < \(registerM); m += 8) {
+      float D_term = D_terms_src[m];
 #pragma clang loop unroll(full)
-    for (ushort n = 0; n < \(registerN); n += 8) {
-      ushort2 origin(n, m);
-      auto C = get_sram(C_sram, \(registerN), origin);
-      *C = simdgroup_matrix_storage<float>(0);
+      for (ushort n = 0; n < \(registerN); n += 8) {
+        ushort2 origin(n, m);
+        auto C = get_sram(C_sram, \(registerN), origin);
+        *C = simdgroup_matrix_storage<float>(-D_term);
+      }
     }
   }
 
@@ -529,6 +544,8 @@ kernel void gemm(device \(memoryNameA) *A [[buffer(0)]],
         memoryNameP = "float"
       }
       
+      let scaleFactor = 1 / Float(D).squareRoot()
+      
       source += """
 
 if ((M >= M_group) && (N >= N_group)) {
@@ -549,7 +566,7 @@ if ((M >= M_group) && (N >= N_group)) {
       simdgroup_matrix_storage<\(memoryNameP)> P;
       P.load(C_src, N, origin);
       auto P_elements = *(P.thread_elements());
-      *(dP->thread_elements()) *= float2(P_elements);
+      *(dP->thread_elements()) *= float2(P_elements) * \(scaleFactor);
     }
   }
 } else {
