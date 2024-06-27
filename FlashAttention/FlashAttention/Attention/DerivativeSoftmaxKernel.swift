@@ -5,6 +5,8 @@
 //  Created by Philip Turner on 6/26/24.
 //
 
+import Metal
+
 // Fuses the generation of dP (GEMM) with the generation of dS (elementwise).
 struct DerivativeSoftmaxKernel {
   // The source code to compile.
@@ -545,8 +547,8 @@ if ((M >= M_group) && (N >= N_group)) {
       
       // dS = P * (dP - D);
       simdgroup_matrix_storage<\(memoryNameP)> P;
-      P->load(C_src, N, origin);
-      auto P_elements = *(P->thread_elements());
+      P.load(C_src, N, origin);
+      auto P_elements = *(P.thread_elements());
       *(dP->thread_elements()) *= float2(P_elements);
     }
   }
@@ -621,5 +623,27 @@ if ((M >= M_group) && (N >= N_group)) {
     
     // Add the final closing brace of the Metal function.
     source += "}" + "\n"
+  }
+  
+  static func createPipeline(
+    source: String,
+    matrixDimensions: (M: UInt32, N: UInt32, K: UInt32)
+  ) -> MTLComputePipelineState {
+    let device = MTLContext.global.device
+    let library = try! device.makeLibrary(source: source, options: nil)
+    
+    // Set the function constants.
+    let constants = MTLFunctionConstantValues()
+    var M = matrixDimensions.M
+    var N = matrixDimensions.N
+    var K = matrixDimensions.K
+    constants.setConstantValue(&M, type: .uint, index: 0)
+    constants.setConstantValue(&N, type: .uint, index: 1)
+    constants.setConstantValue(&K, type: .uint, index: 2)
+    
+    let function = try! library.makeFunction(
+      name: "gemm", constantValues: constants)
+    let pipeline = try! device.makeComputePipelineState(function: function)
+    return pipeline
   }
 }

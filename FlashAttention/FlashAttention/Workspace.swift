@@ -53,7 +53,6 @@ func executeScript() {
   kernelDesc.device = nil
   kernelDesc.preferAsyncStore = nil
   let kernel = DerivativeSoftmaxKernel(descriptor: kernelDesc)
-  print(kernel.source)
   
   // Create the reference implementation.
   var networkDesc = NetworkDescriptor()
@@ -101,5 +100,96 @@ func executeScript() {
   print()
   print("dS:")
   printMatrix(derivativeS)
+  
+  // Create Metal buffers from the dO and V matrices.
+  let bufferA = MTLContext.global
+    .createBuffer(network.C, kernelDesc.memoryPrecisions!.A)
+  let bufferB = MTLContext.global
+    .createBuffer(network.V, kernelDesc.memoryPrecisions!.B)
+  
+  // Generate an initial value for P (until we advance to dS, where the actual
+  // value will be used).
+  var bufferC: MTLBuffer
+  do {
+    let inputMatrixP = [Float](repeating: 2.0, count: N * N)
+    var inputPrecisionP: GEMMOperandPrecision
+    switch kernelDesc.memoryPrecisions!.C {
+    case .FP32:
+      inputPrecisionP = .FP32
+    case .FP16:
+      fatalError("Invalid precision for dP/dS.")
+    case .BF16:
+      inputPrecisionP = .FP16
+    }
+    bufferC = MTLContext.global
+      .createBuffer(inputMatrixP, inputPrecisionP)
+  }
+  
+  // Create the GEMM pipeline.
+  let pipeline = DerivativeSoftmaxKernel.createPipeline(
+    source: kernel.source, matrixDimensions: gemmDesc.matrixDimensions!)
+  
+  // Encode a single Metal command.
+  do {
+    let commandBuffer = MTLContext.global.commandQueue.makeCommandBuffer()!
+    let encoder = commandBuffer.makeComputeCommandEncoder()!
+    encoder.setComputePipelineState(pipeline)
+    encoder.setThreadgroupMemoryLength(
+      Int(kernel.threadgroupMemoryAllocation), index: 0)
+    encoder.setBuffer(bufferA, offset: 0, index: 0)
+    encoder.setBuffer(bufferB, offset: 0, index: 1)
+    encoder.setBuffer(bufferC, offset: 0, index: 2)
+    
+    func ceilDivide(_ target: Int, _ granularity: UInt16) -> Int {
+      (target + Int(granularity) - 1) / Int(granularity)
+    }
+    let gridSize = MTLSize(
+      width: ceilDivide(N, kernel.blockDimensions.N),
+      height: ceilDivide(N, kernel.blockDimensions.M),
+      depth: 1)
+    let groupSize = MTLSize(
+      width: Int(kernel.threadgroupSize),
+      height: 1,
+      depth: 1)
+    encoder.dispatchThreadgroups(
+      gridSize, threadsPerThreadgroup: groupSize)
+    encoder.endEncoding()
+    commandBuffer.commit()
+    commandBuffer.waitUntilCompleted()
+  }
+  
+  // Copy the results.
+  var result = [Float](repeating: .zero, count: N * N)
+  do {
+    let precision = kernelDesc.memoryPrecisions!.C
+    let raw = bufferC.contents()
+    for r in 0..<N {
+      for c in 0..<N {
+        let address = r * N + c
+        var entry32: Float
+        
+        switch precision {
+        case .FP32:
+          let casted = raw.assumingMemoryBound(to: Float.self)
+          entry32 = casted[address]
+        case .FP16:
+          let casted = raw.assumingMemoryBound(to: Float16.self)
+          let entry16 = casted[address]
+          entry32 = Float(entry16)
+        case .BF16:
+          let casted = raw.assumingMemoryBound(to: UInt16.self)
+          let entry16 = casted[address]
+          let entry16x2 = SIMD2<UInt16>(.zero, entry16)
+          entry32 = unsafeBitCast(entry16x2, to: Float.self)
+        }
+        result[address] = entry32
+      }
+    }
+  }
+  
+  // Check for correctness (not performance yet).
+  print()
+  print("result:")
+  printMatrix(result)
 }
 #endif
