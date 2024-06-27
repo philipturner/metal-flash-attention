@@ -14,6 +14,8 @@ import QuartzCore
 /// when the 'main' branch is in a stable state. Clients can utilize this
 /// function to script tests in their fork.
 func executeScript() {
+  print("Hello, console.")
+  
   // Next, implement "naive attention" with the unified GEMM kernel. Measure
   // performance of the forward and backward pass with various problem configs.
   //
@@ -29,20 +31,15 @@ func executeScript() {
   //   - "use async store" becomes "load previous C value with async copy"
   //   - C will always be written to threadgroup memory
   //
-  // Task 3:
-  // - Make a copy of the in-tree GEMM kernel, which fuses some operations
-  //   during computation of dS.
-  // - Alternatively, modify 'GEMMKernel' to enable fused operations on the
-  //   accumulator. This would require heavy testing to ensure no regressions.
   
   // Set up a correctness test with matrix dimensions typical for attention.
-  let N: Int = 1496
-  let D: Int = 48
+  let N: Int = 2000
+  let D: Int = 100
   
   // Create the GEMM kernel.
   var gemmDesc = GEMMDescriptor()
   gemmDesc.matrixDimensions = (UInt32(N), UInt32(N), UInt32(D))
-  gemmDesc.memoryPrecisions = (.FP32, .FP32, .FP32)
+  gemmDesc.memoryPrecisions = (.BF16, .FP16, .BF16)
   gemmDesc.transposeState = (false, true)
   var kernelDesc = GEMMKernelDescriptor(descriptor: gemmDesc)
   kernelDesc.device = nil
@@ -296,6 +293,55 @@ func executeScript() {
   // N = 3000 | D =  256 |      551 μs | 8426 GFLOPS
   //
   // M4, FP32:
+  //
+  // N = 1000 | D =   40 |      142 μs |  589 GFLOPS
+  // N = 1000 | D =   42 |       78 μs | 1126 GFLOPS
+  // N = 1000 | D =   44 |      117 μs |  781 GFLOPS
+  // N = 1000 | D =   46 |      119 μs |  800 GFLOPS
+  // N = 1000 | D =   48 |      120 μs |  827 GFLOPS
+  // N = 1000 | D =   50 |       87 μs | 1184 GFLOPS
+  // N = 1000 | D =   52 |       86 μs | 1243 GFLOPS
+  // N = 1000 | D =   54 |       88 μs | 1267 GFLOPS
+  // N = 1000 | D =   56 |       81 μs | 1424 GFLOPS
+  // N = 1000 | D =   58 |       96 μs | 1244 GFLOPS
+  // N = 1000 | D =   60 |       95 μs | 1303 GFLOPS
+  //
+  // N = 1496 | D =   48 |      143 μs | 1556 GFLOPS
+  // N = 1498 | D =   48 |      178 μs | 1260 GFLOPS
+  // N = 1500 | D =   48 |      155 μs | 1446 GFLOPS
+  // N = 1502 | D =   48 |      161 μs | 1393 GFLOPS
+  // N = 1504 | D =   48 |      145 μs | 1553 GFLOPS
+  //
+  // N = 2000 | D =   48 |      328 μs | 1219 GFLOPS
+  // N = 2000 | D =   50 |      334 μs | 1242 GFLOPS
+  // N = 2000 | D =   52 |      329 μs | 1310 GFLOPS
+  // N = 2000 | D =   54 |      334 μs | 1338 GFLOPS
+  // N = 2000 | D =   56 |      335 μs | 1382 GFLOPS
+  // N = 2000 | D =   96 |      351 μs | 2232 GFLOPS
+  // N = 2000 | D =  100 |      376 μs | 2169 GFLOPS
+  // N = 2000 | D =  104 |      369 μs | 2292 GFLOPS
+  //
+  // M4, BF16 and FP16:
+  //
+  // N = 1000 | D =   40 |      152 μs |  551 GFLOPS
+  // N = 1000 | D =   48 |       95 μs | 1043 GFLOPS
+  // N = 1000 | D =   56 |       71 μs | 1615 GFLOPS
+  // N = 1000 | D =   60 |       80 μs | 1541 GFLOPS
+  //
+  // N = 1496 | D =   48 |      129 μs | 1732 GFLOPS
+  // N = 1498 | D =   48 |      131 μs | 1703 GFLOPS
+  // N = 1500 | D =   48 |      128 μs | 1754 GFLOPS
+  // N = 1502 | D =   48 |      114 μs | 1968 GFLOPS
+  // N = 1504 | D =   48 |      126 μs | 1788 GFLOPS
+  //
+  // N = 2000 | D =   48 |      140 μs | 2855 GFLOPS
+  // N = 2000 | D =   50 |      161 μs | 2573 GFLOPS
+  // N = 2000 | D =   52 |      161 μs | 2676 GFLOPS
+  // N = 2000 | D =   54 |      163 μs | 2741 GFLOPS
+  // N = 2000 | D =   56 |      158 μs | 2932 GFLOPS
+  // N = 2000 | D =   96 |      249 μs | 3140 GFLOPS
+  // N = 2000 | D =  100 |      271 μs | 3004 GFLOPS
+  // N = 2000 | D =  104 |      267 μs | 3165 GFLOPS
   
   var maxGFLOPS: Int = .zero
   var minLatency: Int = .max
