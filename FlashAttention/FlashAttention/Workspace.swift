@@ -19,17 +19,6 @@ func executeScript() {
   // greatest bottleneck: getting any test at all, of attention being done
   // entirely on the GPU.
   print("Hello, console.")
-  
-  var attentionDesc = AttentionDescriptor()
-  attentionDesc.matrixDimensions = (100, 150, 30)
-  attentionDesc.transposeState = (false, false, false, false)
-  let forwardKernelSource = createForwardAttention(descriptor: attentionDesc)
-  
-  let device = MTLContext.global.device
-  let library = try! device.makeLibrary(
-    source: forwardKernelSource, options: nil)
-  let function = library.makeFunction(name: "forward")!
-  _ = try! device.makeComputePipelineState(function: function)
 }
 
 

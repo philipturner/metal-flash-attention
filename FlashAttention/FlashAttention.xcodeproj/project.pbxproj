@@ -32,8 +32,10 @@
 		98DA5B402C2C91BF000F4E06 /* SoftmaxTest.swift in Sources */ = {isa = PBXBuildFile; fileRef = 98DA5B3F2C2C91BF000F4E06 /* SoftmaxTest.swift */; };
 		98DA5B422C2CA75D000F4E06 /* DerivativeSoftmax.swift in Sources */ = {isa = PBXBuildFile; fileRef = 98DA5B412C2CA75D000F4E06 /* DerivativeSoftmax.swift */; };
 		98DA5B442C2DB893000F4E06 /* DerivativeSoftmaxTest.swift in Sources */ = {isa = PBXBuildFile; fileRef = 98DA5B432C2DB893000F4E06 /* DerivativeSoftmaxTest.swift */; };
-		98DA5B482C2DE2DA000F4E06 /* Attention.swift in Sources */ = {isa = PBXBuildFile; fileRef = 98DA5B472C2DE2DA000F4E06 /* Attention.swift */; };
+		98DA5B482C2DE2DA000F4E06 /* AttentionKernel.swift in Sources */ = {isa = PBXBuildFile; fileRef = 98DA5B472C2DE2DA000F4E06 /* AttentionKernel.swift */; };
 		98DA5B4A2C2EF788000F4E06 /* AttentionDescriptor.swift in Sources */ = {isa = PBXBuildFile; fileRef = 98DA5B492C2EF788000F4E06 /* AttentionDescriptor.swift */; };
+		98DA5B4C2C2F0052000F4E06 /* AttentionOperandPrecision.swift in Sources */ = {isa = PBXBuildFile; fileRef = 98DA5B4B2C2F0052000F4E06 /* AttentionOperandPrecision.swift */; };
+		98DA5B4E2C2F0B15000F4E06 /* AttentionKernelType.swift in Sources */ = {isa = PBXBuildFile; fileRef = 98DA5B4D2C2F0B15000F4E06 /* AttentionKernelType.swift */; };
 /* End PBXBuildFile section */
 
 /* Begin PBXFileReference section */
@@ -61,8 +63,10 @@
 		98DA5B3F2C2C91BF000F4E06 /* SoftmaxTest.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = SoftmaxTest.swift; sourceTree = "<group>"; };
 		98DA5B412C2CA75D000F4E06 /* DerivativeSoftmax.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = DerivativeSoftmax.swift; sourceTree = "<group>"; };
 		98DA5B432C2DB893000F4E06 /* DerivativeSoftmaxTest.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = DerivativeSoftmaxTest.swift; sourceTree = "<group>"; };
-		98DA5B472C2DE2DA000F4E06 /* Attention.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = Attention.swift; sourceTree = "<group>"; };
+		98DA5B472C2DE2DA000F4E06 /* AttentionKernel.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = AttentionKernel.swift; sourceTree = "<group>"; };
 		98DA5B492C2EF788000F4E06 /* AttentionDescriptor.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = AttentionDescriptor.swift; sourceTree = "<group>"; };
+		98DA5B4B2C2F0052000F4E06 /* AttentionOperandPrecision.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = AttentionOperandPrecision.swift; sourceTree = "<group>"; };
+		98DA5B4D2C2F0B15000F4E06 /* AttentionKernelType.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = AttentionKernelType.swift; sourceTree = "<group>"; };
 /* End PBXFileReference section */
 
 /* Begin PBXFrameworksBuildPhase section */
@@ -150,8 +154,10 @@
 		98DA5B3B2C2B3A81000F4E06 /* Attention */ = {
 			isa = PBXGroup;
 			children = (
-				98DA5B472C2DE2DA000F4E06 /* Attention.swift */,
 				98DA5B492C2EF788000F4E06 /* AttentionDescriptor.swift */,
+				98DA5B472C2DE2DA000F4E06 /* AttentionKernel.swift */,
+				98DA5B4D2C2F0B15000F4E06 /* AttentionKernelType.swift */,
+				98DA5B4B2C2F0052000F4E06 /* AttentionOperandPrecision.swift */,
 				98DA5B412C2CA75D000F4E06 /* DerivativeSoftmax.swift */,
 				98DA5B352C2AFD65000F4E06 /* Network.swift */,
 				98DA5B392C2B3A6D000F4E06 /* Softmax.swift */,
@@ -250,7 +256,7 @@
 				9881AA182C25B0440056D05C /* GEMMHeaders.swift in Sources */,
 				98DA5B382C2AFF9E000F4E06 /* FiniteDifferencingTest.swift in Sources */,
 				9881AA202C25B26D0056D05C /* ShaderCache.swift in Sources */,
-				98DA5B482C2DE2DA000F4E06 /* Attention.swift in Sources */,
+				98DA5B482C2DE2DA000F4E06 /* AttentionKernel.swift in Sources */,
 				9881AA1A2C25B0F70056D05C /* GEMMDescriptor.swift in Sources */,
 				9881AA052C24C85E0056D05C /* Workspace.swift in Sources */,
 				9881AA252C25FDC20056D05C /* AdversarialShapeTest.swift in Sources */,
@@ -267,6 +273,8 @@
 				98DA5B3D2C2C5086000F4E06 /* MTLContext.swift in Sources */,
 				9881AA162C25AEF10056D05C /* GEMMOperandPrecision.swift in Sources */,
 				98DA5B3A2C2B3A6D000F4E06 /* Softmax.swift in Sources */,
+				98DA5B4C2C2F0052000F4E06 /* AttentionOperandPrecision.swift in Sources */,
+				98DA5B4E2C2F0B15000F4E06 /* AttentionKernelType.swift in Sources */,
 			);
 			runOnlyForDeploymentPostprocessing = 0;
 		};
