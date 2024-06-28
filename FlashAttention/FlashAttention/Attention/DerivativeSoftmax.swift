@@ -202,39 +202,6 @@ constant ushort N_shift = (N < N_group) ? 0 : \(registerN) - N_remainder;
     // Add the utility functions.
     source += """
 
-// The layout of threads within a SIMD matrix.
-//
-//  0  0  1  1  8  8  9  9
-//  2  2  3  3 10 10 11 11
-//  4  4  5  5 12 12 13 13
-//  6  6  7  7 14 14 15 15
-// 16 16 17 17 24 24 25 25
-// 18 18 19 19 26 26 27 27
-// 20 20 21 21 28 28 29 29
-// 22 22 23 23 30 30 31 31
-//
-// This is Morton order, a method for coalescing data accesses. It is used
-// in a variety of contexts, from ray tracing acceleration structures, to
-// nodal-point Laplacians, to sorting large lattices of atoms.
-//
-// Source: https://patents.google.com/patent/US11256518B2
-METAL_FUNC ushort2 morton_order(ushort thread_index_in_simdgroup) {
-  ushort lane_id = thread_index_in_simdgroup;
-  ushort quad_id = lane_id / 4;
-  
-  constexpr ushort QUADRANT_SPAN_M = 4;
-  constexpr ushort THREADS_PER_QUADRANT = 8;
-  ushort M_floor_of_quadrant = (quad_id / 4) * QUADRANT_SPAN_M;
-  ushort M_in_quadrant = (lane_id / 2) % (THREADS_PER_QUADRANT / 2);
-  ushort M_in_simd = M_floor_of_quadrant + M_in_quadrant;
-  
-  ushort N_floor_of_quadrant = (quad_id & 2) * 2; // 0 or 4
-  ushort N_in_quadrant = (lane_id % 2) * 2; // 0 or 2
-  ushort N_in_simd = N_floor_of_quadrant + N_in_quadrant;
-  
-  return ushort2(N_in_simd, M_in_simd);
-}
-
 // Indexes into an array of registers.
 //
 // Calls to this function are expected to be evaluated at compile time. The

@@ -97,6 +97,8 @@ kernel void forward(
   ushort sidx [[simdgroup_index_in_threadgroup]],
   ushort lane_id [[thread_index_in_simdgroup]]
 ) {
+  ushort2 morton_offset = morton_order(lane_id);
+  
   // What registers are needed before the first matmul can be done?
   // - Q (cached)
   // - O accumulator
