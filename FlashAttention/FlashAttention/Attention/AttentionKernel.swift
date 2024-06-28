@@ -83,36 +83,45 @@ struct AttentionKernel {
       leadingBlockDimensions.O = 32
     }
     
-    // Add the function constants.
-    do {
-      source += """
+    source += """
 
-  // Dimensions of each matrix.
-  constant uint R [[function_constant(0)]];
-  constant uint C [[function_constant(1)]];
-  constant uint D [[function_constant(2)]];
+// Dimensions of each matrix.
+constant uint R [[function_constant(0)]];
+constant uint C [[function_constant(1)]];
+constant uint D [[function_constant(2)]];
 
-  // Whether each matrix is transposed.
-  constant bool Q_trans = \(transposeState.Q);
-  constant bool K_trans = \(transposeState.K);
-  constant bool V_trans = \(transposeState.V);
-  constant bool O_trans = \(transposeState.O);
+// Whether each matrix is transposed.
+constant bool Q_trans = \(transposeState.Q);
+constant bool K_trans = \(transposeState.K);
+constant bool V_trans = \(transposeState.V);
+constant bool O_trans = \(transposeState.O);
 
-  // Define the memory layout of the matrix block.
-  constant ushort R_group = 32;
-  constant ushort C_group = 32;
+// Define the memory layout of the matrix block.
+constant ushort R_group = 32;
+constant ushort C_group = 32;
 
-  """
-    }
+// Declare the function.
+kernel void attention(
+"""
+    
+    source += createArguments(type: type)
+    source += """
+
+) {
+
+"""
     
     source += createSetup(type: type)
+    source += """
+
+}
+
+"""
   }
 }
 
 extension AttentionKernel {
-  func createSetup(type: AttentionKernelType) -> String {
-    var output: String = ""
-    
+  func createArguments(type: AttentionKernelType) -> String {
     struct AttentionOperand {
       var precision: GEMMOperandPrecision
       var bufferBinding: Int
@@ -151,6 +160,9 @@ extension AttentionKernel {
       // debugging purposes.
       //
       // Perhaps once a distinct 'AttentionKernelDescriptor" is coded.
+      //
+      // Idea: "attentionMatrixPrecision". This property equals both the
+      // register type and the type when paged to memory.
       precision: AttentionOperandPrecision.mixed.backwardPrecision,
       bufferBinding: 8)
     operandsMap["dK"] = AttentionOperand(
@@ -191,12 +203,8 @@ extension AttentionKernel {
       }
     }
     
-    output += """
-
-kernel void attention(
-
-"""
-    
+    // Collect the operands into a single string.
+    var output: String = ""
     for key in operandKeys {
       let operand = operandsMap[key]!
       
@@ -209,6 +217,7 @@ kernel void attention(
       output += line
     }
     
+    // Add the arguments that define the thread's position.
     output += """
   
   threadgroup uchar *threadgroup_block [[threadgroup(0)]],
@@ -220,6 +229,56 @@ kernel void attention(
   ushort2 morton_offset = morton_order(lane_id);
 
 """
+    
+    return output
+  }
+  
+  func createSetup(type: AttentionKernelType) -> String {
+    var output: String = ""
+    
+    // Forward
+    //   cache Q, O, m, l
+    //     FP32: 8 * 2 * D + 8 bytes
+    //     FP16: 6 * 2 * D + 8 bytes
+    //
+    // Backward Query (true)
+    //   cache dQ, L, D
+    //     FP32: 4 * 2 * D + 8 bytes
+    //     FP16: 4 * 2 * D + 8 bytes
+    //   cache Q, dO
+    //     FP32: 12 * 2 * D + 8 bytes
+    //     FP16:  8 * 2 * D + 8 bytes
+    //
+    // Backward Key-Value (true)
+    //   cache dK, dV
+    //     FP32: 8 * 2 * D bytes
+    //     FP16: 8 * 2 * D bytes
+    //   cache K, V
+    //     FP32: 16 * 2 * D bytes
+    //     FP16: 12 * 2 * D bytes
+    //
+    // Backward Key-Value (false)
+    //   cache dV
+    //     FP32: 4 * 2 * D bytes
+    //     FP16: 4 * 2 * D bytes
+    //   cache K, V
+    //     FP32: 12 * 2 * D bytes
+    //     FP16:  8 * 2 * D bytes
+    //
+    // Need code for:
+    //   prefetching and loading 2D matrices (with async copy)
+    //   loading 1D operands directly from device (with a single conditional)
+    //     returning early when a SIMD is out of bounds
+    //   initializing accumulators
+    //
+    // This code should be possible to repurpose during the prefetches for
+    // matrix multiplication. The next part that logically follows is the
+    // store operations and the tear-down procedure.
+    //
+    // Instead of a monolithic function for "set(U/u)p" and "tear(D/d)own",
+    // it might be better to form a programmable API. Specify the operands,
+    // which order they appear (to ease prefetching). Wrap each generic
+    // or operand-specific procedure into a modular building block.
     
     output += """
   
