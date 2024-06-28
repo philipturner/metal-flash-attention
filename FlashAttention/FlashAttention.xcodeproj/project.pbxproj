@@ -33,6 +33,7 @@
 		98DA5B422C2CA75D000F4E06 /* DerivativeSoftmax.swift in Sources */ = {isa = PBXBuildFile; fileRef = 98DA5B412C2CA75D000F4E06 /* DerivativeSoftmax.swift */; };
 		98DA5B442C2DB893000F4E06 /* DerivativeSoftmaxTest.swift in Sources */ = {isa = PBXBuildFile; fileRef = 98DA5B432C2DB893000F4E06 /* DerivativeSoftmaxTest.swift */; };
 		98DA5B482C2DE2DA000F4E06 /* Attention.swift in Sources */ = {isa = PBXBuildFile; fileRef = 98DA5B472C2DE2DA000F4E06 /* Attention.swift */; };
+		98DA5B4A2C2EF788000F4E06 /* AttentionDescriptor.swift in Sources */ = {isa = PBXBuildFile; fileRef = 98DA5B492C2EF788000F4E06 /* AttentionDescriptor.swift */; };
 /* End PBXBuildFile section */
 
 /* Begin PBXFileReference section */
@@ -61,6 +62,7 @@
 		98DA5B412C2CA75D000F4E06 /* DerivativeSoftmax.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = DerivativeSoftmax.swift; sourceTree = "<group>"; };
 		98DA5B432C2DB893000F4E06 /* DerivativeSoftmaxTest.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = DerivativeSoftmaxTest.swift; sourceTree = "<group>"; };
 		98DA5B472C2DE2DA000F4E06 /* Attention.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = Attention.swift; sourceTree = "<group>"; };
+		98DA5B492C2EF788000F4E06 /* AttentionDescriptor.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = AttentionDescriptor.swift; sourceTree = "<group>"; };
 /* End PBXFileReference section */
 
 /* Begin PBXFrameworksBuildPhase section */
@@ -149,6 +151,7 @@
 			isa = PBXGroup;
 			children = (
 				98DA5B472C2DE2DA000F4E06 /* Attention.swift */,
+				98DA5B492C2EF788000F4E06 /* AttentionDescriptor.swift */,
 				98DA5B412C2CA75D000F4E06 /* DerivativeSoftmax.swift */,
 				98DA5B352C2AFD65000F4E06 /* Network.swift */,
 				98DA5B392C2B3A6D000F4E06 /* Softmax.swift */,
@@ -252,6 +255,7 @@
 				9881AA052C24C85E0056D05C /* Workspace.swift in Sources */,
 				9881AA252C25FDC20056D05C /* AdversarialShapeTest.swift in Sources */,
 				9881A9F82C24C8230056D05C /* ContentView.swift in Sources */,
+				98DA5B4A2C2EF788000F4E06 /* AttentionDescriptor.swift in Sources */,
 				98DA5B422C2CA75D000F4E06 /* DerivativeSoftmax.swift in Sources */,
 				9881AA232C25C22B0056D05C /* LaplacianTest.swift in Sources */,
 				9881AA1C2C25B11C0056D05C /* CoreCount.swift in Sources */,
