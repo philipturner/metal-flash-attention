@@ -5,6 +5,33 @@
 //  Created by Philip Turner on 6/28/24.
 //
 
+enum AttentionKernelType {
+  /// Forward attention, computing O and L.
+  ///
+  /// Variants:
+  /// - `false`: compute O
+  /// - `true`: compute O and L
+  case forward(Bool)
+  
+  /// Backward attention, computing D[i] and dQ.
+  ///
+  /// Variants:
+  /// - `false`: compute D[i]
+  /// - `true`: compute D[i] and dQ
+  ///
+  /// Depends on: L
+  case backwardQuery(Bool)
+  
+  /// Backward attention, computing dK and dV.
+  ///
+  /// Variants:
+  /// - `false`: compute dV, store the intermediate dS
+  /// - `true`: compute dV and dK
+  ///
+  /// Depends on: L, D[i]
+  case backwardKeyValue(Bool)
+}
+
 struct AttentionDescriptor {
   /// The dimensions of the input and output matrices.
   /// - Parameters R: Number of rows in the attention matrix.

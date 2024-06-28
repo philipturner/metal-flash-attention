@@ -13,26 +13,6 @@
 //   - transposes are supported
 // - no masking, dropout, etc.
 //
-// Kernel 1:
-// - in: Q, K, V
-// - out: O
-// - out: L
-//
-// Kernel 2:
-// - in: Q, K, V
-// - in: O
-// - in: L
-// - in: dO
-// - out: dQ
-// - out: D[i]
-//
-// Kernel 3:
-// - in: Q, K, V
-// - in: D[i]
-// - in: L
-// - in: dO
-// - out: dK, dV
-//
 // ## Reference Pseudocode for the Attention Operation
 //
 // Forward:
@@ -169,16 +149,65 @@ extension AttentionKernel {
       // TODO: Find a workable way to set 'L', 'D_terms', and 'dS' terms to
       // reasonable default values. While allowing users to override them for
       // debugging purposes.
+      //
+      // Perhaps once a distinct 'AttentionKernelDescriptor" is coded.
       precision: AttentionOperandPrecision.mixed.backwardPrecision,
       bufferBinding: 8)
+    operandsMap["dK"] = AttentionOperand(
+      precision: memoryPrecisions.K.backwardPrecision, bufferBinding: 8)
+    operandsMap["dQ"] = AttentionOperand(
+      precision: memoryPrecisions.Q.backwardPrecision, bufferBinding: 9)
     
+    // Select the operands used by this variant.
+    var operandKeys: [String]
+    switch type {
+    case .forward(let computeL):
+      operandKeys = [
+        "Q", "K", "V", "O"
+      ]
+      if computeL {
+        operandKeys.append("L")
+      }
+    case .backwardQuery(let computeDerivativeQ):
+      if computeDerivativeQ {
+        operandKeys = [
+          "Q", "K", "V", "O",
+          "L", "dO", "D_terms", "dQ"
+        ]
+      } else {
+        operandKeys = [
+          "O", "dO", "D_terms"
+        ]
+      }
+    case .backwardKeyValue(let computeDerivativeK):
+      operandKeys = [
+        "Q", "K", "V",
+        "L", "dO", "D_terms", "dV"
+      ]
+      if computeDerivativeK {
+        operandKeys.append("dK")
+      } else {
+        operandKeys.append("dS")
+      }
+    }
     
     output += """
 
-kernel void forward(
-  
+kernel void attention(
 
 """
+    
+    for key in operandKeys {
+      let operand = operandsMap[key]!
+      
+      var line = "  "
+      line += "device "
+      line += operand.precision.name + " "
+      line += key + " "
+      line += "[[buffer(\(operand.bufferBinding)]]"
+      line += ",\n"
+      output += line
+    }
     
     output += """
   
