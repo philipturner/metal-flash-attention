@@ -42,6 +42,8 @@ struct AttentionKernel {
     V: AttentionOperandPrecision,
     O: AttentionOperandPrecision)
   private var paddedD: UInt16
+  private var transposeState: (
+    Q: Bool, K: Bool, V: Bool, O: Bool)
   
   init(descriptor: AttentionDescriptor) {
     guard let matrixDimensions = descriptor.matrixDimensions,
@@ -51,14 +53,15 @@ struct AttentionKernel {
       fatalError("Descriptor was incomplete.")
     }
     self.memoryPrecisions = memoryPrecisions
+    self.transposeState = transposeState
     
     // Inject the contents of the headers.
     source += """
-  \(createMetalSimdgroupEvent())
-  \(createMetalSimdgroupMatrixStorage())
-  using namespace metal;
+\(createMetalSimdgroupEvent())
+\(createMetalSimdgroupMatrixStorage())
+using namespace metal;
 
-  """
+"""
     
     // Declare the size of the register allocation.
     paddedD = (matrixDimensions.D + 8 - 1) / 8 * 8
@@ -90,12 +93,6 @@ constant uint R [[function_constant(0)]];
 constant uint C [[function_constant(1)]];
 constant uint D [[function_constant(2)]];
 
-// Whether each matrix is transposed.
-constant bool Q_trans = \(transposeState.Q);
-constant bool K_trans = \(transposeState.K);
-constant bool V_trans = \(transposeState.V);
-constant bool O_trans = \(transposeState.O);
-
 // Define the memory layout of the matrix block.
 constant ushort R_group = 32;
 constant ushort C_group = 32;
@@ -107,6 +104,7 @@ kernel void attention(
     
     source += createArguments(type: type)
     source += createSetup(type: type)
+    source += createCleanup(type: type)
     source += """
 
 }
@@ -227,13 +225,9 @@ extension AttentionKernel {
     
     return output
   }
-  
-  
-  
-  
 }
 
-// MARK: - Setup Specification
+// MARK: - Setup and Cleanup Specification
 
 // Forward
 //   cache Q, O, m, l
@@ -286,15 +280,15 @@ extension AttentionKernel {
     // Loading everything that could possibly be loaded, for now.
     switch type {
     case .forward:
-      var loadDesc = AttentionLoadDescriptor()
-      loadDesc.index = "gid * R_group"
-      loadDesc.leadingBlockDimension = leadingBlockDimensions.Q
-      loadDesc.leadingDimension = leadingDimensions.Q
-      loadDesc.name = "Q"
-      loadDesc.threadgroupAddress = "threadgroup_block"
-      loadDesc.transposeState = "Q_trans"
+      var accessDesc = AttentionHBMAccessDescriptor()
+      accessDesc.index = "gid * R_group"
+      accessDesc.leadingBlockDimension = leadingBlockDimensions.Q
+      accessDesc.leadingDimension = leadingDimensions.Q
+      accessDesc.name = "Q"
+      accessDesc.threadgroupAddress = "threadgroup_block"
+      accessDesc.transposeState = "\(transposeState.Q)"
       
-      output += prefetchRows(descriptor: loadDesc)
+      output += prefetchRows(descriptor: accessDesc)
       output += """
 
     float m = -numeric_limits<float>::max();
@@ -303,27 +297,27 @@ extension AttentionKernel {
   """
       output += zeroInitializeAccumulator(name: "O")
       output += threadgroupBarrier()
-      output += load(descriptor: loadDesc)
+      output += load(descriptor: accessDesc)
       
     case .backwardQuery(let computeDerivativeQ):
       // O, dO, D[i]
       do {
-        var loadDesc = AttentionLoadDescriptor()
-        loadDesc.index = "gid * R_group"
-        loadDesc.leadingBlockDimension = leadingBlockDimensions.O
-        loadDesc.leadingDimension = leadingDimensions.O
-        loadDesc.threadgroupAddress = "threadgroup_block"
-        loadDesc.transposeState = "O_trans"
+        var accessDesc = AttentionHBMAccessDescriptor()
+        accessDesc.index = "gid * R_group"
+        accessDesc.leadingBlockDimension = leadingBlockDimensions.O
+        accessDesc.leadingDimension = leadingDimensions.O
+        accessDesc.threadgroupAddress = "threadgroup_block"
+        accessDesc.transposeState = "\(transposeState.O)"
         
-        loadDesc.name = "O"
-        output += prefetchRows(descriptor: loadDesc)
+        accessDesc.name = "O"
+        output += prefetchRows(descriptor: accessDesc)
         output += threadgroupBarrier()
-        output += load(descriptor: loadDesc)
+        output += load(descriptor: accessDesc)
         
-        loadDesc.name = "dO"
-        output += prefetchRows(descriptor: loadDesc)
+        accessDesc.name = "dO"
+        output += prefetchRows(descriptor: accessDesc)
         output += threadgroupBarrier()
-        output += load(descriptor: loadDesc)
+        output += load(descriptor: accessDesc)
         
         output += """
 
@@ -344,15 +338,15 @@ extension AttentionKernel {
       
       // Q, dQ, L
       if computeDerivativeQ {
-        var loadDesc = AttentionLoadDescriptor()
-        loadDesc.index = "gid * R_group"
-        loadDesc.leadingBlockDimension = leadingBlockDimensions.Q
-        loadDesc.leadingDimension = leadingDimensions.Q
-        loadDesc.name = "Q"
-        loadDesc.threadgroupAddress = "threadgroup_block"
-        loadDesc.transposeState = "Q_trans"
+        var accessDesc = AttentionHBMAccessDescriptor()
+        accessDesc.index = "gid * R_group"
+        accessDesc.leadingBlockDimension = leadingBlockDimensions.Q
+        accessDesc.leadingDimension = leadingDimensions.Q
+        accessDesc.name = "Q"
+        accessDesc.threadgroupAddress = "threadgroup_block"
+        accessDesc.transposeState = "\(transposeState.Q)"
         
-        output += prefetchRows(descriptor: loadDesc)
+        output += prefetchRows(descriptor: accessDesc)
         output += """
 
   float l = L[gid * R_group + sidx * 8 + morton_offset.y];
@@ -360,14 +354,51 @@ extension AttentionKernel {
 """
         output += zeroInitializeAccumulator(name: "dQ")
         output += threadgroupBarrier()
-        output += load(descriptor: loadDesc)
+        output += load(descriptor: accessDesc)
       }
       
-    default:
-      break
+    case .backwardKeyValue(let computeDerivativeK):
+      // dK, K
+      do {
+        var accessDesc = AttentionHBMAccessDescriptor()
+        accessDesc.index = "gid * C_group"
+        accessDesc.leadingBlockDimension = leadingBlockDimensions.K
+        accessDesc.leadingDimension = leadingDimensions.K
+        accessDesc.name = "K"
+        accessDesc.threadgroupAddress = "threadgroup_block"
+        accessDesc.transposeState = "\(transposeState.K)"
+        
+        output += prefetchColumns(descriptor: accessDesc)
+        if computeDerivativeK {
+          output += zeroInitializeAccumulator(name: "dK")
+        }
+        output += threadgroupBarrier()
+        output += load(descriptor: accessDesc)
+      }
+      
+      // dV, V
+      do {
+        var accessDesc = AttentionHBMAccessDescriptor()
+        accessDesc.index = "gid * C_group"
+        accessDesc.leadingBlockDimension = leadingBlockDimensions.V
+        accessDesc.leadingDimension = leadingDimensions.V
+        accessDesc.name = "V"
+        accessDesc.threadgroupAddress = "threadgroup_block"
+        accessDesc.transposeState = "\(transposeState.V)"
+        
+        output += prefetchColumns(descriptor: accessDesc)
+        output += zeroInitializeAccumulator(name: "dV")
+        output += threadgroupBarrier()
+        output += load(descriptor: accessDesc)
+      }
     }
-
     
+    return output
+  }
+  
+  func createCleanup(type: AttentionKernelType) -> String {
+    var output: String = ""
+    output += createStoreO()
     return output
   }
   
@@ -407,7 +438,7 @@ extension AttentionKernel {
 //
 // THIS IS NOT MEANT TO BE USED INSIDE THE INNER GEMM LOOP
 
-struct AttentionLoadDescriptor {
+struct AttentionHBMAccessDescriptor {
   var index: String?
   var leadingBlockDimension: UInt16?
   var leadingDimension: String?
@@ -418,7 +449,7 @@ struct AttentionLoadDescriptor {
 
 extension AttentionKernel {
   // Cache something during a pass that parallelizes over rows.
-  func prefetchRows(descriptor: AttentionLoadDescriptor) -> String {
+  func prefetchRows(descriptor: AttentionHBMAccessDescriptor) -> String {
     guard let index = descriptor.index,
           let leadingBlockDimension = descriptor.leadingBlockDimension,
           let leadingDimension = descriptor.leadingDimension,
@@ -441,8 +472,9 @@ extension AttentionKernel {
     ushort2 tile_dst(\(paddedD), R_tile_dimension);
     
     simdgroup_event event;
-    event.async_copy(dst, \(leadingBlockDimension), tile_dst,
-                     src, \(leadingDimension), tile_src, \(transposeState));
+    event.async_copy(
+      dst, \(leadingBlockDimension), tile_dst,
+      src, \(leadingDimension), tile_src, \(transposeState));
     simdgroup_event::wait(1, &event);
   }
 
@@ -450,7 +482,7 @@ extension AttentionKernel {
   }
   
   // Cache something during a pass that parallelizes over columns.
-  func prefetchColumns(descriptor: AttentionLoadDescriptor) -> String {
+  func prefetchColumns(descriptor: AttentionHBMAccessDescriptor) -> String {
     guard let index = descriptor.index,
           let leadingBlockDimension = descriptor.leadingBlockDimension,
           let leadingDimension = descriptor.leadingDimension,
@@ -473,18 +505,17 @@ extension AttentionKernel {
     ushort2 tile_dst(\(paddedD), C_tile_dimension);
     
     simdgroup_event event;
-    event.async_copy(dst, \(leadingBlockDimension), tile_dst,
-                     src, \(leadingDimension), tile_src, \(transposeState));
+    event.async_copy(
+      dst, \(leadingBlockDimension), tile_dst,
+      src, \(leadingDimension), tile_src, \(transposeState));
     simdgroup_event::wait(1, &event);
   }
 
 """
   }
   
-  func load(descriptor: AttentionLoadDescriptor) -> String {
-    guard let index = descriptor.index,
-          let leadingBlockDimension = descriptor.leadingBlockDimension,
-          let leadingDimension = descriptor.leadingDimension,
+  func load(descriptor: AttentionHBMAccessDescriptor) -> String {
+    guard let leadingBlockDimension = descriptor.leadingBlockDimension,
           let name = descriptor.name,
           let threadgroupAddress = descriptor.threadgroupAddress,
           let transposeState = descriptor.transposeState else {
@@ -500,6 +531,7 @@ extension AttentionKernel {
     src = simdgroup_matrix_storage<float>::apply_offset(
       src, \(leadingBlockDimension), threadgroup_origin, \(transposeState));
     
+#pragma clang loop unroll(full)
     for (ushort d = 0; d < \(paddedD); d += 8) {
       ushort2 thread_origin(d, 0);
       \(name)_sram[d / 8].load(
@@ -507,6 +539,50 @@ extension AttentionKernel {
     }
   }
 
+"""
+  }
+}
+
+// MARK: - Store
+
+extension AttentionKernel {
+  // Figure out the needs for 'store' code, by writing the cleanup for O
+  // during the forward pass.
+  func createStoreO() -> String {
+    return """
+  
+  threadgroup_barrier(mem_flags::mem_threadgroup);
+  {
+    ushort2 threadgroup_origin = ushort2(0, sidx * 8) + morton_offset;
+    auto dst = (threadgroup float*)(threadgroup_block);
+    dst = simdgroup_matrix_storage<float>::apply_offset(
+      dst, \(leadingBlockDimensions.O), threadgroup_origin, \(transposeState.O));
+    
+#pragma clang loop unroll(full)
+    for (ushort d = 0; d < \(paddedD); d += 8) {
+      ushort2 thread_origin(d, 0);
+      O_sram[d / 8].store(
+        dst, \(leadingBlockDimensions.O), thread_origin, \(transposeState.O));
+    }
+  }
+  
+  threadgroup_barrier(mem_flags::mem_threadgroup);
+  if (sidx == 0) {
+    uint2 device_origin(0, gid * R_group);
+    auto src = (threadgroup float*)(threadgroup_block);
+    auto dst = simdgroup_matrix_storage<float>::apply_offset(
+      O, \(leadingDimensions.O), device_origin, \(transposeState.O));
+   
+    ushort R_tile_dimension = min(uint(R_group), R - gid * R_group);
+    ushort2 tile_src(D, R_tile_dimension);
+    ushort2 tile_dst(D, R_tile_dimension);
+    
+    simdgroup_event event;
+    event.async_copy(
+      dst, \(leadingDimensions.O), tile_dst,
+      src, \(leadingBlockDimensions.O), tile_src, \(transposeState.O));
+  }
+  
 """
   }
 }
