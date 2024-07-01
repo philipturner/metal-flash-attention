@@ -130,7 +130,7 @@ extension AttentionKernel {
       precision: memoryPrecisions.V.forwardPrecision, bufferBinding: 2)
     operandsMap["O"] = AttentionOperand(
       precision: memoryPrecisions.O.forwardPrecision, bufferBinding: 3)
-    operandsMap["L"] = AttentionOperand(
+    operandsMap["L_terms"] = AttentionOperand(
       precision: memoryPrecisions.O.forwardPrecision, bufferBinding: 4)
     
     // Index the operands available during the backward pass.
@@ -171,13 +171,13 @@ extension AttentionKernel {
         "Q", "K", "V", "O"
       ]
       if computeL {
-        operandKeys.append("L")
+        operandKeys.append("L_terms")
       }
     case .backwardQuery(let computeDerivativeQ):
       if computeDerivativeQ {
         operandKeys = [
           "Q", "K", "V", "O",
-          "L", "dO", "D_terms", "dQ"
+          "L_terms", "dO", "D_terms", "dQ"
         ]
       } else {
         operandKeys = [
@@ -187,7 +187,7 @@ extension AttentionKernel {
     case .backwardKeyValue(let computeDerivativeK):
       operandKeys = [
         "Q", "K", "V",
-        "L", "dO", "D_terms", "dV"
+        "L_terms", "dO", "D_terms", "dV"
       ]
       if computeDerivativeK {
         operandKeys.append("dK")
@@ -252,7 +252,7 @@ extension AttentionKernel {
 //     FP16: 6 * 2 * D + 8 bytes
 //
 // Backward Query (true)
-//   cache dQ, dO, L, D[i]
+//   cache dQ, dO, L[i], D[i]
 //     FP32: 8 * 2 * D + 8 bytes
 //     FP16: 6 * 2 * D + 8 bytes
 //   cache Q
@@ -355,7 +355,7 @@ extension AttentionKernel {
 """
       }
       
-      // Q, dQ, L
+      // Q, dQ, L[i]
       if computeDerivativeQ {
         var accessDesc = AttentionHBMAccessDescriptor()
         accessDesc.index = "gid * R_group"
@@ -368,7 +368,7 @@ extension AttentionKernel {
         output += prefetchRows(descriptor: accessDesc)
         output += """
 
-  float l = L[linear_array_slot];
+  float L_term = L_terms[linear_array_slot];
 
 """
         output += zeroInitializeAccumulator(name: "dQ")
@@ -434,11 +434,12 @@ extension AttentionKernel {
       output += threadgroupBarrier()
       output += commitRows(descriptor: accessDesc)
       
-      // L
+      // L[i]
       if computeL {
         output += """
 
-  L[linear_array_slot] = fma(fast::log2(l), M_LN2_F, m);
+  float L_term = fma(fast::log2(l), M_LN2_F, m);
+  L_terms[linear_array_slot] = L_term;
 
 """
       }
@@ -648,46 +649,6 @@ extension AttentionKernel {
 // MARK: - Store
 
 extension AttentionKernel {
-  // Figure out the needs for 'store' code, by writing the cleanup for O
-  // during the forward pass.
-  func createStoreO() -> String {
-    return """
-  
-  threadgroup_barrier(mem_flags::mem_threadgroup);
-  {
-    ushort2 threadgroup_origin = ushort2(0, sidx * 8) + morton_offset;
-    auto dst = (threadgroup float*)(threadgroup_block);
-    dst = simdgroup_matrix_storage<float>::apply_offset(
-      dst, \(leadingBlockDimensions.O), threadgroup_origin, \(transposeState.O));
-    
-#pragma clang loop unroll(full)
-    for (ushort d = 0; d < \(paddedD); d += 8) {
-      ushort2 thread_origin(d, 0);
-      O_sram[d / 8].store(
-        dst, \(leadingBlockDimensions.O), thread_origin, \(transposeState.O));
-    }
-  }
-  
-  threadgroup_barrier(mem_flags::mem_threadgroup);
-  if (sidx == 0) {
-    uint2 device_origin(0, gid * R_group);
-    auto src = (threadgroup float*)(threadgroup_block);
-    auto dst = simdgroup_matrix_storage<float>::apply_offset(
-      O, \(leadingDimensions.O), device_origin, \(transposeState.O));
-   
-    ushort R_tile_dimension = min(uint(R_group), R - gid * R_group);
-    ushort2 tile_src(D, R_tile_dimension);
-    ushort2 tile_dst(D, R_tile_dimension);
-    
-    simdgroup_event event;
-    event.async_copy(
-      dst, \(leadingDimensions.O), tile_dst,
-      src, \(leadingBlockDimensions.O), tile_src, \(transposeState.O));
-  }
-  
-"""
-  }
-  
   func store(descriptor: AttentionHBMAccessDescriptor) -> String {
     guard let leadingBlockDimension = descriptor.leadingBlockDimension,
           let name = descriptor.name,
@@ -779,3 +740,59 @@ extension AttentionKernel {
 """
   }
 }
+
+// MARK: - Inner Loop
+
+// Forward
+//   for c in 0..<C {
+//     load K[c]
+//     S = Q * K^T
+//     (m, l, P) = softmax(m, l, S)
+//     O *= correction
+//     load V[c]
+//     O += P * V
+//   }
+//   O /= l
+//
+// Backward Query (true)
+//   for c in 0..<C {
+//     load K[c]
+//     S = Q * K^T
+//     P = exp(S - L)
+//     load V[c]
+//     dP = dO * V
+//     dS = P * (dP - D)
+//     load K[c]
+//     dQ += dS * K
+//   }
+//
+// Backward Key-Value (false)
+//   for r in 0..<R {
+//     load Q[r]
+//     load L[r]
+//     S^T = K * Q^T
+//     P^T = exp(S^T - L)
+//     load dO[r]
+//     dV += P^T * dO
+//     load V[r]
+//     load D[r]
+//     dP = dO * V^T
+//     dS = P * (dP - D)
+//     store dS[r][c]
+//   }
+//
+// Backward Key-Value (true)
+//   for r in 0..<R {
+//     load Q[r]
+//     load L[r]
+//     S^T = K * Q^T
+//     P^T = exp(S^T - L)
+//     load dO[r]
+//     dV += P^T * dO
+//     load V[r]
+//     load D[r]
+//     dP = dO * V^T
+//     dS = P * (dP - D)
+//     load Q[r]
+//     dK += dS^T * Q
+//   }

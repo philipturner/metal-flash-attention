@@ -24,7 +24,7 @@ func executeScript() {
   attentionDesc.matrixDimensions = (R: 33, C: 33, D: 33)
   attentionDesc.memoryPrecisions = (Q: .full, K: .full, V: .full, O: .full)
   attentionDesc.transposeState = (Q: false, K: false, V: false, O: false)
-  attentionDesc.type = .backwardKeyValue(true)
+  attentionDesc.type = .forward(true)
   let kernel = AttentionKernel(descriptor: attentionDesc)
   print(kernel.source)
   

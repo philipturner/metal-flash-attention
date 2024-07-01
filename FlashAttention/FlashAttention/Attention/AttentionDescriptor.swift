@@ -6,11 +6,11 @@
 //
 
 enum AttentionKernelType {
-  /// Forward attention, computing O and L.
+  /// Forward attention, computing O and L[i].
   ///
   /// Variants:
   /// - `false`: compute O
-  /// - `true`: compute O and L
+  /// - `true`: compute O and L[i]
   case forward(Bool)
   
   /// Backward attention, computing D[i] and dQ.
@@ -19,7 +19,7 @@ enum AttentionKernelType {
   /// - `false`: compute D[i]
   /// - `true`: compute D[i] and dQ
   ///
-  /// Depends on: L
+  /// Depends on: L[i]
   case backwardQuery(Bool)
   
   /// Backward attention, computing dK and dV.
@@ -28,7 +28,7 @@ enum AttentionKernelType {
   /// - `false`: compute dV, store the intermediate dS
   /// - `true`: compute dV and dK
   ///
-  /// Depends on: L, D[i]
+  /// Depends on: L[i], D[i]
   case backwardKeyValue(Bool)
 }
 
