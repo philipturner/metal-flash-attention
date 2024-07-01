@@ -241,10 +241,10 @@ extension AttentionKernel {
 //     FP16: 6 * 2 * D + 8 bytes
 //
 // Backward Query (true)
-//   cache dQ, L, D
-//     FP32: 4 * 2 * D + 8 bytes
-//     FP16: 4 * 2 * D + 8 bytes
-//   cache Q, dO
+//   cache dQ, dO, L, D[i]
+//     FP32: 8 * 2 * D + 8 bytes
+//     FP16: 6 * 2 * D + 8 bytes
+//   cache Q
 //     FP32: 12 * 2 * D + 8 bytes
 //     FP16:  8 * 2 * D + 8 bytes
 //
@@ -283,24 +283,90 @@ extension AttentionKernel {
   func createSetup(type: AttentionKernelType) -> String {
     var output: String = ""
     
-    var loadDesc = AttentionLoadDescriptor()
-    loadDesc.index = "gid * R_group"
-    loadDesc.leadingBlockDimension = leadingBlockDimensions.Q
-    loadDesc.leadingDimension = leadingDimensions.Q
-    loadDesc.name = "Q"
-    loadDesc.threadgroupAddress = "threadgroup_block"
-    loadDesc.transposeState = "Q_trans"
-    
-    output += prefetchRows(descriptor: loadDesc)
-    output += """
+    // Loading everything that could possibly be loaded, for now.
+    switch type {
+    case .forward:
+      var loadDesc = AttentionLoadDescriptor()
+      loadDesc.index = "gid * R_group"
+      loadDesc.leadingBlockDimension = leadingBlockDimensions.Q
+      loadDesc.leadingDimension = leadingDimensions.Q
+      loadDesc.name = "Q"
+      loadDesc.threadgroupAddress = "threadgroup_block"
+      loadDesc.transposeState = "Q_trans"
+      
+      output += prefetchRows(descriptor: loadDesc)
+      output += """
 
-  float m = -numeric_limits<float>::max();
-  float l = numeric_limits<float>::denorm_min();
+    float m = -numeric_limits<float>::max();
+    float l = numeric_limits<float>::denorm_min();
+
+  """
+      output += zeroInitializeAccumulator(name: "O")
+      output += threadgroupBarrier()
+      output += load(descriptor: loadDesc)
+      
+    case .backwardQuery(let computeDerivativeQ):
+      // O, dO, D[i]
+      do {
+        var loadDesc = AttentionLoadDescriptor()
+        loadDesc.index = "gid * R_group"
+        loadDesc.leadingBlockDimension = leadingBlockDimensions.O
+        loadDesc.leadingDimension = leadingDimensions.O
+        loadDesc.threadgroupAddress = "threadgroup_block"
+        loadDesc.transposeState = "O_trans"
+        
+        loadDesc.name = "O"
+        output += prefetchRows(descriptor: loadDesc)
+        output += threadgroupBarrier()
+        output += load(descriptor: loadDesc)
+        
+        loadDesc.name = "dO"
+        output += prefetchRows(descriptor: loadDesc)
+        output += threadgroupBarrier()
+        output += load(descriptor: loadDesc)
+        
+        output += """
+
+  float D_term = 0;
+#pragma clang loop unroll(full)
+  for (ushort d = 0; d < \(paddedD); d += 8) {
+    float2 O_value = *(O_sram[d / 8].thread_elements());
+    float2 dO_value = *(dO_sram[d / 8].thread_elements());
+    D_term += O_value[0] * dO_value[0];
+    D_term += O_value[1] * dO_value[1];
+  }
+  D_term += simd_shuffle_xor(D_term, 1);
+  D_term += simd_shuffle_xor(D_term, 8);
+  D_terms[gid * R_group + sidx * 8 + morton_offset.y] = D_term;
 
 """
-    output += zeroInitializeAccumulator(name: "O")
-    output += threadgroupBarrier()
-    output += load(descriptor: loadDesc)
+      }
+      
+      // Q, dQ, L
+      if computeDerivativeQ {
+        var loadDesc = AttentionLoadDescriptor()
+        loadDesc.index = "gid * R_group"
+        loadDesc.leadingBlockDimension = leadingBlockDimensions.Q
+        loadDesc.leadingDimension = leadingDimensions.Q
+        loadDesc.name = "Q"
+        loadDesc.threadgroupAddress = "threadgroup_block"
+        loadDesc.transposeState = "Q_trans"
+        
+        output += prefetchRows(descriptor: loadDesc)
+        output += """
+
+  float l = L[gid * R_group + sidx * 8 + morton_offset.y];
+
+"""
+        output += zeroInitializeAccumulator(name: "dQ")
+        output += threadgroupBarrier()
+        output += load(descriptor: loadDesc)
+      }
+      
+    default:
+      break
+    }
+
     
     return output
   }
