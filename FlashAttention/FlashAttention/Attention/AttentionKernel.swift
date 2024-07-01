@@ -12,21 +12,6 @@
 //   - use async copies
 //   - transposes are supported
 // - no masking, dropout, etc.
-//
-// ## Reference Pseudocode for the Attention Operation
-//
-// Forward:
-// S = Q K^T
-// P = softmax(S / sqrt(D))
-// O = P V
-//
-// Backward:
-// D[i] = generateDTerms(dO, O)
-// dV = P^T dO
-// dP = dO V^T
-// dS = derivativeSoftmax(dP, P, D[i]) / sqrt(D)
-// dK = dS^T Q
-// dQ = dS K
 
 struct AttentionKernel {
   // The source code to compile.
@@ -304,7 +289,7 @@ extension AttentionKernel {
       accessDesc.leadingDimension = leadingDimensions.Q
       accessDesc.name = "Q"
       accessDesc.threadgroupAddress = "threadgroup_block"
-      accessDesc.transposeState = "\(transposeState.Q)"
+      accessDesc.transposeState = transposeState.Q
       
       output += prefetchRows(descriptor: accessDesc)
       output += zeroInitializeAccumulator(name: "O")
@@ -327,7 +312,7 @@ extension AttentionKernel {
         accessDesc.leadingBlockDimension = leadingBlockDimensions.O
         accessDesc.leadingDimension = leadingDimensions.O
         accessDesc.threadgroupAddress = "threadgroup_block"
-        accessDesc.transposeState = "\(transposeState.O)"
+        accessDesc.transposeState = transposeState.O
         
         accessDesc.name = "O"
         output += prefetchRows(descriptor: accessDesc)
@@ -363,7 +348,7 @@ extension AttentionKernel {
         accessDesc.leadingDimension = leadingDimensions.Q
         accessDesc.name = "Q"
         accessDesc.threadgroupAddress = "threadgroup_block"
-        accessDesc.transposeState = "\(transposeState.Q)"
+        accessDesc.transposeState = transposeState.Q
         
         output += prefetchRows(descriptor: accessDesc)
         output += """
@@ -385,7 +370,7 @@ extension AttentionKernel {
         accessDesc.leadingDimension = leadingDimensions.K
         accessDesc.name = "K"
         accessDesc.threadgroupAddress = "threadgroup_block"
-        accessDesc.transposeState = "\(transposeState.K)"
+        accessDesc.transposeState = transposeState.K
         
         output += prefetchColumns(descriptor: accessDesc)
         if computeDerivativeK {
@@ -403,7 +388,7 @@ extension AttentionKernel {
         accessDesc.leadingDimension = leadingDimensions.V
         accessDesc.name = "V"
         accessDesc.threadgroupAddress = "threadgroup_block"
-        accessDesc.transposeState = "\(transposeState.V)"
+        accessDesc.transposeState = transposeState.V
         
         output += prefetchColumns(descriptor: accessDesc)
         output += zeroInitializeAccumulator(name: "dV")
@@ -427,7 +412,7 @@ extension AttentionKernel {
       accessDesc.leadingDimension = leadingDimensions.O
       accessDesc.name = "O"
       accessDesc.threadgroupAddress = "threadgroup_block"
-      accessDesc.transposeState = "\(transposeState.O)"
+      accessDesc.transposeState = transposeState.O
       
       output += threadgroupBarrier()
       output += store(descriptor: accessDesc)
@@ -453,7 +438,7 @@ extension AttentionKernel {
         accessDesc.leadingDimension = leadingDimensions.Q
         accessDesc.name = "dQ"
         accessDesc.threadgroupAddress = "threadgroup_block"
-        accessDesc.transposeState = "\(transposeState.Q)"
+        accessDesc.transposeState = transposeState.Q
         
         output += threadgroupBarrier()
         output += store(descriptor: accessDesc)
@@ -477,7 +462,7 @@ extension AttentionKernel {
         accessDesc.leadingDimension = leadingDimensions.K
         accessDesc.name = "dK"
         accessDesc.threadgroupAddress = "threadgroup_block"
-        accessDesc.transposeState = "\(transposeState.K)"
+        accessDesc.transposeState = transposeState.K
         
         output += threadgroupBarrier()
         output += store(descriptor: accessDesc)
@@ -493,7 +478,7 @@ extension AttentionKernel {
         accessDesc.leadingDimension = leadingDimensions.V
         accessDesc.name = "dV"
         accessDesc.threadgroupAddress = "threadgroup_block"
-        accessDesc.transposeState = "\(transposeState.V)"
+        accessDesc.transposeState = transposeState.V
         
         output += threadgroupBarrier()
         output += store(descriptor: accessDesc)
@@ -547,7 +532,7 @@ struct AttentionHBMAccessDescriptor {
   var leadingDimension: String?
   var name: String?
   var threadgroupAddress: String?
-  var transposeState: String?
+  var transposeState: Bool?
 }
 
 extension AttentionKernel {
@@ -747,7 +732,7 @@ extension AttentionKernel {
 //   for c in 0..<C {
 //     load K[c]
 //     S = Q * K^T
-//     (m, l, P) = softmax(m, l, S)
+//     (m, l, P) = softmax(m, l, S * scaleFactor)
 //     O *= correction
 //     load V[c]
 //     O += P * V
@@ -761,7 +746,7 @@ extension AttentionKernel {
 //     P = exp(S - L)
 //     load V[c]
 //     dP = dO * V
-//     dS = P * (dP - D)
+//     dS = P * (dP - D) * scaleFactor
 //     load K[c]
 //     dQ += dS * K
 //   }
@@ -777,7 +762,7 @@ extension AttentionKernel {
 //     load V[r]
 //     load D[r]
 //     dP = dO * V^T
-//     dS = P * (dP - D)
+//     dS = P * (dP - D) * scaleFactor
 //     store dS[r][c]
 //   }
 //
@@ -792,7 +777,100 @@ extension AttentionKernel {
 //     load V[r]
 //     load D[r]
 //     dP = dO * V^T
-//     dS = P * (dP - D)
+//     dS = P * (dP - D) * scaleFactor
 //     load Q[r]
 //     dK += dS^T * Q
 //   }
+
+extension AttentionKernel {
+  // Start by writing the inner loop for the forward kernel. This may reveal
+  // high-level abstractions that can be shared with the remaining variants.
+  func createInnerLoopForward() -> String {
+    var prefetchK: String
+    do {
+      var accessDesc = AttentionHBMAccessDescriptor()
+      accessDesc.index = "c"
+      accessDesc.leadingBlockDimension = leadingBlockDimensions.K
+      accessDesc.leadingDimension = leadingDimensions.K
+      accessDesc.name = "K"
+      accessDesc.threadgroupAddress = "threadgroup_block"
+      accessDesc.transposeState = transposeState.K
+      prefetchK = prefetchRows(descriptor: accessDesc)
+    }
+    
+    var prefetchV: String
+    do {
+      var accessDesc = AttentionHBMAccessDescriptor()
+      accessDesc.index = "c"
+      accessDesc.leadingBlockDimension = leadingBlockDimensions.V
+      accessDesc.leadingDimension = leadingDimensions.V
+      accessDesc.name = "V"
+      accessDesc.threadgroupAddress = "threadgroup_block"
+      accessDesc.transposeState = transposeState.V
+      prefetchV = prefetchRows(descriptor: accessDesc)
+    }
+    
+    return """
+  
+  // Iterate over the columns.
+  for (uint c = 0; c < C; c += 32) {
+    // load K[c]
+    threadgroup_barrier(mem_flags::mem_threadgroup);
+    \(prefetchK)
+    auto KT_block = (threadgroup float*)(threadgroup_block);
+    KT_block = simdgroup_matrix_storage<float>::apply_offset(
+      KT_block, \(leadingBlockDimensions.K), morton_offset,
+      \(!transposeState.K));
+    
+    // S = Q * K^T
+    threadgroup_barrier(mem_flags::mem_threadgroup);
+    simdgroup_matrix_storage<float> S_sram[32 / 8];
+#pragma clang loop unroll(full)
+    for (ushort d = 0; d < \(paddedD); d += 8) {
+      simdgroup_matrix_storage<float> KT_sram[32 / 8];
+#pragma clang loop unroll(full)
+      for (ushort c = 0; c < 32; c += 8) {
+        ushort2 origin(c, d);
+        KT_sram[c / 8].load(
+          KT_block, \(leadingBlockDimensions.K), origin, \(!transposeState.K));
+      }
+#pragma clang loop unroll(full)
+      for (ushort c = 0; c < 32; c += 8) {
+        auto Q = Q_sram[d / 8];
+        auto KT = KT_sram[c / 8];
+        auto S = S_sram[c / 8];
+        S->multiply(*Q, *KT, d > 0);
+      }
+    }
+
+    // Prevent the zero padding from changing the values of 'm' and 'l'.
+    if ((C % 32 != 0) && (c + 32 > C)) {
+      const ushort remainder32 = C - uint(C % 32);
+      const ushort remainder8 = C - uint(C % 8);
+
+    }
+    
+    // (m, l, P) = softmax(m, l, S * scaleFactor)
+    float2 m_new_accumulator;
+#pragma clang loop unroll(full)
+    for (ushort c = 0; c < 32; c += 8) {
+      auto S_elements = S_sram[c / 8].thread_elements();
+      if (c == 0) {
+        m_new_accumulator = *S_elements;
+      } else {
+        m_new_accumulator = max(m_new_accumulator, *S_elements);
+      }
+    }
+    float m_new
+  }
+  
+  // O /= l
+  float l_reciprocal = 1 / l;
+#pragma clang loop unroll(full)
+  for (ushort d = 0; d < \(paddedD); d += 8) {
+    *(O_sram[d / 8].thread_elements()) *= l_reciprocal;
+  }
+  
+"""
+  }
+}

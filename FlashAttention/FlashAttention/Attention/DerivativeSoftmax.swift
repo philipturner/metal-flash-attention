@@ -498,7 +498,7 @@ kernel void gemm(device \(memoryNameA) *A [[buffer(0)]],
       threadgroup_barrier(mem_flags::mem_threadgroup);
     }
   }
-    
+  
 """
     }
     
