@@ -102,6 +102,7 @@ constant ushort C_group = 32;
 
 // Declare the function.
 kernel void attention(
+
 """
     
     source += createArguments(type: type)
@@ -205,8 +206,8 @@ extension AttentionKernel {
       var line = "  "
       line += "device "
       line += operand.precision.name + " "
-      line += key + " "
-      line += "[[buffer(\(operand.bufferBinding)]]"
+      line += "*" + key + " "
+      line += "[[buffer(\(operand.bufferBinding))]]"
       line += ",\n"
       output += line
     }
@@ -227,37 +228,12 @@ extension AttentionKernel {
     return output
   }
   
-  func createSetup(type: AttentionKernelType) -> String {
-    var output: String = ""
-    
-    let (prefetchQ, loadQ) = createLoadQ(
-      baseAddress: "threadgroup_block",  r: "gid * R_group")
-    
-    output += prefetchQ
-    output += createInitializeO()
-    output += "threadgroup_barrier(mem_flags::mem_threadgroup);\n"
-    output += loadQ
-    
-    return output
-  }
   
-  // Initializes the accumulator by zeroing out the elements.
-  //
-  // 'm' and 'l' are also initialized here.
-  func createInitializeO() -> String {
-    """
-
-  float m = -numeric_limits<float>::max();
-  float l = numeric_limits<float>::denorm_min();
-  simdgroup_matrix_storage<float> O_sram[\(paddedD / 8)];
-#pragma clang loop unroll(full)
-  for (ushort d = 0; d < \(paddedD); d += 8) {
-    O_sram[d / 8] = simdgroup_matrix_storage<float>(0);
-  }
-
-"""
-  }
+  
+  
 }
+
+// MARK: - Setup Specification
 
 // Forward
 //   cache Q, O, m, l
@@ -303,7 +279,55 @@ extension AttentionKernel {
 // which order they appear (to ease prefetching). Wrap each generic
 // or operand-specific procedure into a modular building block.
 
-// MARK: - Prefetch
+extension AttentionKernel {
+  func createSetup(type: AttentionKernelType) -> String {
+    var output: String = ""
+    
+    var loadDesc = AttentionLoadDescriptor()
+    loadDesc.index = "gid * R_group"
+    loadDesc.leadingBlockDimension = leadingBlockDimensions.Q
+    loadDesc.leadingDimension = leadingDimensions.Q
+    loadDesc.name = "Q"
+    loadDesc.threadgroupAddress = "threadgroup_block"
+    loadDesc.transposeState = "Q_trans"
+    
+    output += prefetchRows(descriptor: loadDesc)
+    output += """
+
+  float m = -numeric_limits<float>::max();
+  float l = numeric_limits<float>::denorm_min();
+
+"""
+    output += zeroInitializeAccumulator(name: "O")
+    output += threadgroupBarrier()
+    output += load(descriptor: loadDesc)
+    
+    return output
+  }
+  
+  func zeroInitializeAccumulator(name: String) -> String {
+    return """
+
+  simdgroup_matrix_storage<float> \(name)_sram[\(paddedD / 8)];
+#pragma clang loop unroll(full)
+  for (ushort d = 0; d < \(paddedD); d += 8) {
+    \(name)_sram[d / 8] = simdgroup_matrix_storage<float>(0);
+  }
+
+"""
+  }
+  
+  // A threadgroup barrier, formatted to match the correct indentation.
+  func threadgroupBarrier() -> String {
+    return """
+
+  threadgroup_barrier(mem_flags::mem_threadgroup);
+
+"""
+  }
+}
+
+// MARK: - Load
 
 // Load a chunk of the operand into registers.
 //
@@ -315,52 +339,108 @@ extension AttentionKernel {
 // threadgroup barrier. Ideally, one would perform other work while waiting
 // on the 'device -> threadgroup' copy to happen asynchronously.
 //
-// The second string should only be invoked if the operand is kept around
-// persistently. If it is a temporary within a GEMM loop, TBD.
+// THIS IS NOT MEANT TO BE USED INSIDE THE INNER GEMM LOOP
+
+struct AttentionLoadDescriptor {
+  var index: String?
+  var leadingBlockDimension: UInt16?
+  var leadingDimension: String?
+  var name: String?
+  var threadgroupAddress: String?
+  var transposeState: String?
+}
 
 extension AttentionKernel {
-  func createLoadQ(
-    baseAddress: String,
-    r: String
-  ) -> (prefetch: String, load: String) {
-    let prefetch = """
+  // Cache something during a pass that parallelizes over rows.
+  func prefetchRows(descriptor: AttentionLoadDescriptor) -> String {
+    guard let index = descriptor.index,
+          let leadingBlockDimension = descriptor.leadingBlockDimension,
+          let leadingDimension = descriptor.leadingDimension,
+          let name = descriptor.name,
+          let threadgroupAddress = descriptor.threadgroupAddress,
+          let transposeState = descriptor.transposeState else {
+      fatalError("Descriptor was incomplete.")
+    }
+    
+    return """
 
   if (sidx == 0) {
-    uint2 Q_offset(0, \(r));
-    auto Q_src = simdgroup_matrix_storage<float>::apply_offset(
-      Q, \(leadingDimensions.Q), Q_offset, Q_trans);
-    auto Q_dst = (threadgroup float*)(\(baseAddress));
+    uint2 device_origin(0, \(index));
+    auto src = simdgroup_matrix_storage<float>::apply_offset(
+      \(name), \(leadingDimension), device_origin, \(transposeState));
+    auto dst = (threadgroup float*)(\(threadgroupAddress));
     
-    ushort R_tile_dimension = min(uint(R_group), R - Q_offset.y);
-    ushort2 Q_tile_src(D, R_tile_dimension);
-    ushort2 Q_tile_dst(\(paddedD), R_tile_dimension);
+    ushort R_tile_dimension = min(uint(R_group), R - \(index));
+    ushort2 tile_src(D, R_tile_dimension);
+    ushort2 tile_dst(\(paddedD), R_tile_dimension);
     
     simdgroup_event event;
-    event.async_copy(Q_dst, \(leadingBlockDimensions.Q), Q_tile_dst,
-                     Q_src, \(leadingDimensions.Q), Q_tile_src, Q_trans);
+    event.async_copy(dst, \(leadingBlockDimension), tile_dst,
+                     src, \(leadingDimension), tile_src, \(transposeState));
     simdgroup_event::wait(1, &event);
   }
 
 """
+  }
+  
+  // Cache something during a pass that parallelizes over columns.
+  func prefetchColumns(descriptor: AttentionLoadDescriptor) -> String {
+    guard let index = descriptor.index,
+          let leadingBlockDimension = descriptor.leadingBlockDimension,
+          let leadingDimension = descriptor.leadingDimension,
+          let name = descriptor.name,
+          let threadgroupAddress = descriptor.threadgroupAddress,
+          let transposeState = descriptor.transposeState else {
+      fatalError("Descriptor was incomplete.")
+    }
     
-    let load = """
+    return """
 
-  simdgroup_matrix_storage<float> Q_sram[\(paddedD / 8)];
+  if (sidx == 0) {
+    uint2 device_origin(0, \(index));
+    auto src = simdgroup_matrix_storage<float>::apply_offset(
+      \(name), \(leadingDimension), device_origin, \(transposeState));
+    auto dst = (threadgroup float*)(\(threadgroupAddress));
+    
+    ushort C_tile_dimension = min(uint(C_group), C - \(index));
+    ushort2 tile_src(D, C_tile_dimension);
+    ushort2 tile_dst(\(paddedD), C_tile_dimension);
+    
+    simdgroup_event event;
+    event.async_copy(dst, \(leadingBlockDimension), tile_dst,
+                     src, \(leadingDimension), tile_src, \(transposeState));
+    simdgroup_event::wait(1, &event);
+  }
+
+"""
+  }
+  
+  func load(descriptor: AttentionLoadDescriptor) -> String {
+    guard let index = descriptor.index,
+          let leadingBlockDimension = descriptor.leadingBlockDimension,
+          let leadingDimension = descriptor.leadingDimension,
+          let name = descriptor.name,
+          let threadgroupAddress = descriptor.threadgroupAddress,
+          let transposeState = descriptor.transposeState else {
+      fatalError("Descriptor was incomplete.")
+    }
+    
+    return """
+
+  simdgroup_matrix_storage<float> \(name)_sram[\(paddedD / 8)];
   {
-    auto Q_src = (threadgroup float*)threadgroup_block;
-    ushort2 Q_offset = ushort2(0, sidx * 8) + morton_offset;
-    Q_src = simdgroup_matrix_storage<float>::apply_offset(
-      Q_src, \(leadingBlockDimensions.Q), Q_offset, Q_trans);
+    ushort2 threadgroup_origin = ushort2(0, sidx * 8) + morton_offset;
+    auto src = (threadgroup float*)(\(threadgroupAddress));
+    src = simdgroup_matrix_storage<float>::apply_offset(
+      src, \(leadingBlockDimension), threadgroup_origin, \(transposeState));
     
     for (ushort d = 0; d < \(paddedD); d += 8) {
-      ushort2 origin(d, 0);
-      Q_sram[d / 8].load(
-        Q_src, \(leadingBlockDimensions.Q), origin, Q_trans);
+      ushort2 thread_origin(d, 0);
+      \(name)_sram[d / 8].load(
+        src, \(leadingBlockDimension), thread_origin, \(transposeState));
     }
   }
 
 """
-    
-    return (load, prefetch)
   }
 }

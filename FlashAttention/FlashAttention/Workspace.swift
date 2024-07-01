@@ -27,6 +27,9 @@ func executeScript() {
   attentionDesc.type = .forward(false)
   let kernel = AttentionKernel(descriptor: attentionDesc)
   print(kernel.source)
+  
+  let device = MTLContext.global.device
+  let library = try! device.makeLibrary(source: kernel.source, options: nil)
 }
 
 #endif
