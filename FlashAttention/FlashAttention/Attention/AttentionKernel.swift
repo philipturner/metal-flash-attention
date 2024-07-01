@@ -105,12 +105,6 @@ kernel void attention(
 """
     
     source += createArguments(type: type)
-    source += """
-
-) {
-
-"""
-    
     source += createSetup(type: type)
     source += """
 
@@ -236,70 +230,23 @@ extension AttentionKernel {
   func createSetup(type: AttentionKernelType) -> String {
     var output: String = ""
     
-    // Forward
-    //   cache Q, O, m, l
-    //     FP32: 8 * 2 * D + 8 bytes
-    //     FP16: 6 * 2 * D + 8 bytes
-    //
-    // Backward Query (true)
-    //   cache dQ, L, D
-    //     FP32: 4 * 2 * D + 8 bytes
-    //     FP16: 4 * 2 * D + 8 bytes
-    //   cache Q, dO
-    //     FP32: 12 * 2 * D + 8 bytes
-    //     FP16:  8 * 2 * D + 8 bytes
-    //
-    // Backward Key-Value (true)
-    //   cache dK, dV
-    //     FP32: 8 * 2 * D bytes
-    //     FP16: 8 * 2 * D bytes
-    //   cache K, V
-    //     FP32: 16 * 2 * D bytes
-    //     FP16: 12 * 2 * D bytes
-    //
-    // Backward Key-Value (false)
-    //   cache dV
-    //     FP32: 4 * 2 * D bytes
-    //     FP16: 4 * 2 * D bytes
-    //   cache K, V
-    //     FP32: 12 * 2 * D bytes
-    //     FP16:  8 * 2 * D bytes
-    //
-    // Need code for:
-    //   prefetching and loading 2D matrices (with async copy)
-    //   loading 1D operands directly from device (with a single conditional)
-    //     returning early when a SIMD is out of bounds
-    //   initializing accumulators
-    //
-    // This code should be possible to repurpose during the prefetches for
-    // matrix multiplication. The next part that logically follows is the
-    // store operations and the tear-down procedure.
-    //
-    // Instead of a monolithic function for "set(U/u)p" and "tear(D/d)own",
-    // it might be better to form a programmable API. Specify the operands,
-    // which order they appear (to ease prefetching). Wrap each generic
-    // or operand-specific procedure into a modular building block.
+    let (prefetchQ, loadQ) = createLoadQ(
+      baseAddress: "threadgroup_block",  r: "gid * R_group")
     
-    output += """
-  
-  // Prefetch the Q block.
-  auto Q_block = (threadgroup float*)threadgroup_block;
-  if (sidx == 0) {
-    uint2 Q_offset(0, gid * R_group);
-    auto Q_src = simdgroup_matrix_storage<float>::apply_offset(
-      Q, \(leadingDimensions.Q), Q_offset, Q_trans);
+    output += prefetchQ
+    output += createInitializeO()
+    output += "threadgroup_barrier(mem_flags::mem_threadgroup);\n"
+    output += loadQ
     
-    ushort R_tile_dimension = min(uint(R_group), R - Q_offset.y);
-    ushort2 Q_tile_src(D, R_tile_dimension);
-    ushort2 Q_tile_dst(\(paddedD), R_tile_dimension);
-    
-    simdgroup_event event;
-    event.async_copy(Q_block, \(leadingBlockDimensions.Q), Q_tile_dst,
-                     Q_src, \(leadingDimensions.Q), Q_tile_src, Q_trans);
-    simdgroup_event::wait(1, &event);
+    return output
   }
   
-  // Initialize the accumulator.
+  // Initializes the accumulator by zeroing out the elements.
+  //
+  // 'm' and 'l' are also initialized here.
+  func createInitializeO() -> String {
+    """
+
   float m = -numeric_limits<float>::max();
   float l = numeric_limits<float>::denorm_min();
   simdgroup_matrix_storage<float> O_sram[\(paddedD / 8)];
@@ -307,25 +254,113 @@ extension AttentionKernel {
   for (ushort d = 0; d < \(paddedD); d += 8) {
     O_sram[d / 8] = simdgroup_matrix_storage<float>(0);
   }
-  
-  // Load the Q block.
-  threadgroup_barrier(mem_flags::mem_threadgroup);
+
+"""
+  }
+}
+
+// Forward
+//   cache Q, O, m, l
+//     FP32: 8 * 2 * D + 8 bytes
+//     FP16: 6 * 2 * D + 8 bytes
+//
+// Backward Query (true)
+//   cache dQ, L, D
+//     FP32: 4 * 2 * D + 8 bytes
+//     FP16: 4 * 2 * D + 8 bytes
+//   cache Q, dO
+//     FP32: 12 * 2 * D + 8 bytes
+//     FP16:  8 * 2 * D + 8 bytes
+//
+// Backward Key-Value (true)
+//   cache dK, dV
+//     FP32: 8 * 2 * D bytes
+//     FP16: 8 * 2 * D bytes
+//   cache K, V
+//     FP32: 16 * 2 * D bytes
+//     FP16: 12 * 2 * D bytes
+//
+// Backward Key-Value (false)
+//   cache dV
+//     FP32: 4 * 2 * D bytes
+//     FP16: 4 * 2 * D bytes
+//   cache K, V
+//     FP32: 12 * 2 * D bytes
+//     FP16:  8 * 2 * D bytes
+//
+// Need code for:
+//   prefetching and loading 2D matrices (with async copy)
+//   loading 1D operands directly from device (with a single conditional)
+//     returning early when a SIMD is out of bounds
+//   initializing accumulators
+//
+// This code should be possible to repurpose during the prefetches for
+// matrix multiplication. The next part that logically follows is the
+// store operations and the tear-down procedure.
+//
+// Instead of a monolithic function for "set(U/u)p" and "tear(D/d)own",
+// it might be better to form a programmable API. Specify the operands,
+// which order they appear (to ease prefetching). Wrap each generic
+// or operand-specific procedure into a modular building block.
+
+// MARK: - Prefetch
+
+// Load a chunk of the operand into registers.
+//
+// Returns:
+// - a string for loading from device -> threadgroup
+// - a string for loading from threadgroup -> thread
+//
+// The second string may be deferred until a much later time, after a
+// threadgroup barrier. Ideally, one would perform other work while waiting
+// on the 'device -> threadgroup' copy to happen asynchronously.
+//
+// The second string should only be invoked if the operand is kept around
+// persistently. If it is a temporary within a GEMM loop, TBD.
+
+extension AttentionKernel {
+  func createLoadQ(
+    baseAddress: String,
+    r: String
+  ) -> (prefetch: String, load: String) {
+    let prefetch = """
+
+  if (sidx == 0) {
+    uint2 Q_offset(0, \(r));
+    auto Q_src = simdgroup_matrix_storage<float>::apply_offset(
+      Q, \(leadingDimensions.Q), Q_offset, Q_trans);
+    auto Q_dst = (threadgroup float*)(\(baseAddress));
+    
+    ushort R_tile_dimension = min(uint(R_group), R - Q_offset.y);
+    ushort2 Q_tile_src(D, R_tile_dimension);
+    ushort2 Q_tile_dst(\(paddedD), R_tile_dimension);
+    
+    simdgroup_event event;
+    event.async_copy(Q_dst, \(leadingBlockDimensions.Q), Q_tile_dst,
+                     Q_src, \(leadingDimensions.Q), Q_tile_src, Q_trans);
+    simdgroup_event::wait(1, &event);
+  }
+
+"""
+    
+    let load = """
+
   simdgroup_matrix_storage<float> Q_sram[\(paddedD / 8)];
   {
+    auto Q_src = (threadgroup float*)threadgroup_block;
     ushort2 Q_offset = ushort2(0, sidx * 8) + morton_offset;
-    auto Q_src = simdgroup_matrix_storage<float>::apply_offset(
-      Q_block, \(leadingBlockDimensions.Q), Q_offset, Q_trans);
+    Q_src = simdgroup_matrix_storage<float>::apply_offset(
+      Q_src, \(leadingBlockDimensions.Q), Q_offset, Q_trans);
     
     for (ushort d = 0; d < \(paddedD); d += 8) {
       ushort2 origin(d, 0);
       Q_sram[d / 8].load(
-        Q_block, \(leadingBlockDimensions.Q), origin, Q_trans);
+        Q_src, \(leadingBlockDimensions.Q), origin, Q_trans);
     }
   }
-}
 
 """
     
-    return output
+    return (load, prefetch)
   }
 }
