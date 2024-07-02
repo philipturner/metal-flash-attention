@@ -165,7 +165,7 @@ extension Network {
     return output
   }
   
-  func createLSE(rowID: Int) -> Float {
+  func createLTerm(rowID: Int) -> Float {
     let matrixSRow = createMatrixSRow(rowID: rowID)
     let scaleFactor = 1 / Float(D).squareRoot()
     
@@ -239,6 +239,30 @@ extension Network {
     }
     
     return derivativeSRow
+  }
+  
+  func createDTerm(rowID: Int) -> Float {
+    let matrixPRow = createMatrixPRow(rowID: rowID)
+    
+    // P * V
+    var matrixORow = [Float](repeating: .zero, count: D)
+    for d in 0..<D {
+      var dotProduct: Float = .zero
+      for columnID in 0..<N {
+        let valueP = matrixPRow[columnID]
+        let addressV = columnID * D + d
+        dotProduct += valueP * V[addressV]
+      }
+      matrixORow[d] = dotProduct
+    }
+    
+    // D = dO^T O
+    var termD: Float = .zero
+    for d in 0..<D {
+      let addressC = rowID * D + d
+      termD += matrixORow[d] * C[addressC]
+    }
+    return termD
   }
 }
 
