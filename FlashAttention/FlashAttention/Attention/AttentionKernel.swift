@@ -17,18 +17,20 @@ struct AttentionKernel {
   // The source code to compile.
   var source: String = ""
   
-  private var leadingDimensions: (
+  // These variables should be 'private', but we need to split the code into
+  // multiple files. Swift treats 'private' as a synonym for 'fileprivate'.
+  var leadingDimensions: (
     Q: String, K: String, V: String, O: String)
-  private var leadingBlockDimensions: (
+  var leadingBlockDimensions: (
     Q: UInt16, K: UInt16, V: UInt16, O: UInt16)
-  private var matrixDimensionD: UInt16
-  private var memoryPrecisions: (
+  var matrixDimensionD: UInt16
+  var memoryPrecisions: (
     Q: AttentionOperandPrecision,
     K: AttentionOperandPrecision,
     V: AttentionOperandPrecision,
     O: AttentionOperandPrecision)
-  private var paddedD: UInt16
-  private var transposeState: (
+  var paddedD: UInt16
+  var transposeState: (
     Q: Bool, K: Bool, V: Bool, O: Bool)
   
   // Reads of very large K/V operands may be read in small chunks along 'D',
@@ -111,6 +113,10 @@ kernel void attention(
     switch type {
     case .forward:
       source += createInnerLoopForward()
+    case .backwardQuery(let computeDerivativeQ):
+      if computeDerivativeQ {
+        source += createInnerLoopBackwardQuery()
+      }
     default:
       break
     }
@@ -362,6 +368,7 @@ extension AttentionKernel {
   }
   D_term += simd_shuffle_xor(D_term, 1);
   D_term += simd_shuffle_xor(D_term, 8);
+  D_term *= 1 / sqrt(float(D));
 
 """
       }
@@ -541,18 +548,6 @@ extension AttentionKernel {
 
 // MARK: - Load
 
-// Load a chunk of the operand into registers.
-//
-// Returns:
-// - a string for loading from device -> threadgroup
-// - a string for loading from threadgroup -> thread
-//
-// The second string may be deferred until a much later time, after a
-// threadgroup barrier. Ideally, one would perform other work while waiting
-// on the 'device -> threadgroup' copy to happen asynchronously.
-//
-// THIS IS NOT MEANT TO BE USED INSIDE THE INNER GEMM LOOP
-
 struct AttentionHBMAccessDescriptor {
   var index: String?
   var leadingBlockDimension: UInt16?
@@ -584,7 +579,9 @@ extension AttentionKernel {
     
     ushort R_tile_dimension = min(uint(R_group), R - \(index));
     ushort2 tile_src(D, R_tile_dimension);
-    ushort2 tile_dst(\(paddedD), R_tile_dimension);
+
+    // TODO: Fix the kernels, so you don't have to zero-pad this.
+    ushort2 tile_dst(\(paddedD), R_group);
     
     simdgroup_event event;
     event.async_copy(
@@ -617,7 +614,9 @@ extension AttentionKernel {
     
     ushort C_tile_dimension = min(uint(C_group), C - \(index));
     ushort2 tile_src(D, C_tile_dimension);
-    ushort2 tile_dst(\(paddedD), C_tile_dimension);
+
+    // TODO: Fix the kernels, so you don't have to zero-pad this.
+    ushort2 tile_dst(\(paddedD), C_group);
     
     simdgroup_event event;
     event.async_copy(
@@ -747,226 +746,6 @@ extension AttentionKernel {
     event.async_copy(
       dst, \(leadingDimension), tile_dst,
       src, \(leadingBlockDimension), tile_src, \(transposeState));
-  }
-
-"""
-  }
-}
-
-// MARK: - Inner Loop
-
-// Forward
-//   for c in 0..<C {
-//     load K[c]
-//     S = Q * K^T
-//     (m, l, P) = softmax(m, l, S * scaleFactor)
-//     O *= correction
-//     load V[c]
-//     O += P * V
-//   }
-//   O /= l
-//
-// Backward Query (true)
-//   for c in 0..<C {
-//     load K[c]
-//     S = Q * K^T
-//     P = exp(S - L)
-//     load V[c]
-//     dP = dO * V
-//     dS = P * (dP - D) * scaleFactor
-//     load K[c]
-//     dQ += dS * K
-//   }
-//
-// Backward Key-Value (false)
-//   for r in 0..<R {
-//     load Q[r]
-//     load L[r]
-//     S^T = K * Q^T
-//     P^T = exp(S^T - L)
-//     load dO[r]
-//     dV += P^T * dO
-//     load V[r]
-//     load D[r]
-//     dP = dO * V^T
-//     dS = P * (dP - D) * scaleFactor
-//     store dS[r][c]
-//   }
-//
-// Backward Key-Value (true)
-//   for r in 0..<R {
-//     load Q[r]
-//     load L[r]
-//     S^T = K * Q^T
-//     P^T = exp(S^T - L)
-//     load dO[r]
-//     dV += P^T * dO
-//     load V[r]
-//     load D[r]
-//     dP = dO * V^T
-//     dS = P * (dP - D) * scaleFactor
-//     load Q[r]
-//     dK += dS^T * Q
-//   }
-
-extension AttentionKernel {
-  // Start by writing the inner loop for the forward kernel. This may reveal
-  // high-level abstractions that can be shared with the remaining variants.
-  func createInnerLoopForward() -> String {
-    var prefetchK: String
-    do {
-      var accessDesc = AttentionHBMAccessDescriptor()
-      accessDesc.index = "c"
-      accessDesc.leadingBlockDimension = leadingBlockDimensions.K
-      accessDesc.leadingDimension = leadingDimensions.K
-      accessDesc.name = "K"
-      accessDesc.threadgroupAddress = "threadgroup_block"
-      accessDesc.transposeState = transposeState.K
-      prefetchK = prefetchRows(descriptor: accessDesc)
-    }
-    
-    var prefetchV: String
-    do {
-      var accessDesc = AttentionHBMAccessDescriptor()
-      accessDesc.index = "c"
-      accessDesc.leadingBlockDimension = leadingBlockDimensions.V
-      accessDesc.leadingDimension = leadingDimensions.V
-      accessDesc.name = "V"
-      accessDesc.threadgroupAddress = "threadgroup_block"
-      accessDesc.transposeState = transposeState.V
-      prefetchV = prefetchRows(descriptor: accessDesc)
-    }
-    
-    let scaleFactor = "(M_LOG2E_F / sqrt(float(D)))"
-    
-    return """
-  
-  // Iterate over the columns.
-  for (uint c = 0; c < C; c += 32) {
-    // load K[c]
-    threadgroup_barrier(mem_flags::mem_threadgroup);
-    \(prefetchK)
-    auto KT_block = (threadgroup float*)(threadgroup_block);
-    KT_block = simdgroup_matrix_storage<float>::apply_offset(
-      KT_block, \(leadingBlockDimensions.K), morton_offset,
-      \(!transposeState.K));
-    
-    // S = Q * K^T
-    threadgroup_barrier(mem_flags::mem_threadgroup);
-    simdgroup_matrix_storage<float> S_sram[32 / 8];
-#pragma clang loop unroll(full)
-    for (ushort d = 0; d < \(paddedD); d += 8) {
-#pragma clang loop unroll(full)
-      for (ushort c = 0; c < 32; c += 8) {
-        ushort2 origin(c, d);
-        simdgroup_matrix_storage<float> KT;
-        KT.load(
-          KT_block, \(leadingBlockDimensions.K), origin, \(!transposeState.K));
-        S_sram[c / 8]
-          .multiply(Q_sram[d / 8], KT, d > 0);
-      }
-    }
-
-    // Prevent the zero padding from changing the values of 'm' and 'l'.
-    if ((C % 32 != 0) && (c + 32 > C)) {
-      const ushort remainder32 = uint(C % 32);
-      const ushort remainder32_floor = remainder32 - ushort(remainder32 % 8);
-      
-#pragma clang loop unroll(full)
-      for (ushort index = 0; index < 2; ++index) {
-        if (morton_offset.x + index >= remainder32 - remainder32_floor) {
-          auto S_elements = S_sram[remainder32_floor / 8].thread_elements();
-          (*S_elements)[index] = -numeric_limits<float>::max();
-        }
-      }
-#pragma clang loop unroll(full)
-      for (ushort c = remainder32_floor + 8; c < 32; c += 8) {
-        auto S_elements = S_sram[c / 8].thread_elements();
-        *S_elements = -numeric_limits<float>::max();
-      }
-    }
-    
-    // update 'm'
-    float2 m_new_accumulator;
-#pragma clang loop unroll(full)
-    for (ushort c = 0; c < 32; c += 8) {
-      auto S_elements = S_sram[c / 8].thread_elements();
-      if (c == 0) {
-        m_new_accumulator = *S_elements;
-      } else {
-        m_new_accumulator = max(m_new_accumulator, *S_elements);
-      }
-    }
-    float m_new = max(m_new_accumulator[0], m_new_accumulator[1]);
-    m_new = max(m_new, simd_shuffle_xor(m_new, 1));
-    m_new = max(m_new, simd_shuffle_xor(m_new, 8));
-    m_new *= \(scaleFactor);
-
-    // update the previous value of 'O'
-    float correction = 1;
-    if (m_new > m) {
-      correction = fast::exp2(m - m_new);
-#pragma clang loop unroll(full)
-      for (ushort d = 0; d < \(paddedD); d += 8) {
-        *(O_sram[d / 8].thread_elements()) *= correction;
-      }
-      m = m_new;
-    }
-    
-
-    // P = softmax(S * scaleFactor)
-    simdgroup_matrix_storage<float> P_sram[32 / 8];
-#pragma clang loop unroll(full)
-    for (ushort c = 0; c < 32; c += 8) {
-      float2 S_elements = float2(*(S_sram[c / 8].thread_elements()));
-      float2 P_elements = fast::exp2(S_elements * \(scaleFactor) - m);
-      *(P_sram[c / 8].thread_elements()) = P_elements;
-    }
-
-    // update 'l'
-    float2 l_new_accumulator;
-#pragma clang loop unroll(full)
-    for (ushort c = 0; c < 32; c += 8) {
-      auto P_elements = P_sram[c / 8].thread_elements();
-      if (c == 0) {
-        l_new_accumulator = *P_elements;
-      } else {
-        l_new_accumulator += *P_elements;
-      }
-    }
-    float l_new = l_new_accumulator[0] + l_new_accumulator[1];
-    l_new += simd_shuffle_xor(l_new, 1);
-    l_new += simd_shuffle_xor(l_new, 8);
-    l = l * correction + l_new;
-    
-    // load V[c]
-    threadgroup_barrier(mem_flags::mem_threadgroup);
-    \(prefetchV)
-    auto V_block = (threadgroup float*)(threadgroup_block);
-    V_block = simdgroup_matrix_storage<float>::apply_offset(
-      V_block, \(leadingBlockDimensions.V), morton_offset, \(transposeState.V));
-    
-    // O += P * V
-    threadgroup_barrier(mem_flags::mem_threadgroup);
-#pragma clang loop unroll(full)
-    for (ushort c = 0; c < 32; c += 8) {
-#pragma clang loop unroll(full)
-      for (ushort d = 0; d < \(paddedD); d += 8) {
-        ushort2 origin(d, c);
-        simdgroup_matrix_storage<float> V;
-        V.load(
-          V_block, \(leadingBlockDimensions.V), origin, \(transposeState.V));
-        O_sram[d / 8]
-          .multiply(P_sram[c / 8], V, true);
-      }
-    }
-  }
-  
-  // O /= l
-  float l_reciprocal = 1 / l;
-#pragma clang loop unroll(full)
-  for (ushort d = 0; d < \(paddedD); d += 8) {
-    *(O_sram[d / 8].thread_elements()) *= l_reciprocal;
   }
 
 """

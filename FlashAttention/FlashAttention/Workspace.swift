@@ -22,7 +22,7 @@ func executeScript() {
   
   // Define the problem dimensions.
   let N: Int = 100
-  let D: Int = 200
+  let D: Int = 20
   
   var networkDesc = NetworkDescriptor()
   networkDesc.N = N
@@ -75,26 +75,44 @@ func executeScript() {
   }
   
   print()
+  print("S:")
+  let S = (0..<N).flatMap(network.createMatrixSRow(rowID:))
+  printSquareMatrix(S)
+  
+  print()
+  print("P:")
+  let P = (0..<N).flatMap(network.createMatrixPRow(rowID:))
+  printSquareMatrix(P)
+  
+  print()
+  print("dP:")
+  let dP = (0..<N).flatMap(network.createDerivativePRow(rowID:))
+  printSquareMatrix(dP)
+  
+  print()
+  print("dS:")
+  let dS = (0..<N).flatMap(network.createDerivativeSRow(rowID:))
+  printSquareMatrix(dS)
+  
+  print()
+  print("O:")
+  let O = network.inferenceAttention()
+  printMatrix(O)
+  
+  print()
   print("L_terms:")
-  let LTerms = (0..<N).map {
-    network.createLTerm(rowID: $0) * 1.44269504089
-  }
+  let LTerms = (0..<N).map(network.createLTerm(rowID:))
   printVector(LTerms)
   
   print()
   print("D_terms:")
-  let DTerms = (0..<N).map {
-    network.createDTerm(rowID: $0)
-  }
+  let DTerms = (0..<N).map(network.createDTerm(rowID:))
   printVector(DTerms)
   
   print()
-  print("O:")
-  printMatrix(network.inferenceAttention())
-  
-  print()
-  print("dO:")
-  printMatrix(network.C)
+  print("dQ:")
+  let dQ = network.derivativeQ()
+  printMatrix(dQ)
   
   var attentionDesc = AttentionDescriptor()
   attentionDesc.matrixDimensions = (R: UInt32(N), C: UInt32(N), D: UInt16(D))
@@ -104,7 +122,7 @@ func executeScript() {
   attentionDesc.type = .forward(true)
   let kernelForward = AttentionKernel(descriptor: attentionDesc)
   
-  attentionDesc.type = .backwardQuery(false)
+  attentionDesc.type = .backwardQuery(true)
   let kernelBackwardQuery = AttentionKernel(descriptor: attentionDesc)
   
   func createPipeline(kernel: AttentionKernel) -> MTLComputePipelineState {
@@ -134,10 +152,13 @@ func executeScript() {
   var resultO = [Float](repeating: .zero, count: N * D)
   var resultLTerms = [Float](repeating: .zero, count: N)
   var resultDTerms = [Float](repeating: .zero, count: N)
+  var resultDerivativeQ = [Float](repeating: .zero, count: N * D)
   
   let bufferO = MTLContext.global.createBuffer(resultO, .FP32)
   let bufferLTerms = MTLContext.global.createBuffer(resultLTerms, .FP32)
   let bufferDTerms = MTLContext.global.createBuffer(resultDTerms, .FP32)
+  let bufferDerivativeQ = MTLContext.global
+    .createBuffer(resultDerivativeQ, .FP32)
   
   do {
     let commandQueue = MTLContext.global.commandQueue
@@ -152,6 +173,7 @@ func executeScript() {
     
     encoder.setBuffer(bufferDerivativeO, offset: 0, index: 5)
     encoder.setBuffer(bufferDTerms, offset: 0, index: 6)
+    encoder.setBuffer(bufferDerivativeQ, offset: 0, index: 9)
     
     func ceilDivide(_ target: Int, _ granularity: UInt16) -> Int {
       (target + Int(granularity) - 1) / Int(granularity)
@@ -196,6 +218,13 @@ func executeScript() {
   MTLContext.copy(bufferO, into: &resultO)
   MTLContext.copy(bufferLTerms, into: &resultLTerms)
   MTLContext.copy(bufferDTerms, into: &resultDTerms)
+  MTLContext.copy(bufferDerivativeQ, into: &resultDerivativeQ)
+  for i in resultLTerms.indices {
+    resultLTerms[i] /= 1.44269504089
+  }
+  for i in resultDTerms.indices {
+    resultDTerms[i] /= 1 / Float(D).squareRoot()
+  }
   
   print()
   print("O:")
@@ -209,6 +238,10 @@ func executeScript() {
   print("D_terms:")
   printVector(resultDTerms)
   
+  print()
+  print("dQ:")
+  printMatrix(resultDerivativeQ)
+  
   #if true
   // Check the results.
   let errorThreshold: Float = 1e-5
@@ -220,7 +253,7 @@ func executeScript() {
     
     for i in expected.indices {
       let error = (expected[i] - actual[i]).magnitude
-      if error > errorThreshold {
+      if error > errorThreshold || error.isNaN {
         if errorCount < 10 {
           // Update the error count in the outer scope.
           errorCount += 1
@@ -230,10 +263,10 @@ func executeScript() {
     }
   }
   
-  let expectedO = network.inferenceAttention()
-  check(expected: expectedO, actual: resultO)
+  check(expected: O, actual: resultO)
   check(expected: LTerms, actual: resultLTerms)
   check(expected: DTerms, actual: resultDTerms)
+  check(expected: dQ, actual: resultDerivativeQ)
   if errorCount > 0 {
     print("Could not benchmark performance because results were incorrect.")
     return
