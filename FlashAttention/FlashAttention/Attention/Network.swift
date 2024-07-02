@@ -154,14 +154,37 @@ extension Network {
         sum += expTerm
       }
       
+      let lse = maximum + Float.log(sum)
       for columnID in 0..<N {
         let value = scaleFactor * output[columnID]
-        let expTerm = Float.exp(value - maximum)
-        output[columnID] = expTerm / sum
+        let expTerm = Float.exp(value - lse)
+        output[columnID] = expTerm
       }
     }
     
     return output
+  }
+  
+  func createLSE(rowID: Int) -> Float {
+    let matrixSRow = createMatrixSRow(rowID: rowID)
+    let scaleFactor = 1 / Float(D).squareRoot()
+    
+    // softmax
+    var maximum: Float = -.greatestFiniteMagnitude
+    for columnID in 0..<N {
+      let value = scaleFactor * matrixSRow[columnID]
+      maximum = max(maximum, value)
+    }
+    
+    var sum: Float = .zero
+    for columnID in 0..<N {
+      let value = scaleFactor * matrixSRow[columnID]
+      let expTerm = Float.exp(value - maximum)
+      sum += expTerm
+    }
+    
+    let lse = maximum + Float.log(sum)
+    return lse
   }
   
   func createDerivativePRow(rowID: Int) -> [Float] {

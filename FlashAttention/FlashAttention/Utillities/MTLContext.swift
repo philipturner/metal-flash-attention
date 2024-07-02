@@ -55,4 +55,37 @@ struct MTLContext {
     }
     return buffer
   }
+  
+  static func copy(
+    _ buffer: MTLBuffer,
+    into array: inout [Float],
+    precision: GEMMOperandPrecision = .FP32
+  ) {
+    let expectedLength = array.count * precision.size
+    guard buffer.length >= expectedLength else {
+      fatalError("Buffer was too small.")
+    }
+            
+    let raw = buffer.contents()
+    for elementID in array.indices {
+      let address = elementID
+      var entry32: Float
+      
+      switch precision {
+      case .FP32:
+        let casted = raw.assumingMemoryBound(to: Float.self)
+        entry32 = casted[address]
+      case .FP16:
+        let casted = raw.assumingMemoryBound(to: Float16.self)
+        let entry16 = casted[address]
+        entry32 = Float(entry16)
+      case .BF16:
+        let casted = raw.assumingMemoryBound(to: UInt16.self)
+        let entry16 = casted[address]
+        let entry16x2 = SIMD2<UInt16>(.zero, entry16)
+        entry32 = unsafeBitCast(entry16x2, to: Float.self)
+      }
+      array[address] = entry32
+    }
+  }
 }

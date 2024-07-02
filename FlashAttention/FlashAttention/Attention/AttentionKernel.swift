@@ -450,7 +450,7 @@ extension AttentionKernel {
         output += """
 
   // Premultiplied by M_LOG2E_F.
-  float L_term = fast::log2(l) * M_LOG2E_F + m;
+  float L_term = m + fast::log2(l);
   L_terms[linear_array_slot] = L_term;
 
 """
