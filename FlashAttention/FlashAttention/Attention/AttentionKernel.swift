@@ -31,6 +31,18 @@ struct AttentionKernel {
   private var transposeState: (
     Q: Bool, K: Bool, V: Bool, O: Bool)
   
+  // Reads of very large K/V operands may be read in small chunks along 'D',
+  // to minimize register pressure. Therefore, there can be a block dimension
+  // for D.
+  var blockDimensions: (R: UInt16, C: UInt16, D: UInt16)
+  
+  // If you allocate threadgroup memory after compiling the kernel, the code
+  // has higher performance.
+  var threadgroupMemoryAllocation: UInt16
+  
+  // The number of threads per group.
+  var threadgroupSize: UInt16
+  
   init(descriptor: AttentionDescriptor) {
     guard let matrixDimensions = descriptor.matrixDimensions,
           let memoryPrecisions = descriptor.memoryPrecisions,
@@ -73,12 +85,16 @@ using namespace metal;
       leadingBlockDimensions.O = 32
     }
     
+    blockDimensions = (R: 32, C: 32, D: paddedD)
+    threadgroupMemoryAllocation = 32 * paddedD * 4
+    threadgroupSize = 128
+    
     source += """
 
 // Dimensions of each matrix.
 constant uint R [[function_constant(0)]];
 constant uint C [[function_constant(1)]];
-constant uint D [[function_constant(2)]];
+constant ushort D [[function_constant(2)]];
 
 // Define the memory layout of the matrix block.
 constant ushort R_group = 32;
@@ -91,6 +107,14 @@ kernel void attention(
     
     source += createArguments(type: type)
     source += createSetup(type: type)
+    
+    switch type {
+    case .forward:
+      source += createInnerLoopForward()
+    default:
+      break
+    }
+    
     source += createCleanup(type: type)
     source += """
 
@@ -813,8 +837,7 @@ extension AttentionKernel {
       prefetchV = prefetchRows(descriptor: accessDesc)
     }
     
-    var scaleFactor = Float(1.44269504089) // M_LOG2E_F
-    scaleFactor /= Float(matrixDimensionD).squareRoot()
+    let scaleFactor = "(M_LOG2E_F / sqrt(float(D)))"
     
     return """
   
@@ -846,21 +869,20 @@ extension AttentionKernel {
 
     // Prevent the zero padding from changing the values of 'm' and 'l'.
     if ((C % 32 != 0) && (c + 32 > C)) {
-      const ushort remainder32 = C - uint(C % 32);
-      const ushort remainder8 = C - uint(C % 8);
+      const ushort remainder32 = uint(C % 32);
       const ushort remainder32_floor = remainder32 - ushort(remainder32 % 8);
       
 #pragma clang loop unroll(full)
       for (ushort index = 0; index < 2; ++index) {
-        if (offset_in_simd.x + index >= remainder32 - remainder32_floor) {
+        if (morton_offset.x + index >= remainder32 - remainder32_floor) {
           auto S_elements = S_sram[remainder32_floor / 8].thread_elements();
-          *(S_elements)[index] = -numeric_limits<float>::max();
+          (*S_elements)[index] = -numeric_limits<float>::max();
         }
       }
 #pragma clang loop unroll(full)
-      for (ushort c = remainder32 - remainder32_floor; c < 32; c += 8) {
+      for (ushort c = remainder32_floor + 8; c < 32; c += 8) {
         auto S_elements = S_sram[c / 8].thread_elements();
-        *(S_elements) = -numeric_limits<float>::max();
+        *S_elements = -numeric_limits<float>::max();
       }
     }
     
@@ -890,6 +912,7 @@ extension AttentionKernel {
       }
       m = m_new;
     }
+    
 
     // P = softmax(S * scaleFactor)
     simdgroup_matrix_storage<float> P_sram[32 / 8];
@@ -945,7 +968,7 @@ extension AttentionKernel {
   for (ushort d = 0; d < \(paddedD); d += 8) {
     *(O_sram[d / 8].thread_elements()) *= l_reciprocal;
   }
-  
+
 """
   }
 }
