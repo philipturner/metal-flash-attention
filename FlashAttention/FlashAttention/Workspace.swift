@@ -21,8 +21,8 @@ func executeScript() {
   print("Hello, console.")
   
   // Define the problem dimensions.
-  let N: Int = 100
-  let D: Int = 20
+  let N: Int = 10
+  let D: Int = 3
   
   var networkDesc = NetworkDescriptor()
   networkDesc.N = N

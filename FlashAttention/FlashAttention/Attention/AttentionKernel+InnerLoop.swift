@@ -258,7 +258,6 @@ extension AttentionKernel {
       m = m_new;
     }
     
-
     // P = softmax(S * scaleFactor)
     simdgroup_matrix_storage<float> P_sram[32 / 8];
 #pragma clang loop unroll(full)
@@ -372,6 +371,41 @@ extension AttentionKernel {
           .multiply(dS_sram[c / 8], K, true);
       }
     }
+
+"""
+  }
+}
+
+extension AttentionKernel {
+  // Write an inner loop for backward key-value (false), except the
+  // attention matrix is not stored to memory. This experiment should reveal
+  // how to load from row-based array slots, when parallelizing over columns.
+  func createInnerLoopValue() -> String {
+    return """
+
+  // Iterate over the rows.
+  for (uint r = 0; r < R; r += 32) {
+    // load Q[r]
+    threadgroup_barrier(mem_flags::mem_threadgroup);
+    if (sidx == 0) {
+      simdgroup_event events[2];
+      {
+        uint2 device_origin(0, r);
+        auto src = simdgroup_matrix_storage<float>::apply_offset(
+          Q, \(leadingDimensions.Q), device_origin, \(transposeState.Q));
+        auto dst = (threadgroup float*)(threadgroup_block);
+        
+        ushort R_tile_dimension = min(uint(R_group), R - r;
+        ushort2 tile_src(D, R_tile_dimension);
+        ushort2 tile_dst(\(paddedD), R_group);
+        
+        events[0].async_copy(
+          dst, \(leadingBlockDimensions.Q), tile_dst,
+          src, \(leadingDimensions.Q), tile_src, \(transposeState.Q));
+      }
+      simdgroup_event::wait(2, events);
+    }
+  }
 
 """
   }

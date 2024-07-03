@@ -40,6 +40,24 @@ struct _simdgroup_event_t;
 
 // Invoking the generation of LLVM bitcode for async copies.
 //
+//   Bitcode: TBD
+//
+thread _simdgroup_event_t*
+__metal_simdgroup_async_copy_1d(
+  ulong, ulong, threadgroup void *, const device void *, ulong)
+  __asm("air.simdgroup_async_copy_1d.p3i8.p1i8");
+
+// Invoking the generation of LLVM bitcode for async copies.
+//
+//   Bitcode: TBD
+//
+thread _simdgroup_event_t*
+__metal_simdgroup_async_copy_1d(
+  ulong, ulong, device void *, const threadgroup void *, ulong)
+  __asm("air.simdgroup_async_copy_1d.p1i8.p3i8");
+
+// Invoking the generation of LLVM bitcode for async copies.
+//
 //   ; Function Attrs: argmemonly convergent nounwind
 //   declare %struct._simdgroup_event_t*
 //     @air.simdgroup_async_copy_2d.p3i8.p1i8(
@@ -97,6 +115,40 @@ namespace metal
   
   struct simdgroup_event {
     METAL_FUNC simdgroup_event() thread {}
+
+    template <typename T>
+    METAL_FUNC void async_copy(
+      threadgroup T *dst,
+      const device T *src,
+      ulong n_elements
+    ) thread {
+      event = __metal_simdgroup_async_copy_1d(
+        // Description of the data type.
+        sizeof(T),
+        alignof(T),
+        
+        // Description of the arguments.
+        reinterpret_cast<threadgroup void *>(dst),
+        reinterpret_cast<const device void *>(src),
+        n_elements);
+    }
+    
+    template <typename T>
+    METAL_FUNC void async_copy(
+      device T *dst,
+      const threadgroup T *src,
+      ulong n_elements
+    ) thread {
+      event = __metal_simdgroup_async_copy_1d(
+        // Description of the data type.
+        sizeof(T),
+        alignof(T),
+        
+        // Description of the arguments.
+        reinterpret_cast<device void *>(dst),
+        reinterpret_cast<const threadgroup void *>(src),
+        n_elements);
+    }
     
     template <typename T>
     METAL_FUNC void async_copy(

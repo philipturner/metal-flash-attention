@@ -249,12 +249,8 @@ extension AttentionKernel {
   uint linear_array_slot = gid * R_group + sidx * 8 + morton_offset.y;
 
 """
-    case .backwardKeyValue:
-      output += """
-
-  uint linear_array_slot = gid * C_group + sidx * 8 + morton_offset.y;
-
-"""
+    default:
+      break
     }
     
     return output
@@ -579,7 +575,7 @@ extension AttentionKernel {
     
     ushort R_tile_dimension = min(uint(R_group), R - \(index));
     ushort2 tile_src(D, R_tile_dimension);
-
+    
     // TODO: Fix the kernels, so you don't have to zero-pad this.
     ushort2 tile_dst(\(paddedD), R_group);
     
@@ -614,7 +610,7 @@ extension AttentionKernel {
     
     ushort C_tile_dimension = min(uint(C_group), C - \(index));
     ushort2 tile_src(D, C_tile_dimension);
-
+    
     // TODO: Fix the kernels, so you don't have to zero-pad this.
     ushort2 tile_dst(\(paddedD), C_group);
     
