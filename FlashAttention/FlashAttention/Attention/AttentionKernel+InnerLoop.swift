@@ -179,7 +179,72 @@ extension AttentionKernel {
     
 """
   }
+  
+  func createInnerLoopValue() -> String {
+    return """
+  
+  // Iterate over the rows.
+  for (uint r = 0; r < R; r += 32) {
+    // load Q[r]
+    // load L[r]
+    threadgroup_barrier(mem_flags::mem_threadgroup);
+    \(prefetchQL())
+    
+    // S^T = K * Q^T
+  }
+
+"""
+  }
 }
+
+// MARK: - Prefetching Operations
+
+extension AttentionKernel {
+  func prefetchQL() -> String {
+    return """
+
+    if (sidx == 0) {
+      // Declare the Q source and destination.
+      uint2 device_origin(0, r);
+      auto Q_src = simdgroup_matrix_storage<float>::apply_offset(
+        Q, \(leadingDimensions.Q), device_origin, \(transposeState.Q));
+      auto Q_dst = (threadgroup float*)(threadgroup_block);
+      
+      // Locate the L destination, relative to the Q destination.
+      auto Q_dst_end = Q_dst;
+      if (\(transposeState.Q)) {
+        // D x R, where R is the row stride.
+        Q_dst_end += \(paddedD) * \(leadingBlockDimensions.Q);
+      } else {
+        // R x D, where D is the row stride.
+        Q_dst_end += R_group * \(leadingDimensions.Q);
+      }
+      
+      // Declare the L source and destination.
+      auto L_src = L_terms + r;
+      auto L_dst = (threadgroup float*)(Q_dst_end);
+      
+      // Zero-padding for safety, which should harm performance.
+      ushort R_tile_dimension = min(uint(R_group), R - r);
+      ushort2 tile_src(D, R_tile_dimension);
+      ushort2 tile_dst(\(paddedD), R_group);
+      
+      // Issue two async copies.
+      simdgroup_event events[2];
+      events[0].async_copy(
+        Q_dst, \(leadingBlockDimensions.Q), tile_dst,
+        Q_src, \(leadingDimensions.Q), tile_src, \(transposeState.Q));
+      events[1].async_copy(
+        L_dst, 1, ushort2(tile_dst.y, 0),
+        L_src, 1, ushort2(tile_src.y, 0));
+      simdgroup_event::wait(2, events);
+    }
+
+"""
+  }
+}
+
+// MARK: - Attention Matrix
 
 extension AttentionKernel {
   func computeS() -> String {
@@ -225,7 +290,11 @@ extension AttentionKernel {
 
 """
   }
-  
+}
+
+// MARK: - Softmax
+
+extension AttentionKernel {
   func onlineSoftmax() -> String {
     let scaleFactor = "(M_LOG2E_F / sqrt(float(D)))"
     
@@ -301,7 +370,11 @@ extension AttentionKernel {
 
 """
   }
-  
+}
+
+// MARK: - Attention Matrix Derivative
+
+extension AttentionKernel {
   func computeDerivativeP() -> String {
     return """
 
@@ -327,6 +400,8 @@ extension AttentionKernel {
 """
   }
 }
+
+// MARK: - Accumulate
 
 extension AttentionKernel {
   func accumulateO() -> String {
@@ -371,42 +446,7 @@ extension AttentionKernel {
           .multiply(dS_sram[c / 8], K, true);
       }
     }
-
-"""
-  }
-}
-
-extension AttentionKernel {
-  // Write an inner loop for backward key-value (false), except the
-  // attention matrix is not stored to memory. This experiment should reveal
-  // how to load from row-based array slots, when parallelizing over columns.
-  func createInnerLoopValue() -> String {
-    return """
-
-  // Iterate over the rows.
-  for (uint r = 0; r < R; r += 32) {
-    // load Q[r]
-    threadgroup_barrier(mem_flags::mem_threadgroup);
-    if (sidx == 0) {
-      simdgroup_event events[2];
-      {
-        uint2 device_origin(0, r);
-        auto src = simdgroup_matrix_storage<float>::apply_offset(
-          Q, \(leadingDimensions.Q), device_origin, \(transposeState.Q));
-        auto dst = (threadgroup float*)(threadgroup_block);
-        
-        ushort R_tile_dimension = min(uint(R_group), R - r;
-        ushort2 tile_src(D, R_tile_dimension);
-        ushort2 tile_dst(\(paddedD), R_group);
-        
-        events[0].async_copy(
-          dst, \(leadingBlockDimensions.Q), tile_dst,
-          src, \(leadingDimensions.Q), tile_src, \(transposeState.Q));
-      }
-      simdgroup_event::wait(2, events);
-    }
-  }
-
+    
 """
   }
 }

@@ -117,6 +117,12 @@ kernel void attention(
       if computeDerivativeQ {
         source += createInnerLoopBackwardQuery()
       }
+    case .backwardKeyValue(let computeDerivativeK):
+      if computeDerivativeK {
+        source += createInnerLoopValue()
+      } else {
+        fatalError("key-value (false) is not implemented.")
+      }
     default:
       break
     }

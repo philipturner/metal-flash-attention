@@ -125,6 +125,10 @@ func executeScript() {
   attentionDesc.type = .backwardQuery(true)
   let kernelBackwardQuery = AttentionKernel(descriptor: attentionDesc)
   
+  attentionDesc.type = .backwardKeyValue(true)
+  let kernelBackwardKeyValue = AttentionKernel(descriptor: attentionDesc)
+  print(kernelBackwardKeyValue.source)
+  
   func createPipeline(kernel: AttentionKernel) -> MTLComputePipelineState {
     // Set the function constants.
     let constants = MTLFunctionConstantValues()
@@ -143,6 +147,7 @@ func executeScript() {
   }
   let pipelineForward = createPipeline(kernel: kernelForward)
   let pipelineBackwardQuery = createPipeline(kernel: kernelBackwardQuery)
+  let pipelineBackwardKeyValue = createPipeline(kernel: kernelBackwardKeyValue)
   
   let bufferQ = MTLContext.global.createBuffer(network.Q, .FP32)
   let bufferK = MTLContext.global.createBuffer(network.K, .FP32)
