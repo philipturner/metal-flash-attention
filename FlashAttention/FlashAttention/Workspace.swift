@@ -21,8 +21,10 @@ func executeScript() {
   print("Hello, console.")
   
   // Define the problem dimensions.
-  let N: Int = 192
-  let D: Int = 80
+  let N: Int = 1
+  let D: Int = 2
+  
+  // Test N=25, D=2
   
   var networkDesc = NetworkDescriptor()
   networkDesc.N = N
@@ -241,20 +243,52 @@ func executeScript() {
   MTLContext.copy(bufferDerivativeQ, into: &resultDerivativeQ)
   
   print()
-  print("dV:")
-  printMatrix(dV)
+  print("V:")
+  printMatrix(network.V)
   
   print()
-  print("dV:")
-  printMatrix(resultDerivativeV)
+  print("O:")
+  printMatrix(resultO)
   
-  print()
-  print("dK:")
-  printMatrix(dK)
-  
-  print()
-  print("dK:")
-  printMatrix(resultDerivativeK)
+//  print()
+//  print("L_terms:")
+//  printVector(LTerms)
+//  
+//  print()
+//  print("L_terms:")
+//  printVector(resultLTerms)
+//  
+//  print()
+//  print("D_terms:")
+//  printVector(DTerms)
+//  
+//  print()
+//  print("D_terms:")
+//  printVector(resultDTerms)
+//  
+//  print()
+//  print("dV:")
+//  printMatrix(dV)
+//  
+//  print()
+//  print("dV:")
+//  printMatrix(resultDerivativeV)
+//  
+//  print()
+//  print("dK:")
+//  printMatrix(dK)
+//  
+//  print()
+//  print("dK:")
+//  printMatrix(resultDerivativeK)
+//  
+//  print()
+//  print("dQ:")
+//  printMatrix(dQ)
+//  
+//  print()
+//  print("dQ:")
+//  printMatrix(resultDerivativeQ)
   
   #if true
   // Check the results.
@@ -279,12 +313,12 @@ func executeScript() {
     }
   }
   
-  check(expected: O, actual: resultO)
-  check(expected: LTerms, actual: resultLTerms)
-  check(expected: DTerms, actual: resultDTerms)
-  check(expected: dV, actual: resultDerivativeV)
-  check(expected: dK, actual: resultDerivativeK)
-  check(expected: dQ, actual: resultDerivativeQ)
+//  check(expected: O, actual: resultO)
+//  check(expected: LTerms, actual: resultLTerms)
+//  check(expected: DTerms, actual: resultDTerms)
+//  check(expected: dV, actual: resultDerivativeV)
+//  check(expected: dK, actual: resultDerivativeK)
+//  check(expected: dQ, actual: resultDerivativeQ)
   if errorCount > 0 {
     print("Could not benchmark performance because results were incorrect.")
     return

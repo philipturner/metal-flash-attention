@@ -107,7 +107,7 @@ extension AttentionKernel {
     // load V[c]
     threadgroup_barrier(mem_flags::mem_threadgroup);
     \(prefetchV)
-    
+
     // O += P * V
     threadgroup_barrier(mem_flags::mem_threadgroup);
     \(accumulateO)
@@ -119,6 +119,8 @@ extension AttentionKernel {
   for (ushort d = 0; d < \(paddedD); d += 8) {
    *(O_sram[d / 8].thread_elements()) *= l_reciprocal;
   }
+  
+O_sram[0] = m;
 
 """
   }
@@ -251,7 +253,7 @@ extension AttentionKernel {
     // load Q[r]
     threadgroup_barrier(mem_flags::mem_threadgroup);
     \(prefetchQ)
-    
+
     // dK += dS^T * Q
     threadgroup_barrier(mem_flags::mem_threadgroup);
     \(accumulateDerivativeK)
@@ -300,8 +302,8 @@ extension AttentionKernel {
         Q_dst, \(leadingBlockDimensions.Q), tile_dst,
         Q_src, \(leadingDimensions.Q), tile_src, \(transposeState.Q));
       events[1].async_copy(
-        L_terms_dst, 1, ushort2(tile_dst.y, 0),
-        L_terms_src, 1, ushort2(tile_src.y, 0));
+        L_terms_dst, 1, ushort2(tile_dst.y, 1),
+        L_terms_src, 1, ushort2(tile_src.y, 1));
       simdgroup_event::wait(2, events);
     }
 
@@ -344,8 +346,8 @@ extension AttentionKernel {
         dO_dst, \(leadingBlockDimensions.O), tile_dst,
         dO_src, \(leadingDimensions.O), tile_src, \(transposeState.O));
       events[1].async_copy(
-        D_terms_dst, 1, ushort2(tile_dst.y, 0),
-        D_terms_src, 1, ushort2(tile_src.y, 0));
+        D_terms_dst, 1, ushort2(tile_dst.y, 1),
+        D_terms_src, 1, ushort2(tile_src.y, 1));
       simdgroup_event::wait(2, events);
     }
 
