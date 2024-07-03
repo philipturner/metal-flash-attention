@@ -90,6 +90,7 @@ extension AttentionKernel {
     // S = Q * K^T
     threadgroup_barrier(mem_flags::mem_threadgroup);
     \(computeS())
+    \(maskS())
     
     // (m, l, P) = softmax(m, l, S * scaleFactor)
     \(onlineSoftmax())
@@ -145,6 +146,7 @@ extension AttentionKernel {
     // S = Q * K^T
     threadgroup_barrier(mem_flags::mem_threadgroup);
     \(computeS())
+    \(maskS())
     
     // P = softmax(S * scaleFactor)
     \(checkpointSoftmax())
@@ -188,9 +190,14 @@ extension AttentionKernel {
     // load Q[r]
     // load L[r]
     threadgroup_barrier(mem_flags::mem_threadgroup);
-    \(prefetchQL())
+    \(prefetchQLTerms())
     
     // S^T = K * Q^T
+    threadgroup_barrier(mem_flags::mem_threadgroup);
+    \(computeST())
+
+    // P^T = exp(S^T - L)
+    \(checkpointSoftmaxT())
   }
 
 """
@@ -200,29 +207,30 @@ extension AttentionKernel {
 // MARK: - Prefetching Operations
 
 extension AttentionKernel {
-  func prefetchQL() -> String {
+  func blockQ() -> String {
+    "(threadgroup float*)(threadgroup_block)"
+  }
+  
+  func blockLTerms() -> String {
+    if transposeState.Q {
+      // D x R, where R is the row stride.
+      return "\(blockQ()) + \(paddedD) * \(leadingDimensions.Q)"
+    } else {
+      // R x D, where D is the row stride.
+      return "\(blockQ()) + R_group * \(leadingDimensions.Q)"
+    }
+  }
+  
+  func prefetchQLTerms() -> String {
     return """
 
     if (sidx == 0) {
-      // Declare the Q source and destination.
       uint2 device_origin(0, r);
       auto Q_src = simdgroup_matrix_storage<float>::apply_offset(
         Q, \(leadingDimensions.Q), device_origin, \(transposeState.Q));
-      auto Q_dst = (threadgroup float*)(threadgroup_block);
-      
-      // Locate the L destination, relative to the Q destination.
-      auto Q_dst_end = Q_dst;
-      if (\(transposeState.Q)) {
-        // D x R, where R is the row stride.
-        Q_dst_end += \(paddedD) * \(leadingBlockDimensions.Q);
-      } else {
-        // R x D, where D is the row stride.
-        Q_dst_end += R_group * \(leadingDimensions.Q);
-      }
-      
-      // Declare the L source and destination.
-      auto L_src = L_terms + r;
-      auto L_dst = (threadgroup float*)(Q_dst_end);
+      auto Q_dst = \(blockQ());
+      auto L_terms_src = L_terms + r;
+      auto L_terms_dst = \(blockLTerms());
       
       // Zero-padding for safety, which should harm performance.
       ushort R_tile_dimension = min(uint(R_group), R - r);
@@ -235,8 +243,8 @@ extension AttentionKernel {
         Q_dst, \(leadingBlockDimensions.Q), tile_dst,
         Q_src, \(leadingDimensions.Q), tile_src, \(transposeState.Q));
       events[1].async_copy(
-        L_dst, 1, ushort2(tile_dst.y, 0),
-        L_src, 1, ushort2(tile_src.y, 0));
+        L_terms_dst, 1, ushort2(tile_dst.y, 0),
+        L_terms_src, 1, ushort2(tile_src.y, 0));
       simdgroup_event::wait(2, events);
     }
 
@@ -269,7 +277,38 @@ extension AttentionKernel {
       }
     }
 
-    // Prevent the zero padding from changing the values of 'm' and 'l'.
+"""
+  }
+  
+  func computeST() -> String {
+    return """
+
+    auto QT_block = (threadgroup float*)(threadgroup_block);
+    QT_block = simdgroup_matrix_storage<float>::apply_offset(
+      QT_block, \(leadingBlockDimensions.Q), morton_offset,
+      \(!transposeState.Q));
+
+    simdgroup_matrix_storage<float> ST_sram[32 / 8];
+#pragma clang loop unroll(full)
+    for (ushort d = 0; d < \(paddedD); d += 8) {
+#pragma clang loop unroll(full)
+      for (ushort r = 0; r < 32; r += 8) {
+        ushort2 origin(r, d);
+        simdgroup_matrix_storage<float> QT;
+        QT.load(
+          QT_block, \(leadingBlockDimensions.Q), origin, \(!transposeState.Q));
+        ST_sram[r / 8]
+          .multiply(K_sram[d / 8], QT, d > 0);
+      }
+    }
+
+"""
+  }
+  
+  // Prevent the zero padding from changing the values of 'm' and 'l'.
+  func maskS() -> String {
+    return """
+    
     if ((C % 32 != 0) && (c + 32 > C)) {
       const ushort remainder32 = uint(C % 32);
       const ushort remainder32_floor = remainder32 - ushort(remainder32 % 8);
@@ -287,9 +326,11 @@ extension AttentionKernel {
         *S_elements = -numeric_limits<float>::max();
       }
     }
-
+    
 """
   }
+  
+  // TODO: maskDerivativeST()
 }
 
 // MARK: - Softmax
@@ -366,6 +407,29 @@ extension AttentionKernel {
       float2 S_elements = float2(*(S_sram[c / 8].thread_elements()));
       float2 P_elements = fast::exp2(S_elements * \(scaleFactor) - L_term);
       *(P_sram[c / 8].thread_elements()) = P_elements;
+    }
+
+"""
+  }
+  
+  func checkpointSoftmaxT() -> String {
+    let scaleFactor = "(M_LOG2E_F / sqrt(float(D)))"
+    
+    return """
+
+    auto L_terms_block = \(blockLTerms());
+    L_terms_block += morton_offset.x;
+    
+    simdgroup_matrix_storage<float> PT_sram[32 / 8];
+    for (ushort r = 0; r < 32; r += 8) {
+      ushort2 origin(r, 0);
+      simdgroup_matrix_storage<float> L_terms;
+      L_terms.load(L_terms_block, 1, origin, false);
+      float2 L_term = *(L_terms.thread_elements());
+      
+      float2 ST_elements = float2(*(ST_sram[r / 8].thread_elements()));
+      float2 PT_elements = fast::exp2(ST_elements * \(scaleFactor) - L_term);
+      *(PT_sram[r / 8].thread_elements()) = PT_elements;
     }
 
 """
