@@ -133,8 +133,6 @@ extension AttentionKernel {
     accessDesc.transposeState = transposeState.V
     let prefetchV = prefetchColumns(descriptor: accessDesc)
     
-    let scaleFactor = "(1 / sqrt(float(D)))"
-    
     return """
   
   // Iterate over the columns.
@@ -159,15 +157,7 @@ extension AttentionKernel {
     \(computeDerivativeP())
     
     // dS = P * (dP - D) * scaleFactor
-    simdgroup_matrix_storage<float> dS_sram[32 / 8];
-#pragma clang loop unroll(full)
-    for (ushort c = 0; c < 32; c += 8) {
-      float2 P_elements = float2(*(P_sram[c / 8].thread_elements()));
-      float2 dP_elements = float2(*(dP_sram[c / 8].thread_elements()));
-      float2 dS_elements = dP_elements * \(scaleFactor) - D_term;
-      dS_elements *= P_elements;
-      *(dS_sram[c / 8].thread_elements()) = dS_elements;
-    }
+    \(computeDerivativeSoftmax())
     
     // load K[c]
     threadgroup_barrier(mem_flags::mem_threadgroup);
@@ -208,10 +198,14 @@ extension AttentionKernel {
     \(accumulateDerivativeV())
     
     // dP^T = V * dO^T
-    // computeDerivativePT()
+    \(computeDerivativePT())
     
     // dS^T = P^T * (dP^T - D) * scaleFactor
-    // Written similarly to backward query.
+    \(computeDerivativeSoftmaxT())
+    
+    if (r == 0) {
+      dK_sram[0] = dST_sram[0];
+    }
   }
   
 """
@@ -492,6 +486,54 @@ extension AttentionKernel {
   }
 }
 
+// MARK: - Softmax Derivative
+
+extension AttentionKernel {
+  func computeDerivativeSoftmax() -> String {
+    let scaleFactor = "(1 / sqrt(float(D)))"
+    
+    return """
+
+    simdgroup_matrix_storage<float> dS_sram[32 / 8];
+#pragma clang loop unroll(full)
+    for (ushort c = 0; c < 32; c += 8) {
+      float2 P_elements = float2(*(P_sram[c / 8].thread_elements()));
+      float2 dP_elements = float2(*(dP_sram[c / 8].thread_elements()));
+      float2 dS_elements = dP_elements * \(scaleFactor) - D_term;
+      dS_elements *= P_elements;
+      *(dS_sram[c / 8].thread_elements()) = dS_elements;
+    }
+
+"""
+  }
+  
+  func computeDerivativeSoftmaxT() -> String {
+    let scaleFactor = "(1 / sqrt(float(D)))"
+    
+    return """
+
+    auto D_terms_block = \(blockDTerms());
+    D_terms_block += morton_offset.x;
+
+    simdgroup_matrix_storage<float> dST_sram[32 / 8];
+#pragma clang loop unroll(full)
+    for (ushort r = 0; r < 32; r += 8) {
+      ushort2 origin(r, 0);
+      simdgroup_matrix_storage<float> D_terms;
+      D_terms.load(D_terms_block, 1, origin, false);
+      float2 D_term = *(D_terms.thread_elements());
+      
+      float2 PT_elements = float2(*(PT_sram[r / 8].thread_elements()));
+      float2 dPT_elements = float2(*(dPT_sram[r / 8].thread_elements()));
+      float2 dST_elements = dPT_elements * \(scaleFactor) - D_term;
+      dST_elements *= PT_elements;
+      *(dST_sram[r / 8].thread_elements()) = dST_elements;
+    }
+
+"""
+  }
+}
+
 // MARK: - Attention Matrix Derivative
 
 extension AttentionKernel {
@@ -516,7 +558,7 @@ extension AttentionKernel {
           .multiply(dO_sram[d / 8], VT, d > 0);
       }
     }
-
+    
 """
   }
   
