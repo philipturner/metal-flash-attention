@@ -198,6 +198,18 @@ extension AttentionKernel {
 
     // P^T = exp(S^T - L)
     \(checkpointSoftmaxT())
+    
+    // load dO[r]
+    // load D[r]
+    threadgroup_barrier(mem_flags::mem_threadgroup);
+    \(prefetchDerivativeODTerms())
+    
+    // dV += P^T * dO
+    threadgroup_barrier(mem_flags::mem_threadgroup);
+    \(accumulateDerivativeV())
+    
+    // dP^T = V * dO^T
+    \(computeDerivativePT())
   }
 
 """
@@ -214,16 +226,16 @@ extension AttentionKernel {
   func blockLTerms() -> String {
     if transposeState.Q {
       // D x R, where R is the row stride.
-      return "\(blockQ()) + \(paddedD) * \(leadingDimensions.Q)"
+      return "\(blockQ()) + \(paddedD) * \(leadingBlockDimensions.Q)"
     } else {
       // R x D, where D is the row stride.
-      return "\(blockQ()) + R_group * \(leadingDimensions.Q)"
+      return "\(blockQ()) + R_group * \(leadingBlockDimensions.Q)"
     }
   }
   
   func prefetchQLTerms() -> String {
     return """
-
+    
     if (sidx == 0) {
       uint2 device_origin(0, r);
       auto Q_src = simdgroup_matrix_storage<float>::apply_offset(
@@ -245,6 +257,50 @@ extension AttentionKernel {
       events[1].async_copy(
         L_terms_dst, 1, ushort2(tile_dst.y, 0),
         L_terms_src, 1, ushort2(tile_src.y, 0));
+      simdgroup_event::wait(2, events);
+    }
+
+"""
+  }
+  
+  func blockDerivativeO() -> String {
+    "(threadgroup float*)(threadgroup_block)"
+  }
+  
+  func blockDTerms() -> String {
+    if transposeState.O {
+      // D x R, where R is the row stride.
+      return "\(blockDerivativeO()) + \(paddedD) * \(leadingBlockDimensions.O)"
+    } else {
+      // R x D, where D is the row stride.
+      return "\(blockDerivativeO()) + R_group * \(leadingBlockDimensions.O)"
+    }
+  }
+  
+  func prefetchDerivativeODTerms() -> String {
+    return """
+    
+    if (sidx == 0) {
+      uint2 device_origin(0, r);
+      auto dO_src = simdgroup_matrix_storage<float>::apply_offset(
+        dO, \(leadingDimensions.O), device_origin, \(transposeState.O));
+      auto dO_dst = \(blockDerivativeO());
+      auto D_terms_src = D_terms + r;
+      auto D_terms_dst = \(blockDTerms());
+      
+      // Zero-padding for safety, which should harm performance.
+      ushort R_tile_dimension = min(uint(R_group), R - r);
+      ushort2 tile_src(D, R_tile_dimension);
+      ushort2 tile_dst(\(paddedD), R_group);
+      
+      // Issue two async copies.
+      simdgroup_event events[2];
+      events[0].async_copy(
+        dO_dst, \(leadingBlockDimensions.O), tile_dst,
+        dO_src, \(leadingDimensions.O), tile_src, \(transposeState.O));
+      events[1].async_copy(
+        D_terms_dst, 1, ushort2(tile_dst.y, 0),
+        D_terms_src, 1, ushort2(tile_src.y, 0));
       simdgroup_event::wait(2, events);
     }
 
@@ -283,7 +339,7 @@ extension AttentionKernel {
   func computeST() -> String {
     return """
 
-    auto QT_block = (threadgroup float*)(threadgroup_block);
+    auto QT_block = \(blockQ());
     QT_block = simdgroup_matrix_storage<float>::apply_offset(
       QT_block, \(leadingBlockDimensions.Q), morton_offset,
       \(!transposeState.Q));
@@ -463,6 +519,31 @@ extension AttentionKernel {
 
 """
   }
+  
+  func computeDerivativePT() -> String {
+    return """
+
+    auto dOT_block = \(blockDerivativeO());
+    dOT_block = simdgroup_matrix_storage<float>::apply_offset(
+      dOT_block, \(leadingBlockDimensions.O), morton_offset,
+      \(!transposeState.O));
+    
+    simdgroup_matrix_storage<float> dPT_sram[32 / 8];
+#pragma clang loop unroll(full)
+    for (ushort d = 0; d < \(paddedD); d += 8) {
+#pragma clang loop unroll(full)
+      for (ushort r = 0; r < 32; r += 8) {
+        ushort2 origin(r, d);
+        simdgroup_matrix_storage<float> dOT;
+        dOT.load(
+          dOT_block, \(leadingBlockDimensions.O), origin, \(!transposeState.O));
+        dPT_sram[r / 8]
+          .multiply(V_sram[d / 8], dOT, d > 0);
+      }
+    }
+
+"""
+  }
 }
 
 // MARK: - Accumulate
@@ -488,6 +569,30 @@ extension AttentionKernel {
       }
     }
 
+"""
+  }
+  
+  func accumulateDerivativeV() -> String {
+    return """
+    
+    auto dO_block = \(blockDerivativeO());
+    dO_block = simdgroup_matrix_storage<float>::apply_offset(
+      dO_block, \(leadingBlockDimensions.O), morton_offset,
+      \(transposeState.O));
+    
+#pragma clang loop unroll(full)
+    for (ushort r = 0; r < 32; r += 8) {
+#pragma clang loop unroll(full)
+      for (ushort d = 0; d < \(paddedD); d += 8) {
+        ushort2 origin(d, r);
+        simdgroup_matrix_storage<float> dO;
+        dO.load(
+          dO_block, \(leadingBlockDimensions.O), origin, \(transposeState.O));
+        dV_sram[d / 8]
+          .multiply(PT_sram[r / 8], dO, true);
+      }
+    }
+    
 """
   }
   
