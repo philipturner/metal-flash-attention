@@ -79,6 +79,15 @@ extension AttentionKernel {
     accessDesc.transposeState = transposeState.V
     let prefetchV = prefetchColumns(descriptor: accessDesc)
     
+    var accumulateDesc = AttentionAccumulateDescriptor()
+    accumulateDesc.index = "c"
+    accumulateDesc.indexedBlockDimension = blockDimensions.C
+    accumulateDesc.leadingBlockDimensionRHS = leadingBlockDimensions.V
+    accumulateDesc.names = (accumulator: "O", lhs: "P", rhs: "V")
+    accumulateDesc.threadgroupAddress = "threadgroup_block"
+    accumulateDesc.transposeStateRHS = transposeState.V
+    let accumulateO = accumulate(descriptor: accumulateDesc)
+    
     return """
   
   // Iterate over the columns.
@@ -101,7 +110,7 @@ extension AttentionKernel {
     
     // O += P * V
     threadgroup_barrier(mem_flags::mem_threadgroup);
-    \(accumulateO())
+    \(accumulateO)
   }
   
   // O /= l
@@ -132,6 +141,15 @@ extension AttentionKernel {
     accessDesc.threadgroupAddress = "threadgroup_block"
     accessDesc.transposeState = transposeState.V
     let prefetchV = prefetchColumns(descriptor: accessDesc)
+    
+    var accumulateDesc = AttentionAccumulateDescriptor()
+    accumulateDesc.index = "c"
+    accumulateDesc.indexedBlockDimension = blockDimensions.C
+    accumulateDesc.leadingBlockDimensionRHS = leadingBlockDimensions.K
+    accumulateDesc.names = (accumulator: "dQ", lhs: "dS", rhs: "K")
+    accumulateDesc.threadgroupAddress = "threadgroup_block"
+    accumulateDesc.transposeStateRHS = transposeState.K
+    let accumulateDerivativeQ = accumulate(descriptor: accumulateDesc)
     
     return """
   
@@ -165,13 +183,31 @@ extension AttentionKernel {
     
     // dQ += dS * K
     threadgroup_barrier(mem_flags::mem_threadgroup);
-    \(accumulateDerivativeQ())
+    \(accumulateDerivativeQ)
   }
     
 """
   }
   
   func createInnerLoopValue() -> String {
+    var accessDesc = AttentionHBMAccessDescriptor()
+    accessDesc.index = "r"
+    accessDesc.leadingBlockDimension = leadingBlockDimensions.Q
+    accessDesc.leadingDimension = leadingDimensions.Q
+    accessDesc.name = "Q"
+    accessDesc.threadgroupAddress = "threadgroup_block"
+    accessDesc.transposeState = transposeState.Q
+    let prefetchQ = prefetchColumns(descriptor: accessDesc)
+    
+    var accumulateDesc = AttentionAccumulateDescriptor()
+    accumulateDesc.index = "r"
+    accumulateDesc.indexedBlockDimension = blockDimensions.R
+    accumulateDesc.leadingBlockDimensionRHS = leadingBlockDimensions.O
+    accumulateDesc.names = (accumulator: "dV", lhs: "PT", rhs: "dO")
+    accumulateDesc.threadgroupAddress = "threadgroup_block"
+    accumulateDesc.transposeStateRHS = transposeState.O
+    let accumulateDerivativeV = accumulate(descriptor: accumulateDesc)
+    
     return """
   
   // Iterate over the rows.
@@ -195,7 +231,7 @@ extension AttentionKernel {
     
     // dV += P^T * dO
     threadgroup_barrier(mem_flags::mem_threadgroup);
-    \(accumulateDerivativeV())
+    \(accumulateDerivativeV)
     
     // dP^T = V * dO^T
     \(computeDerivativePT())
@@ -203,9 +239,12 @@ extension AttentionKernel {
     // dS^T = P^T * (dP^T - D) * scaleFactor
     \(computeDerivativeSoftmaxT())
     
-    if (r == 0) {
-      dK_sram[0] = dST_sram[0];
-    }
+    // load Q[r]
+    threadgroup_barrier(mem_flags::mem_threadgroup);
+    \(prefetchQ)
+    
+    // dK += dS^T * Q
+    threadgroup_barrier(mem_flags::mem_threadgroup);
   }
   
 """
@@ -590,74 +629,66 @@ extension AttentionKernel {
 
 // MARK: - Accumulate
 
+struct AttentionAccumulateDescriptor {
+  var index: String?
+  var indexedBlockDimension: UInt16?
+  var leadingBlockDimensionRHS: UInt16?
+  var names: (accumulator: String, lhs: String, rhs: String)?
+  var threadgroupAddress: String?
+  var transposeStateRHS: Bool?
+}
+
 extension AttentionKernel {
-  func accumulateO() -> String {
+  func accumulate(descriptor: AttentionAccumulateDescriptor) -> String {
+    guard let index = descriptor.index,
+          let indexedBlockDimension = descriptor.indexedBlockDimension,
+          let leadingBlockDimensionRHS = descriptor.leadingBlockDimensionRHS,
+          let names = descriptor.names,
+          let threadgroupAddress = descriptor.threadgroupAddress,
+          let transposeStateRHS = descriptor.transposeStateRHS else {
+      fatalError("Descriptor was incomplete.")
+    }
+    
     return """
-
-    auto V_block = (threadgroup float*)(threadgroup_block);
-    V_block = simdgroup_matrix_storage<float>::apply_offset(
-      V_block, \(leadingBlockDimensions.V), morton_offset, \(transposeState.V));
-
+    
+    // Where the did the async copy put the RHS?
+    auto \(names.rhs)_block = (threadgroup float*)(\(threadgroupAddress));
+    \(names.rhs)_block = simdgroup_matrix_storage<float>::apply_offset(
+      \(names.rhs)_block, 
+      \(leadingBlockDimensionRHS),
+      morton_offset,
+      \(transposeStateRHS));
+    
+    // Iterate over the row/column dimension.
 #pragma clang loop unroll(full)
-    for (ushort c = 0; c < 32; c += 8) {
+    for (
+      ushort \(index) = 0;
+      \(index) < \(indexedBlockDimension);
+      \(index) += 8
+    ) {
+
+      // Iterate over the head dimension.
 #pragma clang loop unroll(full)
       for (ushort d = 0; d < \(paddedD); d += 8) {
-        ushort2 origin(d, c);
-        simdgroup_matrix_storage<float> V;
-        V.load(
-          V_block, \(leadingBlockDimensions.V), origin, \(transposeState.V));
-        O_sram[d / 8]
-          .multiply(P_sram[c / 8], V, true);
+        ushort2 origin(d, \(index));
+        simdgroup_matrix_storage<float> \(names.rhs);
+        
+        // Load the RHS from threadgroup memory.
+        \(names.rhs).load(
+          \(names.rhs)_block, 
+          \(leadingBlockDimensionRHS),
+          origin,
+          \(transposeStateRHS));
+        
+        // Add the contributions from the c-th/r-th element of the attention
+        // matrix row/column.
+        \(names.accumulator)_sram[d / 8].multiply(
+          \(names.lhs)_sram[\(index) / 8],
+          \(names.rhs),
+          /*accumulate=*/true);
       }
     }
 
-"""
-  }
-  
-  func accumulateDerivativeV() -> String {
-    return """
-    
-    auto dO_block = \(blockDerivativeO());
-    dO_block = simdgroup_matrix_storage<float>::apply_offset(
-      dO_block, \(leadingBlockDimensions.O), morton_offset,
-      \(transposeState.O));
-    
-#pragma clang loop unroll(full)
-    for (ushort r = 0; r < 32; r += 8) {
-#pragma clang loop unroll(full)
-      for (ushort d = 0; d < \(paddedD); d += 8) {
-        ushort2 origin(d, r);
-        simdgroup_matrix_storage<float> dO;
-        dO.load(
-          dO_block, \(leadingBlockDimensions.O), origin, \(transposeState.O));
-        dV_sram[d / 8]
-          .multiply(PT_sram[r / 8], dO, true);
-      }
-    }
-    
-"""
-  }
-  
-  func accumulateDerivativeQ() -> String {
-    return """
-
-    auto K_block = (threadgroup float*)(threadgroup_block);
-    K_block = simdgroup_matrix_storage<float>::apply_offset(
-      K_block, \(leadingBlockDimensions.K), morton_offset, \(transposeState.K));
-
-#pragma clang loop unroll(full)
-    for (ushort c = 0; c < 32; c += 8) {
-#pragma clang loop unroll(full)
-      for (ushort d = 0; d < \(paddedD); d += 8) {
-        ushort2 origin(d, c);
-        simdgroup_matrix_storage<float> K;
-        K.load(
-          K_block, \(leadingBlockDimensions.K), origin, \(transposeState.K));
-        dQ_sram[d / 8]
-          .multiply(dS_sram[c / 8], K, true);
-      }
-    }
-    
 """
   }
 }
