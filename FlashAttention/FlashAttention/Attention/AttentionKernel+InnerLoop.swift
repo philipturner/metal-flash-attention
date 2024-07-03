@@ -90,7 +90,7 @@ extension AttentionKernel {
     // S = Q * K^T
     threadgroup_barrier(mem_flags::mem_threadgroup);
     \(computeS())
-    \(maskS())
+    \(maskAlongColumns(sram: "S_sram"))
     
     // (m, l, P) = softmax(m, l, S * scaleFactor)
     \(onlineSoftmax())
@@ -146,7 +146,6 @@ extension AttentionKernel {
     // S = Q * K^T
     threadgroup_barrier(mem_flags::mem_threadgroup);
     \(computeS())
-    \(maskS())
     
     // P = softmax(S * scaleFactor)
     \(checkpointSoftmax())
@@ -169,7 +168,7 @@ extension AttentionKernel {
       dS_elements *= P_elements;
       *(dS_sram[c / 8].thread_elements()) = dS_elements;
     }
-
+    
     // load K[c]
     threadgroup_barrier(mem_flags::mem_threadgroup);
     \(prefetchK)
@@ -209,7 +208,10 @@ extension AttentionKernel {
     \(accumulateDerivativeV())
     
     // dP^T = V * dO^T
-    \(computeDerivativePT())
+    // computeDerivativePT()
+
+    // dS^T = P^T * (dP^T - D) * scaleFactor
+    // Written similarly to backward query.
   }
 
 """
@@ -362,7 +364,7 @@ extension AttentionKernel {
   }
   
   // Prevent the zero padding from changing the values of 'm' and 'l'.
-  func maskS() -> String {
+  func maskAlongColumns(sram: String) -> String {
     return """
     
     if ((C % 32 != 0) && (c + 32 > C)) {
@@ -372,13 +374,13 @@ extension AttentionKernel {
 #pragma clang loop unroll(full)
       for (ushort index = 0; index < 2; ++index) {
         if (morton_offset.x + index >= remainder32 - remainder32_floor) {
-          auto S_elements = S_sram[remainder32_floor / 8].thread_elements();
+          auto S_elements = \(sram)[remainder32_floor / 8].thread_elements();
           (*S_elements)[index] = -numeric_limits<float>::max();
         }
       }
 #pragma clang loop unroll(full)
       for (ushort c = remainder32_floor + 8; c < 32; c += 8) {
-        auto S_elements = S_sram[c / 8].thread_elements();
+        auto S_elements = \(sram)[c / 8].thread_elements();
         *S_elements = -numeric_limits<float>::max();
       }
     }
@@ -386,7 +388,10 @@ extension AttentionKernel {
 """
   }
   
-  // TODO: maskDerivativeST()
+  // Prevent zero padding from causing undefined behavior.
+  func maskAlongRows(sram: String) -> String {
+    fatalError("Not implemented.")
+  }
 }
 
 // MARK: - Softmax

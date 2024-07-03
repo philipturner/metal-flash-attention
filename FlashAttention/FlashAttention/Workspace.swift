@@ -21,8 +21,8 @@ func executeScript() {
   print("Hello, console.")
   
   // Define the problem dimensions.
-  let N: Int = 10
-  let D: Int = 3
+  let N: Int = 100
+  let D: Int = 30
   
   var networkDesc = NetworkDescriptor()
   networkDesc.N = N
@@ -127,7 +127,6 @@ func executeScript() {
   
   attentionDesc.type = .backwardKeyValue(true)
   let kernelBackwardKeyValue = AttentionKernel(descriptor: attentionDesc)
-  print(kernelBackwardKeyValue.source)
   
   func createPipeline(kernel: AttentionKernel) -> MTLComputePipelineState {
     // Set the function constants.
