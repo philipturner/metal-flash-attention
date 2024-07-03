@@ -21,8 +21,8 @@ func executeScript() {
   print("Hello, console.")
   
   // Define the problem dimensions.
-  let N: Int = 100
-  let D: Int = 30
+  let N: Int = 192
+  let D: Int = 80
   
   var networkDesc = NetworkDescriptor()
   networkDesc.N = N
@@ -101,6 +101,7 @@ func executeScript() {
   let LTerms = (0..<N).map(network.createLTerm(rowID:))
   let DTerms = (0..<N).map(network.createDTerm(rowID:))
   let dV = network.derivativeV()
+  let dK = network.derivativeK()
   let dQ = network.derivativeQ()
   
   var attentionDesc = AttentionDescriptor()
@@ -249,6 +250,10 @@ func executeScript() {
   
   print()
   print("dK:")
+  printMatrix(dK)
+  
+  print()
+  print("dK:")
   printMatrix(resultDerivativeK)
   
   #if true
@@ -267,6 +272,8 @@ func executeScript() {
           // Update the error count in the outer scope.
           errorCount += 1
           print("error: \(error) / ~1.000")
+          print("- expected[\(i)] =", expected[i])
+          print("-   actual[\(i)] =", actual[i])
         }
       }
     }
@@ -276,6 +283,7 @@ func executeScript() {
   check(expected: LTerms, actual: resultLTerms)
   check(expected: DTerms, actual: resultDTerms)
   check(expected: dV, actual: resultDerivativeV)
+  check(expected: dK, actual: resultDerivativeK)
   check(expected: dQ, actual: resultDerivativeQ)
   if errorCount > 0 {
     print("Could not benchmark performance because results were incorrect.")

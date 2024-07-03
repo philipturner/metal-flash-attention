@@ -197,7 +197,7 @@ extension AttentionKernel {
     accessDesc.name = "Q"
     accessDesc.threadgroupAddress = "threadgroup_block"
     accessDesc.transposeState = transposeState.Q
-    let prefetchQ = prefetchColumns(descriptor: accessDesc)
+    let prefetchQ = prefetchRows(descriptor: accessDesc)
     
     var accumulateDesc = AttentionAccumulateDescriptor()
     accumulateDesc.index = "r"
@@ -207,6 +207,15 @@ extension AttentionKernel {
     accumulateDesc.threadgroupAddress = "threadgroup_block"
     accumulateDesc.transposeStateRHS = transposeState.O
     let accumulateDerivativeV = accumulate(descriptor: accumulateDesc)
+    
+    accumulateDesc = AttentionAccumulateDescriptor()
+    accumulateDesc.index = "r"
+    accumulateDesc.indexedBlockDimension = blockDimensions.R
+    accumulateDesc.leadingBlockDimensionRHS = leadingBlockDimensions.Q
+    accumulateDesc.names = (accumulator: "dK", lhs: "dST", rhs: "Q")
+    accumulateDesc.threadgroupAddress = "threadgroup_block"
+    accumulateDesc.transposeStateRHS = transposeState.Q
+    let accumulateDerivativeK = accumulate(descriptor: accumulateDesc)
     
     return """
   
@@ -245,6 +254,7 @@ extension AttentionKernel {
     
     // dK += dS^T * Q
     threadgroup_barrier(mem_flags::mem_threadgroup);
+    \(accumulateDerivativeK)
   }
   
 """

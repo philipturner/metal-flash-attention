@@ -503,6 +503,7 @@ extension AttentionKernel {
         accessDesc.threadgroupAddress = "threadgroup_block"
         accessDesc.transposeState = transposeState.K
         
+        
         output += threadgroupBarrier()
         output += store(descriptor: accessDesc)
         output += threadgroupBarrier()
@@ -518,12 +519,13 @@ extension AttentionKernel {
         accessDesc.name = "dV"
         accessDesc.threadgroupAddress = "threadgroup_block"
         accessDesc.transposeState = transposeState.V
-        
+          
         output += threadgroupBarrier()
         output += store(descriptor: accessDesc)
         output += threadgroupBarrier()
         output += commitColumns(descriptor: accessDesc)
       }
+      
     }
     
     return output
@@ -719,6 +721,7 @@ extension AttentionKernel {
     event.async_copy(
       dst, \(leadingDimension), tile_dst,
       src, \(leadingBlockDimension), tile_src, \(transposeState));
+    simdgroup_event::wait(1, &event);
   }
 
 """
@@ -751,6 +754,7 @@ extension AttentionKernel {
     event.async_copy(
       dst, \(leadingDimension), tile_dst,
       src, \(leadingBlockDimension), tile_src, \(transposeState));
+    simdgroup_event::wait(1, &event);
   }
 
 """
