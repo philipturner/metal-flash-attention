@@ -88,7 +88,7 @@ using namespace metal;
     }
     
     blockDimensions = (R: 32, C: 32, D: paddedD)
-    threadgroupMemoryAllocation = 32 * paddedD * 4
+    threadgroupMemoryAllocation = .zero
     threadgroupSize = 128
     
     source += """
@@ -107,26 +107,29 @@ kernel void attention(
 
 """
     
+    // R/C_group * D * sizeof(float)
+    threadgroupMemoryAllocation += 32 * paddedD * 4
+    
     source += createArguments(type: type)
     source += createSetup(type: type)
-    
     switch type {
     case .forward:
       source += createInnerLoopForward()
+      
     case .backwardQuery(let computeDerivativeQ):
       if computeDerivativeQ {
         source += createInnerLoopBackwardQuery()
       }
     case .backwardKeyValue(let computeDerivativeK):
+      // R_group * sizeof(float)
+      threadgroupMemoryAllocation += 32 * 4
+      
       if computeDerivativeK {
         source += createInnerLoopValue()
       } else {
         fatalError("key-value (false) is not implemented.")
       }
-    default:
-      break
     }
-    
     source += createCleanup(type: type)
     source += """
 

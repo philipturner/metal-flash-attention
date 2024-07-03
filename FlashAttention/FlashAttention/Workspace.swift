@@ -21,8 +21,8 @@ func executeScript() {
   print("Hello, console.")
   
   // Define the problem dimensions.
-  let N: Int = 100
-  let D: Int = 30
+  let N: Int = 10
+  let D: Int = 3
   
   var networkDesc = NetworkDescriptor()
   networkDesc.N = N
@@ -74,45 +74,34 @@ func executeScript() {
     }
   }
   
-  print()
-  print("S:")
-  let S = (0..<N).flatMap(network.createMatrixSRow(rowID:))
-  printSquareMatrix(S)
+  // Display the attention matrices.
+  do {
+    print()
+    print("S:")
+    let S = (0..<N).flatMap(network.createMatrixSRow(rowID:))
+    printSquareMatrix(S)
+    
+    print()
+    print("P:")
+    let P = (0..<N).flatMap(network.createMatrixPRow(rowID:))
+    printSquareMatrix(P)
+    
+    print()
+    print("dP:")
+    let dP = (0..<N).flatMap(network.createDerivativePRow(rowID:))
+    printSquareMatrix(dP)
+    
+    print()
+    print("dS:")
+    let dS = (0..<N).flatMap(network.createDerivativeSRow(rowID:))
+    printSquareMatrix(dS)
+  }
   
-  print()
-  print("P:")
-  let P = (0..<N).flatMap(network.createMatrixPRow(rowID:))
-  printSquareMatrix(P)
-  
-  print()
-  print("dP:")
-  let dP = (0..<N).flatMap(network.createDerivativePRow(rowID:))
-  printSquareMatrix(dP)
-  
-  print()
-  print("dS:")
-  let dS = (0..<N).flatMap(network.createDerivativeSRow(rowID:))
-  printSquareMatrix(dS)
-  
-  print()
-  print("O:")
   let O = network.inferenceAttention()
-  printMatrix(O)
-  
-  print()
-  print("L_terms:")
   let LTerms = (0..<N).map(network.createLTerm(rowID:))
-  printVector(LTerms)
-  
-  print()
-  print("D_terms:")
   let DTerms = (0..<N).map(network.createDTerm(rowID:))
-  printVector(DTerms)
-  
-  print()
-  print("dQ:")
+  let dV = network.derivativeV()
   let dQ = network.derivativeQ()
-  printMatrix(dQ)
   
   var attentionDesc = AttentionDescriptor()
   attentionDesc.matrixDimensions = (R: UInt32(N), C: UInt32(N), D: UInt16(D))
@@ -156,11 +145,17 @@ func executeScript() {
   var resultO = [Float](repeating: .zero, count: N * D)
   var resultLTerms = [Float](repeating: .zero, count: N)
   var resultDTerms = [Float](repeating: .zero, count: N)
+  var resultDerivativeV = [Float](repeating: .zero, count: N * D)
+  var resultDerivativeK = [Float](repeating: .zero, count: N * D)
   var resultDerivativeQ = [Float](repeating: .zero, count: N * D)
   
   let bufferO = MTLContext.global.createBuffer(resultO, .FP32)
   let bufferLTerms = MTLContext.global.createBuffer(resultLTerms, .FP32)
   let bufferDTerms = MTLContext.global.createBuffer(resultDTerms, .FP32)
+  let bufferDerivativeV = MTLContext.global
+    .createBuffer(resultDerivativeV, .FP32)
+  let bufferDerivativeK = MTLContext.global
+    .createBuffer(resultDerivativeK, .FP32)
   let bufferDerivativeQ = MTLContext.global
     .createBuffer(resultDerivativeQ, .FP32)
   
@@ -177,18 +172,24 @@ func executeScript() {
     
     encoder.setBuffer(bufferDerivativeO, offset: 0, index: 5)
     encoder.setBuffer(bufferDTerms, offset: 0, index: 6)
+    encoder.setBuffer(bufferDerivativeV, offset: 0, index: 7)
+    encoder.setBuffer(bufferDerivativeK, offset: 0, index: 8)
     encoder.setBuffer(bufferDerivativeQ, offset: 0, index: 9)
     
     func ceilDivide(_ target: Int, _ granularity: UInt16) -> Int {
       (target + Int(granularity) - 1) / Int(granularity)
     }
-    func dispatch(kernel: AttentionKernel, pipeline: MTLComputePipelineState) {
+    func dispatch(
+      kernel: AttentionKernel,
+      pipeline: MTLComputePipelineState,
+      along matrixSide: UInt16 // left (R/rows), top (C/columns)
+    ) {
       encoder.setComputePipelineState(pipeline)
       encoder.setThreadgroupMemoryLength(
         Int(kernel.threadgroupMemoryAllocation), index: 0)
       
       let gridSize = MTLSize(
-        width: ceilDivide(N, kernel.blockDimensions.R),
+        width: ceilDivide(N, matrixSide),
         height: 1,
         depth: 1)
       let groupSize = MTLSize(
@@ -201,10 +202,16 @@ func executeScript() {
     
     dispatch(
       kernel: kernelForward, 
-      pipeline: pipelineForward)
+      pipeline: pipelineForward,
+      along: kernelForward.blockDimensions.R)
     dispatch(
       kernel: kernelBackwardQuery,
-      pipeline: pipelineBackwardQuery)
+      pipeline: pipelineBackwardQuery,
+      along: kernelBackwardQuery.blockDimensions.R)
+    dispatch(
+      kernel: kernelBackwardKeyValue,
+      pipeline: pipelineBackwardKeyValue,
+      along: kernelBackwardKeyValue.blockDimensions.C)
     
     encoder.endEncoding()
     commandBuffer.commit()
@@ -222,29 +229,23 @@ func executeScript() {
   MTLContext.copy(bufferO, into: &resultO)
   MTLContext.copy(bufferLTerms, into: &resultLTerms)
   MTLContext.copy(bufferDTerms, into: &resultDTerms)
-  MTLContext.copy(bufferDerivativeQ, into: &resultDerivativeQ)
   for i in resultLTerms.indices {
     resultLTerms[i] /= 1.44269504089
   }
   for i in resultDTerms.indices {
     resultDTerms[i] /= 1 / Float(D).squareRoot()
   }
+  MTLContext.copy(bufferDerivativeV, into: &resultDerivativeV)
+  MTLContext.copy(bufferDerivativeK, into: &resultDerivativeK)
+  MTLContext.copy(bufferDerivativeQ, into: &resultDerivativeQ)
   
   print()
-  print("O:")
-  printMatrix(resultO)
+  print("dV:")
+  printMatrix(dV)
   
   print()
-  print("L_terms:")
-  printVector(resultLTerms)
-  
-  print()
-  print("D_terms:")
-  printVector(resultDTerms)
-  
-  print()
-  print("dQ:")
-  printMatrix(resultDerivativeQ)
+  print("dV:")
+  printMatrix(resultDerivativeV)
   
   #if true
   // Check the results.
@@ -270,6 +271,7 @@ func executeScript() {
   check(expected: O, actual: resultO)
   check(expected: LTerms, actual: resultLTerms)
   check(expected: DTerms, actual: resultDTerms)
+  check(expected: dV, actual: resultDerivativeV)
   check(expected: dQ, actual: resultDerivativeQ)
   if errorCount > 0 {
     print("Could not benchmark performance because results were incorrect.")

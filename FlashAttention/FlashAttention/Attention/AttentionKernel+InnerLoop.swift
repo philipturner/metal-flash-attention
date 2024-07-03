@@ -194,7 +194,7 @@ extension AttentionKernel {
     // S^T = K * Q^T
     threadgroup_barrier(mem_flags::mem_threadgroup);
     \(computeST())
-
+    
     // P^T = exp(S^T - L)
     \(checkpointSoftmaxT())
     
@@ -209,11 +209,11 @@ extension AttentionKernel {
     
     // dP^T = V * dO^T
     // computeDerivativePT()
-
+    
     // dS^T = P^T * (dP^T - D) * scaleFactor
     // Written similarly to backward query.
   }
-
+  
 """
   }
 }
@@ -386,11 +386,6 @@ extension AttentionKernel {
     }
     
 """
-  }
-  
-  // Prevent zero padding from causing undefined behavior.
-  func maskAlongRows(sram: String) -> String {
-    fatalError("Not implemented.")
   }
 }
 
