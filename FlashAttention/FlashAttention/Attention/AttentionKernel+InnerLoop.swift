@@ -103,6 +103,33 @@ extension AttentionKernel {
     
     // (m, l, P) = softmax(m, l, S * scaleFactor)
     \(onlineSoftmax())
+    
+    if (sidx == 0 && lane_id == 0) {
+      O[0] = P_sram[0].thread_elements()->x;
+      O[1] = P_sram[0].thread_elements()->y;
+      O[2] = P_sram[1].thread_elements()->x;
+      O[3] = P_sram[1].thread_elements()->y;
+      O[4] = P_sram[2].thread_elements()->x;
+      O[5] = P_sram[2].thread_elements()->y;
+      O[6] = P_sram[3].thread_elements()->x;
+      O[7] = P_sram[3].thread_elements()->y;
+      
+      // -340282346638528859811704183484516925440
+      // ->
+      // -333564528624064975443906918597070422016
+      //
+      // -inf
+      // ->
+      // -340282346638528859811704183484516925440
+      //
+      // 0
+      // ->
+      O[8] = S_sram[3].thread_elements()->x * (M_LOG2E_F / sqrt(float(D))) * 1.1;
+      O[9] = S_sram[3].thread_elements()->y * (M_LOG2E_F / sqrt(float(D))) * 1.1;
+
+      O[16] = m;
+      O[17] = l;
+    }
 
     // load V[c]
     threadgroup_barrier(mem_flags::mem_threadgroup);
@@ -112,6 +139,7 @@ extension AttentionKernel {
     threadgroup_barrier(mem_flags::mem_threadgroup);
     \(accumulateO)
   }
+  return;
   
   // O /= l
   float l_reciprocal = 1 / l;
@@ -120,7 +148,7 @@ extension AttentionKernel {
    *(O_sram[d / 8].thread_elements()) *= l_reciprocal;
   }
   
-O_sram[0] = m;
+O_sram[0] = simdgroup_matrix_storage<float>(float2(m, l));
 
 """
   }
@@ -410,23 +438,32 @@ extension AttentionKernel {
   
   // Prevent the zero padding from changing the values of 'm' and 'l'.
   func maskAlongColumns(sram: String) -> String {
+    let scaleFactor = "(M_LOG2E_F / sqrt(float(D)))"
+    
     return """
     
     if ((C % 32 != 0) && (c + 32 > C)) {
       const ushort remainder32 = uint(C % 32);
       const ushort remainder32_floor = remainder32 - ushort(remainder32 % 8);
       
+      // Prevent the value from becoming -INF during the FMA before the
+      // exponentiation. If the multiplication during FMA returns -INF,
+      // subtracting a positive 'm' value will turn it into zero. We don't want
+      // that. exp(0) evaluates to 1.00 and corrupts the value of 'l'.
+      const float mask_value =
+      -numeric_limits<float>::max() / \(scaleFactor) * 0.875;
+      
 #pragma clang loop unroll(full)
       for (ushort index = 0; index < 2; ++index) {
         if (morton_offset.x + index >= remainder32 - remainder32_floor) {
           auto S_elements = \(sram)[remainder32_floor / 8].thread_elements();
-          (*S_elements)[index] = -numeric_limits<float>::max();
+          (*S_elements)[index] = mask_value;
         }
       }
 #pragma clang loop unroll(full)
       for (ushort c = remainder32_floor + 8; c < 32; c += 8) {
         auto S_elements = \(sram)[c / 8].thread_elements();
-        *S_elements = -numeric_limits<float>::max();
+        *S_elements = mask_value;
       }
     }
     

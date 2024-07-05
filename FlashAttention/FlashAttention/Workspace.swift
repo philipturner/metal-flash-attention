@@ -18,10 +18,18 @@ func executeScript() {
   // done for accurate insights into performance). For now, working on the
   // greatest bottleneck: getting any test at all, of attention being done
   // entirely on the GPU.
+  //
+  // Tasks:
+  // - Clean up after fixing this bug.
+  // - Benchmark performance for single-headed attention.
+  // - Benchmark performance on iPad.
+  // - Get a correctness test for naive attention.
+  // - Compare the performance of the two algorithms.
+  // - Optimize any severe bottlenecks before releasing.
   print("Hello, console.")
   
   // Define the problem dimensions.
-  let N: Int = 1
+  let N: Int = 24
   let D: Int = 2
   
   // Test N=25, D=2

@@ -154,6 +154,7 @@ extension Network {
         sum += expTerm
       }
       print("m[\(rowID)] = \(maximum * 1.44269504089)")
+      print("l[\(rowID)] = \(sum)")
       
       let lse = maximum + Float.log(sum)
       for columnID in 0..<N {
