@@ -189,7 +189,7 @@ extension AttentionKernel {
 """
   }
   
-  func createInnerLoopValue() -> String {
+  func createInnerLoopKeyValue(computeDerivativeK: Bool) -> String {
     var accessDesc = AttentionHBMAccessDescriptor()
     accessDesc.index = "r"
     accessDesc.leadingBlockDimension = leadingBlockDimensions.Q
@@ -217,8 +217,8 @@ extension AttentionKernel {
     accumulateDesc.transposeStateRHS = transposeState.Q
     let accumulateDerivativeK = accumulate(descriptor: accumulateDesc)
     
-    return """
-  
+    var output = """
+
   // Iterate over the rows.
   for (uint r = 0; r < R; r += 32) {
     // load Q[r]
@@ -247,7 +247,12 @@ extension AttentionKernel {
     
     // dS^T = P^T * (dP^T - D) * scaleFactor
     \(computeDerivativeSoftmaxT())
+
+"""
     
+    if computeDerivativeK {
+      output += """
+  
     // load Q[r]
     threadgroup_barrier(mem_flags::mem_threadgroup);
     \(prefetchQ)
@@ -258,6 +263,31 @@ extension AttentionKernel {
   }
   
 """
+    } else {
+      output += """
+
+    // store dS^T[c][r]
+    {
+      uint2 device_origin(r, gid * 32 + sidx * 8);
+      device_origin += uint2(morton_offset);
+      device float* dst =
+      simdgroup_matrix_storage<float>::apply_offset(
+        dST, \(leadingDimensionDerivativeST), device_origin, false);
+      
+#pragma clang loop unroll(full)
+      for (ushort c = 0; c < 32; c += 8) {
+        // TODO: Return to store_bfloat after debugging correctness.
+        ushort2 thread_origin(c, 0);
+        dST_sram[c / 8].store(
+          dst, \(leadingDimensionDerivativeST), thread_origin, false);
+      }
+    }
+  }
+
+"""
+    }
+    
+    return output
   }
 }
 

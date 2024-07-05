@@ -121,6 +121,13 @@ struct GEMMKernelDescriptor {
   /// The device to create the kernel on.
   var device: MTLDevice?
   
+  /// Customize the code that generates leading dimensions.
+  ///
+  /// This is a modification to the unified GEMM kernel, added to make it
+  /// easier to test an attention variant. It does not belong in the upstream
+  /// kernel itself; it would just be technical debt.
+  var leadingDimensions: (A: String, B: String)?
+  
   /// Optional. The layout of elements in threadgroup memory.
   ///
   /// If not specified, the default value matches the actual block dimensions.

@@ -20,13 +20,10 @@ func executeScript() {
   // entirely on the GPU.
   //
   // Tasks:
-  // - Clean up after fixing this bug.
-  // - Benchmark performance for single-headed attention.
-  // - Benchmark performance on iPad.
-  // - Get a correctness test for naive attention.
-  // - Compare the performance of the two algorithms.
-  // - Optimize any severe bottlenecks before releasing.
+  // - Support the attention variant that stores dS^T to memory.
+  // - Compare performance with FP32 and BF16 storage.
   
+  #if false
   // Define the problem dimensions.
   let N: Int = 128
   
@@ -41,7 +38,11 @@ func executeScript() {
     print(sample, terminator: ", ")
   }
   print()
+  #else
   
+  // The bug happens whenever D < N.
+  _ = profileProblemSize(N: 64, D: 32)
+  #endif
 }
 
 func profileProblemSize(N: Int, D: Int) -> Int {
@@ -88,9 +89,17 @@ func profileProblemSize(N: Int, D: Int) -> Int {
   
   // Displays a matrix with dimensions N * N.
   func printSquareMatrix(_ matrix: [Float]) {
-    for rowID in 0..<min(N, 10) {
-      for columnID in 0..<min(N, 10) {
-        let matrixAddress = rowID * N + columnID
+    var matrixDimensionFloat = Double(matrix.count)
+    matrixDimensionFloat.formSquareRoot()
+    matrixDimensionFloat.round(.toNearestOrEven)
+    let matrixDimensionInt = Int(matrixDimensionFloat)
+    guard matrixDimensionInt * matrixDimensionInt == matrix.count else {
+      fatalError("Unable to take square root of integer.")
+    }
+    
+    for rowID in 0..<min(matrixDimensionInt, 10) {
+      for columnID in 0..<min(matrixDimensionInt, 10) {
+        let matrixAddress = rowID * matrixDimensionInt + columnID
         let matrixValue = matrix[matrixAddress]
         var repr = String(format: "%.3f", matrixValue)
         while repr.count < 8 {
@@ -102,7 +111,7 @@ func profileProblemSize(N: Int, D: Int) -> Int {
     }
   }
   
-#if false
+#if true
   // Display the attention matrices.
   do {
     print()
@@ -131,7 +140,6 @@ func profileProblemSize(N: Int, D: Int) -> Int {
   let DTerms = (0..<N).map(network.createDTerm(rowID:))
   let dV = network.derivativeV()
   let dK = network.derivativeK()
-  let dQ = network.derivativeQ()
 #endif
   
   var attentionDesc = AttentionDescriptor()
@@ -142,11 +150,28 @@ func profileProblemSize(N: Int, D: Int) -> Int {
   attentionDesc.type = .forward(true)
   let kernelForward = AttentionKernel(descriptor: attentionDesc)
   
-  attentionDesc.type = .backwardQuery(true)
+  attentionDesc.type = .backwardQuery(false)
   let kernelBackwardQuery = AttentionKernel(descriptor: attentionDesc)
   
-  attentionDesc.type = .backwardKeyValue(true)
+  attentionDesc.type = .backwardKeyValue(false)
   let kernelBackwardKeyValue = AttentionKernel(descriptor: attentionDesc)
+  
+  // dK = dS^T Q
+  var gemmDerivativeK: GEMMKernel
+  do {
+    // MxNxK (BLAS notation) <-> NxDxN (Attention notation)
+    var gemmDesc = GEMMDescriptor()
+    gemmDesc.matrixDimensions = (M: UInt32(N), N: UInt32(D), K: UInt32(N))
+    gemmDesc.memoryPrecisions = (A: .FP32, B: .FP32, C: .FP32)
+    gemmDesc.transposeState = (A: false, B: false)
+    
+    var gemmKernelDesc = GEMMKernelDescriptor(descriptor: gemmDesc)
+    gemmKernelDesc.device = MTLContext.global.device
+    gemmKernelDesc.leadingDimensions = (
+      "\(kernelBackwardKeyValue.leadingDimensionDerivativeST)", "N")
+    gemmKernelDesc.preferAsyncStore = true
+    gemmDerivativeK = GEMMKernel(descriptor: gemmKernelDesc)
+  }
   
   func createPipeline(kernel: AttentionKernel) -> MTLComputePipelineState {
     // Set the function constants.
@@ -164,9 +189,26 @@ func profileProblemSize(N: Int, D: Int) -> Int {
       name: "attention", constantValues: constants)
     return try! device.makeComputePipelineState(function: function)
   }
+  func createPipeline(library: MTLLibrary) -> MTLComputePipelineState {
+    // Set the function constants.
+    let constants = MTLFunctionConstantValues()
+    var M = UInt32(N)
+    var N = UInt32(D)
+    var K = UInt32(N)
+    constants.setConstantValue(&M, type: .uint, index: 0)
+    constants.setConstantValue(&N, type: .uint, index: 1)
+    constants.setConstantValue(&K, type: .uint, index: 2)
+    
+    let device = MTLContext.global.device
+    let function = try! library.makeFunction(
+      name: "gemm", constantValues: constants)
+    let pipeline = try! device.makeComputePipelineState(function: function)
+    return pipeline
+  }
   let pipelineForward = createPipeline(kernel: kernelForward)
   let pipelineBackwardQuery = createPipeline(kernel: kernelBackwardQuery)
   let pipelineBackwardKeyValue = createPipeline(kernel: kernelBackwardKeyValue)
+  let pipelineDerivativeK = createPipeline(library: gemmDerivativeK.library)
   
   let bufferQ = MTLContext.global.createBuffer(network.Q, .FP32)
   let bufferK = MTLContext.global.createBuffer(network.K, .FP32)
@@ -177,43 +219,34 @@ func profileProblemSize(N: Int, D: Int) -> Int {
   var resultLTerms = [Float](repeating: .zero, count: N)
   var resultDTerms = [Float](repeating: .zero, count: N)
   var resultDerivativeV = [Float](repeating: .zero, count: N * D)
-  var resultDerivativeK = [Float](repeating: .zero, count: N * D)
-  var resultDerivativeQ = [Float](repeating: .zero, count: N * D)
-  
   let bufferO = MTLContext.global.createBuffer(resultO, .FP32)
   let bufferLTerms = MTLContext.global.createBuffer(resultLTerms, .FP32)
   let bufferDTerms = MTLContext.global.createBuffer(resultDTerms, .FP32)
   let bufferDerivativeV = MTLContext.global
     .createBuffer(resultDerivativeV, .FP32)
+  
+  let N_padded = Int(kernelBackwardKeyValue.leadingDimensionDerivativeST)
+  var resultDerivativeST = [Float](repeating: .zero, count: N_padded * N_padded)
+  var resultDerivativeK = [Float](repeating: .zero, count: N * D)
+  let bufferDerivativeST = MTLContext.global
+    .createBuffer(resultDerivativeST, .FP32)
   let bufferDerivativeK = MTLContext.global
     .createBuffer(resultDerivativeK, .FP32)
-  let bufferDerivativeQ = MTLContext.global
-    .createBuffer(resultDerivativeQ, .FP32)
   
   // - Parameter dispatchCount: Number of times to duplicate the FWD / BWD
   //                            combined pass.
   // - Returns: Latency of the entire command buffer, in seconds.
   @discardableResult
-  func executeCommandBuffer(dispatchCount: Int) -> Double {
+  func executeCommandBuffer() -> Double {
     let commandQueue = MTLContext.global.commandQueue
     let commandBuffer = commandQueue.makeCommandBuffer()!
     let encoder = commandBuffer.makeComputeCommandEncoder()!
     
-    encoder.setBuffer(bufferQ, offset: 0, index: 0)
-    encoder.setBuffer(bufferK, offset: 0, index: 1)
-    encoder.setBuffer(bufferV, offset: 0, index: 2)
-    encoder.setBuffer(bufferO, offset: 0, index: 3)
-    encoder.setBuffer(bufferLTerms, offset: 0, index: 4)
-    
-    encoder.setBuffer(bufferDerivativeO, offset: 0, index: 5)
-    encoder.setBuffer(bufferDTerms, offset: 0, index: 6)
-    encoder.setBuffer(bufferDerivativeV, offset: 0, index: 7)
-    encoder.setBuffer(bufferDerivativeK, offset: 0, index: 8)
-    encoder.setBuffer(bufferDerivativeQ, offset: 0, index: 9)
-    
     func ceilDivide(_ target: Int, _ granularity: UInt16) -> Int {
       (target + Int(granularity) - 1) / Int(granularity)
     }
+    
+    // Bind all necessary MTLBuffer arguments before calling this function.
     func dispatch(
       kernel: AttentionKernel,
       pipeline: MTLComputePipelineState,
@@ -235,22 +268,56 @@ func profileProblemSize(N: Int, D: Int) -> Int {
         gridSize, threadsPerThreadgroup: groupSize)
     }
     
-    for _ in 0..<dispatchCount {
-      if dispatchCount == 1 {
-        dispatch(
-          kernel: kernelForward,
-          pipeline: pipelineForward,
-          along: kernelForward.blockDimensions.R)
-        dispatch(
-          kernel: kernelBackwardQuery,
-          pipeline: pipelineBackwardQuery,
-          along: kernelBackwardQuery.blockDimensions.R)
-      }
-      dispatch(
-        kernel: kernelBackwardKeyValue,
-        pipeline: pipelineBackwardKeyValue,
-        along: kernelBackwardKeyValue.blockDimensions.C)
+    // Bind all necessary MTLBuffer arguments before calling this function.
+    func dispatch(
+      kernel: GEMMKernel,
+      pipeline: MTLComputePipelineState
+    ) {
+      encoder.setComputePipelineState(pipeline)
+      encoder.setThreadgroupMemoryLength(
+        Int(kernel.threadgroupMemoryAllocation), index: 0)
+      
+      let gridSize = MTLSize(
+        width: ceilDivide(D, kernel.blockDimensions.N),
+        height: ceilDivide(N, kernel.blockDimensions.M),
+        depth: 1)
+      let groupSize = MTLSize(
+        width: Int(kernel.threadgroupSize),
+        height: 1,
+        depth: 1)
+      encoder.dispatchThreadgroups(
+        gridSize, threadsPerThreadgroup: groupSize)
     }
+    
+    encoder.setBuffer(bufferQ, offset: 0, index: 0)
+    encoder.setBuffer(bufferK, offset: 0, index: 1)
+    encoder.setBuffer(bufferV, offset: 0, index: 2)
+    encoder.setBuffer(bufferO, offset: 0, index: 3)
+    encoder.setBuffer(bufferLTerms, offset: 0, index: 4)
+    
+    encoder.setBuffer(bufferDerivativeO, offset: 0, index: 5)
+    encoder.setBuffer(bufferDTerms, offset: 0, index: 6)
+    encoder.setBuffer(bufferDerivativeV, offset: 0, index: 7)
+    encoder.setBuffer(bufferDerivativeST, offset: 0, index: 8)
+    dispatch(
+      kernel: kernelForward,
+      pipeline: pipelineForward,
+      along: kernelForward.blockDimensions.R)
+    dispatch(
+      kernel: kernelBackwardQuery,
+      pipeline: pipelineBackwardQuery,
+      along: kernelBackwardQuery.blockDimensions.R)
+    dispatch(
+      kernel: kernelBackwardKeyValue,
+      pipeline: pipelineBackwardKeyValue,
+      along: kernelBackwardKeyValue.blockDimensions.C)
+    
+    encoder.setBuffer(bufferDerivativeST, offset: 0, index: 0)
+    encoder.setBuffer(bufferQ, offset: 0, index: 1)
+    encoder.setBuffer(bufferDerivativeK, offset: 0, index: 2)
+    dispatch(
+      kernel: gemmDerivativeK,
+      pipeline: pipelineDerivativeK)
     
     encoder.endEncoding()
     commandBuffer.commit()
@@ -260,9 +327,10 @@ func profileProblemSize(N: Int, D: Int) -> Int {
     let start = commandBuffer.gpuStartTime
     let end = commandBuffer.gpuEndTime
     let latency = end - start
+    print("latency:", Int(latency * 1e6))
     return latency
   }
-  executeCommandBuffer(dispatchCount: 1)
+  executeCommandBuffer()
   
   // Copy the results.
   MTLContext.copy(bufferO, into: &resultO)
@@ -275,10 +343,19 @@ func profileProblemSize(N: Int, D: Int) -> Int {
     resultDTerms[i] /= 1 / Float(D).squareRoot()
   }
   MTLContext.copy(bufferDerivativeV, into: &resultDerivativeV)
+  MTLContext.copy(
+    bufferDerivativeST, into: &resultDerivativeST, precision: .FP32)
   MTLContext.copy(bufferDerivativeK, into: &resultDerivativeK)
-  MTLContext.copy(bufferDerivativeQ, into: &resultDerivativeQ)
   
-#if false
+#if true
+  print()
+  print("dST:")
+  printSquareMatrix(resultDerivativeST)
+  
+  print()
+  print("Q:")
+  printMatrix(network.Q)
+  
   print()
   print("V:")
   printMatrix(network.V)
@@ -322,17 +399,9 @@ func profileProblemSize(N: Int, D: Int) -> Int {
   print()
   print("dK:")
   printMatrix(resultDerivativeK)
-  
-  print()
-  print("dQ:")
-  printMatrix(dQ)
-  
-  print()
-  print("dQ:")
-  printMatrix(resultDerivativeQ)
 #endif
   
-#if false
+#if true
   // Check the results.
   let errorThreshold: Float = 1e-5
   var errorCount: Int = .zero
@@ -359,14 +428,14 @@ func profileProblemSize(N: Int, D: Int) -> Int {
   check(expected: LTerms, actual: resultLTerms)
   check(expected: DTerms, actual: resultDTerms)
   check(expected: dV, actual: resultDerivativeV)
-  check(expected: dK, actual: resultDerivativeK)
-  check(expected: dQ, actual: resultDerivativeQ)
   if errorCount > 0 {
     print("Could not benchmark performance because results were incorrect.")
     return 0
   }
 #endif
+  return 0
   
+  #if false
   // Benchmark performance.
   print()
   var maxGINSTRS: Int = .zero
@@ -377,9 +446,8 @@ func profileProblemSize(N: Int, D: Int) -> Int {
     
     // Determine the amount of work done.
     var operations: Int = .zero
-    // operations += (2 * D + 5) * (N * N) // forward pass
-    // operations += (5 * D + 5) * (N * N) // backward pass
-    operations = (4 * D + 5) * (N * N) // isolated pass
+    operations += (2 * D + 5) * (N * N) // forward pass
+    operations += (5 * D + 5) * (N * N) // backward pass
     operations *= dispatchCount
     
     // Divide the work by the latency, resulting in throughput.
@@ -391,6 +459,7 @@ func profileProblemSize(N: Int, D: Int) -> Int {
     maxGINSTRS = max(maxGINSTRS, gintrs)
   }
   return maxGINSTRS
+  #endif
 }
 
 #endif

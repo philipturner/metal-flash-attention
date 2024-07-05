@@ -128,17 +128,17 @@ using namespace metal;
     var leadingBlockDimensionA: UInt16
     var leadingBlockDimensionB: UInt16
     if transposeState.A {
-      leadingDimensionA = "M"
+      leadingDimensionA = descriptor.leadingDimensions?.A ?? "M"
       leadingBlockDimensionA = paddedBlockDimensionsA.M
     } else {
-      leadingDimensionA = "K"
+      leadingDimensionA = descriptor.leadingDimensions?.A ?? "K"
       leadingBlockDimensionA = paddedBlockDimensionsA.K
     }
     if transposeState.B {
-      leadingDimensionB = "K"
+      leadingDimensionB = descriptor.leadingDimensions?.B ?? "K"
       leadingBlockDimensionB = paddedBlockDimensionsB.K
     } else {
-      leadingDimensionB = "N"
+      leadingDimensionB = descriptor.leadingDimensions?.B ?? "N"
       leadingBlockDimensionB = paddedBlockDimensionsB.N
     }
     

@@ -38,6 +38,9 @@ struct AttentionKernel {
   // for D.
   var blockDimensions: (R: UInt16, C: UInt16, D: UInt16)
   
+  // The row stride of the intermediate attention matrix.
+  var leadingDimensionDerivativeST: UInt32
+  
   // If you allocate threadgroup memory after compiling the kernel, the code
   // has higher performance.
   var threadgroupMemoryAllocation: UInt16
@@ -86,6 +89,8 @@ using namespace metal;
       leadingDimensions.O = "R"
       leadingBlockDimensions.O = 32
     }
+    leadingDimensionDerivativeST = matrixDimensions.C + 32 - 1
+    leadingDimensionDerivativeST = leadingDimensionDerivativeST / 32 * 32
     
     blockDimensions = (R: 32, C: 32, D: paddedD)
     threadgroupMemoryAllocation = .zero
@@ -124,11 +129,8 @@ kernel void attention(
       // R_group * sizeof(float)
       threadgroupMemoryAllocation += 32 * 4
       
-      if computeDerivativeK {
-        source += createInnerLoopValue()
-      } else {
-        fatalError("key-value (false) is not implemented.")
-      }
+      source += createInnerLoopKeyValue(
+        computeDerivativeK: computeDerivativeK)
     }
     source += createCleanup(type: type)
     source += """
@@ -166,7 +168,7 @@ extension AttentionKernel {
       precision: memoryPrecisions.O.backwardPrecision, bufferBinding: 6)
     operandsMap["dV"] = AttentionOperand(
       precision: memoryPrecisions.V.backwardPrecision, bufferBinding: 7)
-    operandsMap["dS"] = AttentionOperand(
+    operandsMap["dST"] = AttentionOperand(
       // The default kernel doesn't support writing the attention matrix to
       // memory. The purpose of dS is to increase performance when possible. If
       // users wanted to set dS to FP32 for correctness, that would defeat the
@@ -182,7 +184,19 @@ extension AttentionKernel {
       //
       // Idea: "attentionMatrixPrecision". This property equals both the
       // register type and the type when paged to memory.
-      precision: AttentionOperandPrecision.mixed.backwardPrecision,
+      
+      // This is an intermediate allocation, managed internally by the MFA
+      // backend. We can impose constraints on it that wouldn't typically be
+      // feasible. For example, we can force the row stride to be divisible by
+      // the block size (32). This simplifies the code; we don't need to run
+      // async copies to safeguard against corrupted memory accesses.
+      //
+      // If the matrix rows are noncontiguous, we must modify the in-tree
+      // GEMM kernel to support custom leading dimensions. This can be
+      // something handled explicitly by the user - an option to override the
+      // default leading dimension.
+      //
+      precision: AttentionOperandPrecision.full.backwardPrecision,
       bufferBinding: 8)
     operandsMap["dK"] = AttentionOperand(
       precision: memoryPrecisions.K.backwardPrecision, bufferBinding: 8)
@@ -218,7 +232,7 @@ extension AttentionKernel {
       if computeDerivativeK {
         operandKeys.append("dK")
       } else {
-        operandKeys.append("dS")
+        operandKeys.append("dST")
       }
     }
     
