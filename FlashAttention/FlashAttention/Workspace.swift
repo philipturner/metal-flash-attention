@@ -26,13 +26,29 @@ func executeScript() {
   // - Get a correctness test for naive attention.
   // - Compare the performance of the two algorithms.
   // - Optimize any severe bottlenecks before releasing.
-  print("Hello, console.")
   
   // Define the problem dimensions.
-  let N: Int = 10
-  let D: Int = 80
+  let N: Int = 128
   
-  // Test N=10, D=3
+  var samples: [Int] = []
+  for D in [32, 64, 128, 192] {
+    let performance = profileProblemSize(N: N, D: D)
+    samples.append(performance)
+  }
+  
+  print()
+  for sample in samples {
+    print(sample, terminator: ", ")
+  }
+  print()
+  
+}
+
+func profileProblemSize(N: Int, D: Int) -> Int {
+  //
+  // Correctness tests:
+  //
+  // Test N=10, D=3/80
   // Test N=8/9/24/25, D=2
   // Test N=192, D=80
   
@@ -86,6 +102,7 @@ func executeScript() {
     }
   }
   
+#if false
   // Display the attention matrices.
   do {
     print()
@@ -115,6 +132,7 @@ func executeScript() {
   let dV = network.derivativeV()
   let dK = network.derivativeK()
   let dQ = network.derivativeQ()
+#endif
   
   var attentionDesc = AttentionDescriptor()
   attentionDesc.matrixDimensions = (R: UInt32(N), C: UInt32(N), D: UInt16(D))
@@ -172,7 +190,11 @@ func executeScript() {
   let bufferDerivativeQ = MTLContext.global
     .createBuffer(resultDerivativeQ, .FP32)
   
-  do {
+  // - Parameter dispatchCount: Number of times to duplicate the FWD / BWD
+  //                            combined pass.
+  // - Returns: Latency of the entire command buffer, in seconds.
+  @discardableResult
+  func executeCommandBuffer(dispatchCount: Int) -> Double {
     let commandQueue = MTLContext.global.commandQueue
     let commandBuffer = commandQueue.makeCommandBuffer()!
     let encoder = commandBuffer.makeComputeCommandEncoder()!
@@ -213,18 +235,22 @@ func executeScript() {
         gridSize, threadsPerThreadgroup: groupSize)
     }
     
-    dispatch(
-      kernel: kernelForward, 
-      pipeline: pipelineForward,
-      along: kernelForward.blockDimensions.R)
-    dispatch(
-      kernel: kernelBackwardQuery,
-      pipeline: pipelineBackwardQuery,
-      along: kernelBackwardQuery.blockDimensions.R)
-    dispatch(
-      kernel: kernelBackwardKeyValue,
-      pipeline: pipelineBackwardKeyValue,
-      along: kernelBackwardKeyValue.blockDimensions.C)
+    for _ in 0..<dispatchCount {
+      if dispatchCount == 1 {
+        dispatch(
+          kernel: kernelForward,
+          pipeline: pipelineForward,
+          along: kernelForward.blockDimensions.R)
+        dispatch(
+          kernel: kernelBackwardQuery,
+          pipeline: pipelineBackwardQuery,
+          along: kernelBackwardQuery.blockDimensions.R)
+      }
+      dispatch(
+        kernel: kernelBackwardKeyValue,
+        pipeline: pipelineBackwardKeyValue,
+        along: kernelBackwardKeyValue.blockDimensions.C)
+    }
     
     encoder.endEncoding()
     commandBuffer.commit()
@@ -234,9 +260,9 @@ func executeScript() {
     let start = commandBuffer.gpuStartTime
     let end = commandBuffer.gpuEndTime
     let latency = end - start
-    let latencyMicroseconds = Int(latency / 1e-6)
-    print(latencyMicroseconds, "μs")
+    return latency
   }
+  executeCommandBuffer(dispatchCount: 1)
   
   // Copy the results.
   MTLContext.copy(bufferO, into: &resultO)
@@ -252,6 +278,7 @@ func executeScript() {
   MTLContext.copy(bufferDerivativeK, into: &resultDerivativeK)
   MTLContext.copy(bufferDerivativeQ, into: &resultDerivativeQ)
   
+#if false
   print()
   print("V:")
   printMatrix(network.V)
@@ -303,8 +330,9 @@ func executeScript() {
   print()
   print("dQ:")
   printMatrix(resultDerivativeQ)
+#endif
   
-  #if true
+#if false
   // Check the results.
   let errorThreshold: Float = 1e-5
   var errorCount: Int = .zero
@@ -327,19 +355,42 @@ func executeScript() {
     }
   }
   
-//  check(expected: O, actual: resultO)
-//  check(expected: LTerms, actual: resultLTerms)
-//  check(expected: DTerms, actual: resultDTerms)
-//  check(expected: dV, actual: resultDerivativeV)
-//  check(expected: dK, actual: resultDerivativeK)
-//  check(expected: dQ, actual: resultDerivativeQ)
+  check(expected: O, actual: resultO)
+  check(expected: LTerms, actual: resultLTerms)
+  check(expected: DTerms, actual: resultDTerms)
+  check(expected: dV, actual: resultDerivativeV)
+  check(expected: dK, actual: resultDerivativeK)
+  check(expected: dQ, actual: resultDerivativeQ)
   if errorCount > 0 {
     print("Could not benchmark performance because results were incorrect.")
-    return
+    return 0
   }
-  #endif
+#endif
   
-  
+  // Benchmark performance.
+  print()
+  var maxGINSTRS: Int = .zero
+  for _ in 0..<5 {
+    let dispatchCount: Int = 5
+    let latencySeconds = executeCommandBuffer(dispatchCount: dispatchCount)
+    let latencyMicroseconds = Int(latencySeconds * 1e6)
+    
+    // Determine the amount of work done.
+    var operations: Int = .zero
+    // operations += (2 * D + 5) * (N * N) // forward pass
+    // operations += (5 * D + 5) * (N * N) // backward pass
+    operations = (4 * D + 5) * (N * N) // isolated pass
+    operations *= dispatchCount
+    
+    // Divide the work by the latency, resulting in throughput.
+    let intrs = Double(operations) / Double(latencySeconds)
+    let gintrs = Int(intrs / 1e9)
+    print(gintrs, "GINSTRS", "-", latencyMicroseconds, "μs")
+    
+    // Accumulate the sample from this trial.
+    maxGINSTRS = max(maxGINSTRS, gintrs)
+  }
+  return maxGINSTRS
 }
 
 #endif
