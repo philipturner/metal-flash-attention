@@ -103,43 +103,38 @@ extension AttentionKernel {
     
     // (m, l, P) = softmax(m, l, S * scaleFactor)
     \(onlineSoftmax())
-    
-    if (sidx == 0 && lane_id == 0) {
-      O[0] = P_sram[0].thread_elements()->x;
-      O[1] = P_sram[0].thread_elements()->y;
-      O[2] = P_sram[1].thread_elements()->x;
-      O[3] = P_sram[1].thread_elements()->y;
-      O[4] = P_sram[2].thread_elements()->x;
-      O[5] = P_sram[2].thread_elements()->y;
-      O[6] = P_sram[3].thread_elements()->x;
-      O[7] = P_sram[3].thread_elements()->y;
-      
-      // -340282346638528859811704183484516925440
-      // ->
-      // -333564528624064975443906918597070422016
-      //
-      // -inf
-      // ->
-      // -340282346638528859811704183484516925440
-      //
-      // 0
-      // ->
-      O[8] = S_sram[3].thread_elements()->x * (M_LOG2E_F / sqrt(float(D))) * 1.1;
-      O[9] = S_sram[3].thread_elements()->y * (M_LOG2E_F / sqrt(float(D))) * 1.1;
 
-      O[16] = m;
-      O[17] = l;
+    if (sidx == 0 && lane_id == 0) {
+      O[0] = S_sram[0].thread_elements()->x;
+      O[1] = S_sram[0].thread_elements()->y;
+      O[2] = S_sram[1].thread_elements()->x;
+      O[3] = S_sram[1].thread_elements()->y;
+      O[4] = S_sram[2].thread_elements()->x;
+      O[5] = S_sram[2].thread_elements()->y;
+      O[6] = S_sram[3].thread_elements()->x;
+      O[7] = S_sram[3].thread_elements()->y;
+      O[8] = m;
+
+      O[10] = P_sram[0].thread_elements()->x;
+      O[11] = P_sram[0].thread_elements()->y;
+      O[12] = P_sram[1].thread_elements()->x;
+      O[13] = P_sram[1].thread_elements()->y;
+      O[14] = P_sram[2].thread_elements()->x;
+      O[15] = P_sram[2].thread_elements()->y;
+      O[16] = P_sram[3].thread_elements()->x;
+      O[17] = P_sram[3].thread_elements()->y;
     }
 
+    return;
+    
     // load V[c]
     threadgroup_barrier(mem_flags::mem_threadgroup);
     \(prefetchV)
-
+    
     // O += P * V
     threadgroup_barrier(mem_flags::mem_threadgroup);
     \(accumulateO)
   }
-  return;
   
   // O /= l
   float l_reciprocal = 1 / l;
@@ -148,8 +143,6 @@ extension AttentionKernel {
    *(O_sram[d / 8].thread_elements()) *= l_reciprocal;
   }
   
-O_sram[0] = simdgroup_matrix_storage<float>(float2(m, l));
-
 """
   }
   
@@ -438,8 +431,6 @@ extension AttentionKernel {
   
   // Prevent the zero padding from changing the values of 'm' and 'l'.
   func maskAlongColumns(sram: String) -> String {
-    let scaleFactor = "(M_LOG2E_F / sqrt(float(D)))"
-    
     return """
     
     if ((C % 32 != 0) && (c + 32 > C)) {
@@ -451,7 +442,9 @@ extension AttentionKernel {
       // subtracting a positive 'm' value will turn it into zero. We don't want
       // that. exp(0) evaluates to 1.00 and corrupts the value of 'l'.
       const float mask_value =
-      -numeric_limits<float>::max() / \(scaleFactor) * 0.875;
+      (0.875 / M_LOG2E_F) * -numeric_limits<float>::max();
+
+      // 0.875 - 1, 2
       
 #pragma clang loop unroll(full)
       for (ushort index = 0; index < 2; ++index) {

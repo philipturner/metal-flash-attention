@@ -29,10 +29,12 @@ func executeScript() {
   print("Hello, console.")
   
   // Define the problem dimensions.
-  let N: Int = 24
-  let D: Int = 2
+  let N: Int = 10
+  let D: Int = 80
   
-  // Test N=25, D=2
+  // Test N=10, D=3
+  // Test N=8/9/24/25, D=2
+  // Test N=192, D=80
   
   var networkDesc = NetworkDescriptor()
   networkDesc.N = N
@@ -256,47 +258,51 @@ func executeScript() {
   
   print()
   print("O:")
+  printMatrix(O)
+  
+  print()
+  print("O:")
   printMatrix(resultO)
   
-//  print()
-//  print("L_terms:")
-//  printVector(LTerms)
-//  
-//  print()
-//  print("L_terms:")
-//  printVector(resultLTerms)
-//  
-//  print()
-//  print("D_terms:")
-//  printVector(DTerms)
-//  
-//  print()
-//  print("D_terms:")
-//  printVector(resultDTerms)
-//  
-//  print()
-//  print("dV:")
-//  printMatrix(dV)
-//  
-//  print()
-//  print("dV:")
-//  printMatrix(resultDerivativeV)
-//  
-//  print()
-//  print("dK:")
-//  printMatrix(dK)
-//  
-//  print()
-//  print("dK:")
-//  printMatrix(resultDerivativeK)
-//  
-//  print()
-//  print("dQ:")
-//  printMatrix(dQ)
-//  
-//  print()
-//  print("dQ:")
-//  printMatrix(resultDerivativeQ)
+  print()
+  print("L_terms:")
+  printVector(LTerms)
+  
+  print()
+  print("L_terms:")
+  printVector(resultLTerms)
+  
+  print()
+  print("D_terms:")
+  printVector(DTerms)
+  
+  print()
+  print("D_terms:")
+  printVector(resultDTerms)
+  
+  print()
+  print("dV:")
+  printMatrix(dV)
+  
+  print()
+  print("dV:")
+  printMatrix(resultDerivativeV)
+  
+  print()
+  print("dK:")
+  printMatrix(dK)
+  
+  print()
+  print("dK:")
+  printMatrix(resultDerivativeK)
+  
+  print()
+  print("dQ:")
+  printMatrix(dQ)
+  
+  print()
+  print("dQ:")
+  printMatrix(resultDerivativeQ)
   
   #if true
   // Check the results.
