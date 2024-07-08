@@ -14,14 +14,14 @@ import QuartzCore
 /// when the 'main' branch is in a stable state. Clients can utilize this
 /// function to script tests in their fork.
 func executeScript() {
-  // Deferring profiling against naive attention to a later date (it must be
-  // done for accurate insights into performance). For now, working on the
-  // greatest bottleneck: getting any test at all, of attention being done
-  // entirely on the GPU.
-  //
   // Tasks:
   // - Support the attention variant that stores dS^T to memory.
   // - Compare performance with FP32 and BF16 storage.
+  
+  // Currently, this is scratch space for encoding the "store dS" variant of
+  // backward attention. The author was running the first performance tests
+  // ever done, for backward FlashAttention on Apple silicon. Some data is
+  // recorded, but not yet in a legible state for publication.
   
   #if true
   // Define the problem dimensions.
@@ -172,7 +172,7 @@ func profileProblemSize(N: Int, D: Int) -> Int {
     // MxNxK (BLAS notation) <-> NxDxN (Attention notation)
     var gemmDesc = GEMMDescriptor()
     gemmDesc.matrixDimensions = (M: UInt32(N), N: UInt32(D), K: UInt32(N))
-    gemmDesc.memoryPrecisions = (A: .FP32, B: .FP32, C: .FP32)
+    gemmDesc.memoryPrecisions = (A: .BF16, B: .FP32, C: .FP32)
     gemmDesc.transposeState = (A: false, B: false)
     
     var gemmKernelDesc = GEMMKernelDescriptor(descriptor: gemmDesc)
@@ -189,7 +189,7 @@ func profileProblemSize(N: Int, D: Int) -> Int {
     // MxNxK (BLAS notation) <-> NxDxN (Attention notation)
     var gemmDesc = GEMMDescriptor()
     gemmDesc.matrixDimensions = (M: UInt32(N), N: UInt32(D), K: UInt32(N))
-    gemmDesc.memoryPrecisions = (A: .FP32, B: .FP32, C: .FP32)
+    gemmDesc.memoryPrecisions = (A: .BF16, B: .FP32, C: .FP32)
     gemmDesc.transposeState = (A: true, B: false)
     
     var gemmKernelDesc = GEMMKernelDescriptor(descriptor: gemmDesc)
@@ -262,7 +262,7 @@ func profileProblemSize(N: Int, D: Int) -> Int {
   var resultDerivativeK = [Float](repeating: .zero, count: N * D)
   var resultDerivativeQ = [Float](repeating: .zero, count: N * D)
   let bufferDerivativeST = MTLContext.global
-    .createBuffer(resultDerivativeST, .FP32)
+    .createBuffer(resultDerivativeST, .BF16)
   let bufferDerivativeK = MTLContext.global
     .createBuffer(resultDerivativeK, .FP32)
   let bufferDerivativeQ = MTLContext.global
@@ -337,31 +337,36 @@ func profileProblemSize(N: Int, D: Int) -> Int {
       encoder.setBuffer(bufferDTerms, offset: 0, index: 6)
       encoder.setBuffer(bufferDerivativeV, offset: 0, index: 7)
       encoder.setBuffer(bufferDerivativeST, offset: 0, index: 8)
-      dispatch(
-        kernel: kernelForward,
-        pipeline: pipelineForward,
-        along: kernelForward.blockDimensions.R)
-      dispatch(
-        kernel: kernelBackwardQuery,
-        pipeline: pipelineBackwardQuery,
-        along: kernelBackwardQuery.blockDimensions.R)
+      if dispatchCount == 1 {
+        dispatch(
+          kernel: kernelForward,
+          pipeline: pipelineForward,
+          along: kernelForward.blockDimensions.R)
+        dispatch(
+          kernel: kernelBackwardQuery,
+          pipeline: pipelineBackwardQuery,
+          along: kernelBackwardQuery.blockDimensions.R)
+      }
       dispatch(
         kernel: kernelBackwardKeyValue,
         pipeline: pipelineBackwardKeyValue,
         along: kernelBackwardKeyValue.blockDimensions.C)
-      
       encoder.setBuffer(bufferDerivativeST, offset: 0, index: 0)
       encoder.setBuffer(bufferQ, offset: 0, index: 1)
       encoder.setBuffer(bufferDerivativeK, offset: 0, index: 2)
-      dispatch(
-        kernel: gemmDerivativeK,
-        pipeline: pipelineDerivativeK)
+      if dispatchCount == 1 {
+        dispatch(
+          kernel: gemmDerivativeK,
+          pipeline: pipelineDerivativeK)
+      }
       
       encoder.setBuffer(bufferK, offset: 0, index: 1)
       encoder.setBuffer(bufferDerivativeQ, offset: 0, index: 2)
-      dispatch(
-        kernel: gemmDerivativeQ,
-        pipeline: pipelineDerivativeQ)
+      if dispatchCount == 1 {
+        dispatch(
+          kernel: gemmDerivativeQ,
+          pipeline: pipelineDerivativeQ)
+      }
     }
     
     encoder.endEncoding()
@@ -390,10 +395,12 @@ func profileProblemSize(N: Int, D: Int) -> Int {
   }
   MTLContext.copy(bufferDerivativeV, into: &resultDerivativeV)
   MTLContext.copy(
-    bufferDerivativeST, into: &resultDerivativeST, precision: .FP32)
+    bufferDerivativeST, into: &resultDerivativeST, precision: .BF16)
   MTLContext.copy(bufferDerivativeK, into: &resultDerivativeK)
   MTLContext.copy(bufferDerivativeQ, into: &resultDerivativeQ)
+#endif
   
+#if false
   print()
   print("dST:")
   printSquareMatrix(resultDerivativeST)
@@ -458,7 +465,11 @@ func profileProblemSize(N: Int, D: Int) -> Int {
   
 #if false
   // Check the results.
-  let errorThreshold: Float = 1e-5
+  //
+  // Error thresholds:
+  // - Everything in FP32: 1e-5
+  // - Testing the "Store dS" variant with dS in BF16: 1e-2
+  let errorThreshold: Float = 1e-2
   var errorCount: Int = .zero
   func check(expected: [Float], actual: [Float]) {
     guard expected.count == actual.count else {
@@ -489,6 +500,7 @@ func profileProblemSize(N: Int, D: Int) -> Int {
     print("Could not benchmark performance because results were incorrect.")
     return 0
   }
+  return 0
 #endif
   
   #if true
@@ -502,8 +514,9 @@ func profileProblemSize(N: Int, D: Int) -> Int {
     
     // Determine the amount of work done.
     var operations: Int = .zero
-    operations += (2 * D + 5) * (N * N) // forward pass
-    operations += (5 * D + 5) * (N * N) // backward pass
+    // operations += (2 * D + 5) * (N * N) // forward pass
+    // operations += (5 * D + 5) * (N * N) // backward pass
+    operations = (3 * D + 5) * (N * N) // isolating the dV/dS kernel
     operations *= dispatchCount
     
     // Divide the work by the latency, resulting in throughput.

@@ -176,15 +176,6 @@ extension AttentionKernel {
       // contents should not be visible to any code that would measure
       // numerical correctness.
       //
-      // TODO: Find a workable way to set 'L', 'D_terms', and 'dS' terms to
-      // reasonable default values. While allowing users to override them for
-      // debugging purposes.
-      //
-      // Perhaps once a distinct 'AttentionKernelDescriptor" is coded.
-      //
-      // Idea: "attentionMatrixPrecision". This property equals both the
-      // register type and the type when paged to memory.
-      
       // This is an intermediate allocation, managed internally by the MFA
       // backend. We can impose constraints on it that wouldn't typically be
       // feasible. For example, we can force the row stride to be divisible by
@@ -193,14 +184,9 @@ extension AttentionKernel {
       //
       // If the matrix rows are noncontiguous, we must modify the in-tree
       // GEMM kernel to support custom leading dimensions. This can be
-      // something handled explicitly by the user - an option to override the
+      // something modified explicitly by the user - an option to override the
       // default leading dimension.
-      
-      //precision: AttentionOperandPrecision.mixed.backwardPrecision,
-      
-      // Debugging correctness:
-      precision: AttentionOperandPrecision.full.backwardPrecision,
-      
+      precision: AttentionOperandPrecision.mixed.backwardPrecision,
       bufferBinding: 8)
     operandsMap["dK"] = AttentionOperand(
       precision: memoryPrecisions.K.backwardPrecision, bufferBinding: 8)

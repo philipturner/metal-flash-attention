@@ -1,5 +1,7 @@
 # FlashAttention (Metal Port)
 
+> WARNING: The code is not finished yet. It is currently a "minimum viable product". Meaning, a complete reproduction of the Flash2 paper with reasonable performance, massive memory savings, and no bugs. Someone skilled in the art would attain meaningful insights from examining the code. The outstanding performance issues will be resolved in July&ndash;August 2024.
+
 This repository ports the official implementation of [FlashAttention](https://github.com/Dao-AILab/flash-attention) to Apple silicon. It is a minimal, maintainable set of source files that reproduces the FlashAttention algorithm.
 
 The source tree contains a customized version of the [unified GEMM kernel](https://gist.github.com/philipturner/84f613a5cc745460a914d2c6ad226131), a self-contained script for reaching peak performance in matrix multiplications. The GEMM kernel is distinct from the FlashAttention kernel. The modified GEMM kernel serves a few purposes, such as testing naive attention algorithms. Code related specifically to GEMM, and its maintenance, is out of scope for `metal-flash-attention`.
@@ -25,3 +27,23 @@ The minimal compute cost, maximally parallel backward pass is:
 Provided the head size (`D`) is 32 or greater\*, this should use less HBM bandwidth than the kernel where `dQ` is accumulated atomically. It requires the compute cost of 5 GEMMs, just like Flash2. This variant could be limited to $O($ processor count $)$ memory instead of $O(n^2)$ memory. Doing so, without a performance regression, requires knowledge of machine-specific parameters (GPU core count, cache size, etc.). Running the algorithm in production would require a lot of hardware-specific tuning.
 
 > \*On Apple silicon, where the optimal block size is 32x32 due to register pressure constraints.
+
+Preliminary data supports the prediction that explicitly materializing an $O(n^2)$ matrix improves performance. Data quality was limited by register pressure bottlenecks and performance issues with compressing the attention matrix as BF16.
+
+## TODO List
+
+Documentation:
+- Explain how the rooflines are calculated.
+- Publish the performance data.
+- Provide example code for encoding attention kernels.
+- Document the restrictions of this reference implementation (e.g. no multi-headed attention).
+
+Performance:
+- Optimization that blocks some operands along the D dimension, and avoids caching them in registers.
+- Fix performance when operands are not aligned to the block size.
+- Compare both FlashAttention variants to standard attention.
+
+Portability:
+- Support mixed precision.
+- Optimize performance on M3.
+- Test for correctness regressions when the attention matrix is not a square.
