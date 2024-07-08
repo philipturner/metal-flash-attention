@@ -195,8 +195,12 @@ extension AttentionKernel {
       // GEMM kernel to support custom leading dimensions. This can be
       // something handled explicitly by the user - an option to override the
       // default leading dimension.
-      //
+      
+      //precision: AttentionOperandPrecision.mixed.backwardPrecision,
+      
+      // Debugging correctness:
       precision: AttentionOperandPrecision.full.backwardPrecision,
+      
       bufferBinding: 8)
     operandsMap["dK"] = AttentionOperand(
       precision: memoryPrecisions.K.backwardPrecision, bufferBinding: 8)

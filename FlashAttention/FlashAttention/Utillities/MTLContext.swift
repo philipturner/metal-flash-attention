@@ -24,9 +24,13 @@ struct MTLContext {
   ) -> MTLBuffer {
     // Add random numbers to expose out-of-bounds accesses.
     var augmentedData = originalData
-    for _ in 0..<originalData.count {
-      let randomNumber = Float.random(in: -20...20)
-      augmentedData.append(randomNumber)
+    
+    // Avoid exceeding the maximum buffer allocation size.
+    if originalData.count * 4 < 1_000_000_000 {
+      for _ in 0..<originalData.count {
+        let randomNumber = Float.random(in: -20...20)
+        augmentedData.append(randomNumber)
+      }
     }
     
     // Allocate enough memory to store everything in Float32.

@@ -23,9 +23,9 @@ func executeScript() {
   // - Support the attention variant that stores dS^T to memory.
   // - Compare performance with FP32 and BF16 storage.
   
-  #if false
+  #if true
   // Define the problem dimensions.
-  let N: Int = 128
+  let N: Int = 16384
   
   var samples: [Int] = []
   for D in [32, 64, 128, 192] {
@@ -120,7 +120,7 @@ func profileProblemSize(N: Int, D: Int) -> Int {
     }
   }
   
-#if true
+#if false
   // Display the attention matrices.
 //  do {
 //    print()
@@ -272,7 +272,9 @@ func profileProblemSize(N: Int, D: Int) -> Int {
   //                            combined pass.
   // - Returns: Latency of the entire command buffer, in seconds.
   @discardableResult
-  func executeCommandBuffer() -> Double {
+  func executeCommandBuffer(
+    dispatchCount: Int
+  ) -> Double {
     let commandQueue = MTLContext.global.commandQueue
     let commandBuffer = commandQueue.makeCommandBuffer()!
     let encoder = commandBuffer.makeComputeCommandEncoder()!
@@ -324,41 +326,43 @@ func profileProblemSize(N: Int, D: Int) -> Int {
         gridSize, threadsPerThreadgroup: groupSize)
     }
     
-    encoder.setBuffer(bufferQ, offset: 0, index: 0)
-    encoder.setBuffer(bufferK, offset: 0, index: 1)
-    encoder.setBuffer(bufferV, offset: 0, index: 2)
-    encoder.setBuffer(bufferO, offset: 0, index: 3)
-    encoder.setBuffer(bufferLTerms, offset: 0, index: 4)
-    
-    encoder.setBuffer(bufferDerivativeO, offset: 0, index: 5)
-    encoder.setBuffer(bufferDTerms, offset: 0, index: 6)
-    encoder.setBuffer(bufferDerivativeV, offset: 0, index: 7)
-    encoder.setBuffer(bufferDerivativeST, offset: 0, index: 8)
-    dispatch(
-      kernel: kernelForward,
-      pipeline: pipelineForward,
-      along: kernelForward.blockDimensions.R)
-    dispatch(
-      kernel: kernelBackwardQuery,
-      pipeline: pipelineBackwardQuery,
-      along: kernelBackwardQuery.blockDimensions.R)
-    dispatch(
-      kernel: kernelBackwardKeyValue,
-      pipeline: pipelineBackwardKeyValue,
-      along: kernelBackwardKeyValue.blockDimensions.C)
-    
-    encoder.setBuffer(bufferDerivativeST, offset: 0, index: 0)
-    encoder.setBuffer(bufferQ, offset: 0, index: 1)
-    encoder.setBuffer(bufferDerivativeK, offset: 0, index: 2)
-    dispatch(
-      kernel: gemmDerivativeK,
-      pipeline: pipelineDerivativeK)
-    
-    encoder.setBuffer(bufferK, offset: 0, index: 1)
-    encoder.setBuffer(bufferDerivativeQ, offset: 0, index: 2)
-    dispatch(
-      kernel: gemmDerivativeQ,
-      pipeline: pipelineDerivativeQ)
+    for _ in 0..<dispatchCount {
+      encoder.setBuffer(bufferQ, offset: 0, index: 0)
+      encoder.setBuffer(bufferK, offset: 0, index: 1)
+      encoder.setBuffer(bufferV, offset: 0, index: 2)
+      encoder.setBuffer(bufferO, offset: 0, index: 3)
+      encoder.setBuffer(bufferLTerms, offset: 0, index: 4)
+      
+      encoder.setBuffer(bufferDerivativeO, offset: 0, index: 5)
+      encoder.setBuffer(bufferDTerms, offset: 0, index: 6)
+      encoder.setBuffer(bufferDerivativeV, offset: 0, index: 7)
+      encoder.setBuffer(bufferDerivativeST, offset: 0, index: 8)
+      dispatch(
+        kernel: kernelForward,
+        pipeline: pipelineForward,
+        along: kernelForward.blockDimensions.R)
+      dispatch(
+        kernel: kernelBackwardQuery,
+        pipeline: pipelineBackwardQuery,
+        along: kernelBackwardQuery.blockDimensions.R)
+      dispatch(
+        kernel: kernelBackwardKeyValue,
+        pipeline: pipelineBackwardKeyValue,
+        along: kernelBackwardKeyValue.blockDimensions.C)
+      
+      encoder.setBuffer(bufferDerivativeST, offset: 0, index: 0)
+      encoder.setBuffer(bufferQ, offset: 0, index: 1)
+      encoder.setBuffer(bufferDerivativeK, offset: 0, index: 2)
+      dispatch(
+        kernel: gemmDerivativeK,
+        pipeline: pipelineDerivativeK)
+      
+      encoder.setBuffer(bufferK, offset: 0, index: 1)
+      encoder.setBuffer(bufferDerivativeQ, offset: 0, index: 2)
+      dispatch(
+        kernel: gemmDerivativeQ,
+        pipeline: pipelineDerivativeQ)
+    }
     
     encoder.endEncoding()
     commandBuffer.commit()
@@ -371,8 +375,9 @@ func profileProblemSize(N: Int, D: Int) -> Int {
     print("latency:", Int(latency * 1e6))
     return latency
   }
-  executeCommandBuffer()
+  executeCommandBuffer(dispatchCount: 1)
   
+#if false
   // Copy the results.
   MTLContext.copy(bufferO, into: &resultO)
   MTLContext.copy(bufferLTerms, into: &resultLTerms)
@@ -389,7 +394,6 @@ func profileProblemSize(N: Int, D: Int) -> Int {
   MTLContext.copy(bufferDerivativeK, into: &resultDerivativeK)
   MTLContext.copy(bufferDerivativeQ, into: &resultDerivativeQ)
   
-#if false
   print()
   print("dST:")
   printSquareMatrix(resultDerivativeST)
@@ -452,7 +456,7 @@ func profileProblemSize(N: Int, D: Int) -> Int {
   
 #endif
   
-#if true
+#if false
   // Check the results.
   let errorThreshold: Float = 1e-5
   var errorCount: Int = .zero
@@ -486,9 +490,8 @@ func profileProblemSize(N: Int, D: Int) -> Int {
     return 0
   }
 #endif
-  return 0
   
-  #if false
+  #if true
   // Benchmark performance.
   print()
   var maxGINSTRS: Int = .zero
