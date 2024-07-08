@@ -9,8 +9,6 @@
 /* Begin PBXBuildFile section */
 		9881A9F62C24C8230056D05C /* FlashAttentionApp.swift in Sources */ = {isa = PBXBuildFile; fileRef = 9881A9F52C24C8230056D05C /* FlashAttentionApp.swift */; };
 		9881A9F82C24C8230056D05C /* ContentView.swift in Sources */ = {isa = PBXBuildFile; fileRef = 9881A9F72C24C8230056D05C /* ContentView.swift */; };
-		9881A9FA2C24C8240056D05C /* Assets.xcassets in Resources */ = {isa = PBXBuildFile; fileRef = 9881A9F92C24C8240056D05C /* Assets.xcassets */; };
-		9881A9FE2C24C8240056D05C /* Preview Assets.xcassets in Resources */ = {isa = PBXBuildFile; fileRef = 9881A9FD2C24C8240056D05C /* Preview Assets.xcassets */; };
 		9881AA052C24C85E0056D05C /* Workspace.swift in Sources */ = {isa = PBXBuildFile; fileRef = 9881AA042C24C85E0056D05C /* Workspace.swift */; };
 		9881AA092C24C9610056D05C /* README.md in Resources */ = {isa = PBXBuildFile; fileRef = 9881AA082C24C9610056D05C /* README.md */; };
 		9881AA142C25AED50056D05C /* GEMMKernelDescriptor.swift in Sources */ = {isa = PBXBuildFile; fileRef = 9881AA132C25AED50056D05C /* GEMMKernelDescriptor.swift */; };
@@ -42,9 +40,7 @@
 		9881A9F22C24C8230056D05C /* FlashAttention.app */ = {isa = PBXFileReference; explicitFileType = wrapper.application; includeInIndex = 0; path = FlashAttention.app; sourceTree = BUILT_PRODUCTS_DIR; };
 		9881A9F52C24C8230056D05C /* FlashAttentionApp.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = FlashAttentionApp.swift; sourceTree = "<group>"; };
 		9881A9F72C24C8230056D05C /* ContentView.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = ContentView.swift; sourceTree = "<group>"; };
-		9881A9F92C24C8240056D05C /* Assets.xcassets */ = {isa = PBXFileReference; lastKnownFileType = folder.assetcatalog; path = Assets.xcassets; sourceTree = "<group>"; };
 		9881A9FB2C24C8240056D05C /* FlashAttention.entitlements */ = {isa = PBXFileReference; lastKnownFileType = text.plist.entitlements; path = FlashAttention.entitlements; sourceTree = "<group>"; };
-		9881A9FD2C24C8240056D05C /* Preview Assets.xcassets */ = {isa = PBXFileReference; lastKnownFileType = folder.assetcatalog; path = "Preview Assets.xcassets"; sourceTree = "<group>"; };
 		9881AA042C24C85E0056D05C /* Workspace.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = Workspace.swift; sourceTree = "<group>"; };
 		9881AA082C24C9610056D05C /* README.md */ = {isa = PBXFileReference; fileEncoding = 4; lastKnownFileType = net.daringfireball.markdown; name = README.md; path = ../README.md; sourceTree = "<group>"; };
 		9881AA132C25AED50056D05C /* GEMMKernelDescriptor.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = GEMMKernelDescriptor.swift; sourceTree = "<group>"; };
@@ -110,19 +106,9 @@
 				9881A9F72C24C8230056D05C /* ContentView.swift */,
 				9881A9F52C24C8230056D05C /* FlashAttentionApp.swift */,
 				9881AA042C24C85E0056D05C /* Workspace.swift */,
-				9881A9F92C24C8240056D05C /* Assets.xcassets */,
 				9881A9FB2C24C8240056D05C /* FlashAttention.entitlements */,
-				9881A9FC2C24C8240056D05C /* Preview Content */,
 			);
 			path = FlashAttention;
-			sourceTree = "<group>";
-		};
-		9881A9FC2C24C8240056D05C /* Preview Content */ = {
-			isa = PBXGroup;
-			children = (
-				9881A9FD2C24C8240056D05C /* Preview Assets.xcassets */,
-			);
-			path = "Preview Content";
 			sourceTree = "<group>";
 		};
 		9881AA122C25AEA80056D05C /* GEMM */ = {
@@ -240,8 +226,6 @@
 			buildActionMask = 2147483647;
 			files = (
 				9881AA092C24C9610056D05C /* README.md in Resources */,
-				9881A9FE2C24C8240056D05C /* Preview Assets.xcassets in Resources */,
-				9881A9FA2C24C8240056D05C /* Assets.xcassets in Resources */,
 			);
 			runOnlyForDeploymentPostprocessing = 0;
 		};
@@ -404,7 +388,7 @@
 				CODE_SIGN_ENTITLEMENTS = FlashAttention/FlashAttention.entitlements;
 				CODE_SIGN_STYLE = Automatic;
 				CURRENT_PROJECT_VERSION = 1;
-				DEVELOPMENT_ASSET_PATHS = "\"FlashAttention/Preview Content\"";
+				DEVELOPMENT_ASSET_PATHS = "";
 				DEVELOPMENT_TEAM = 6T952M2592;
 				ENABLE_HARDENED_RUNTIME = YES;
 				ENABLE_PREVIEWS = YES;
@@ -442,7 +426,7 @@
 				CODE_SIGN_ENTITLEMENTS = FlashAttention/FlashAttention.entitlements;
 				CODE_SIGN_STYLE = Automatic;
 				CURRENT_PROJECT_VERSION = 1;
-				DEVELOPMENT_ASSET_PATHS = "\"FlashAttention/Preview Content\"";
+				DEVELOPMENT_ASSET_PATHS = "";
 				DEVELOPMENT_TEAM = 6T952M2592;
 				ENABLE_HARDENED_RUNTIME = YES;
 				ENABLE_PREVIEWS = YES;

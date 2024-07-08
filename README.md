@@ -6,6 +6,18 @@ This repository ports the official implementation of [FlashAttention](https://gi
 
 The source tree contains a customized version of the [unified GEMM kernel](https://gist.github.com/philipturner/84f613a5cc745460a914d2c6ad226131), a self-contained script for reaching peak performance in matrix multiplications. The GEMM kernel is distinct from the FlashAttention kernel. The modified GEMM kernel serves a few purposes, such as testing naive attention algorithms. Code related specifically to GEMM, and its maintenance, is out of scope for `metal-flash-attention`.
 
+## Important Information
+
+Supports macOS and iOS. Can be compiled from within a Swift Playground on iPad.
+
+Everything is JIT compiled at runtime. This constrasts with the previous implementation, which relied on an executable embedded in Xcode 14.2.
+
+Everything is computed and stored in full 32-bit precision. Except for the temporary attention matrix (for algorithms that materialize it).
+
+Async copies are used extensively, mostly to simplify the code design. Even on M3, where it harms performance.
+
+Single-headed attention only, to focus on the core bottlenecks of different attention algorithms (arithmetic intensity, parallelism).
+
 ## Modifications to FlashAttention
 
 <s>The Metal port differs from the official implementation. It relies heavily on block sparsity with programmable blockmasks (held in RAM). The memory cost of the blockmask scales quadratically with sequence length. However, the prefactor to quadratic scaling is ~1/1000 of standard attention. Both triangular (causal) attention and arbitrary sparsity patterns are supported, without any specialized code.</s>
@@ -36,7 +48,6 @@ Documentation:
 - Explain how the rooflines are calculated.
 - Publish the performance data.
 - Provide example code for encoding attention kernels.
-- Document the restrictions of this reference implementation (e.g. no multi-headed attention).
 
 Performance:
 - Optimization that blocks some operands along the D dimension, and avoids caching them in registers.
@@ -46,4 +57,4 @@ Performance:
 Portability:
 - Support mixed precision.
 - Optimize performance on M3.
-- Test for correctness regressions when the attention matrix is not a square.
+- Test problems where the attention matrix is not a square.

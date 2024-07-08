@@ -25,7 +25,7 @@ func executeScript() {
   
   #if true
   // Define the problem dimensions.
-  let N: Int = 16384
+  let N: Int = 128
   
   var samples: [Int] = []
   for D in [32, 64, 128, 192] {
