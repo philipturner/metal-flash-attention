@@ -41,7 +41,7 @@ func executeScript() {
   #else
   
   // The bug happens whenever D < N.
-  _ = profileProblemSize(N: 64, D: 32)
+  _ = profileProblemSize(N: 4, D: 2)
   #endif
 }
 
@@ -167,8 +167,8 @@ func profileProblemSize(N: Int, D: Int) -> Int {
     
     var gemmKernelDesc = GEMMKernelDescriptor(descriptor: gemmDesc)
     gemmKernelDesc.device = MTLContext.global.device
-    gemmKernelDesc.leadingDimensions = (
-      "\(kernelBackwardKeyValue.leadingDimensionDerivativeST)", "N")
+//    gemmKernelDesc.leadingDimensions = (
+//      "\(kernelBackwardKeyValue.leadingDimensionDerivativeST)", "N")
     gemmKernelDesc.preferAsyncStore = true
     gemmDerivativeK = GEMMKernel(descriptor: gemmKernelDesc)
   }
@@ -190,11 +190,15 @@ func profileProblemSize(N: Int, D: Int) -> Int {
     return try! device.makeComputePipelineState(function: function)
   }
   func createPipeline(library: MTLLibrary) -> MTLComputePipelineState {
+    // Avoid name conflicts with 'N' and 'D' from attention.
+    let attentionN = N
+    let attentionD = D
+    
     // Set the function constants.
     let constants = MTLFunctionConstantValues()
-    var M = UInt32(N)
-    var N = UInt32(D)
-    var K = UInt32(N)
+    var M = UInt32(attentionN)
+    var N = UInt32(attentionD)
+    var K = UInt32(attentionN)
     constants.setConstantValue(&M, type: .uint, index: 0)
     constants.setConstantValue(&N, type: .uint, index: 1)
     constants.setConstantValue(&K, type: .uint, index: 2)
@@ -226,12 +230,28 @@ func profileProblemSize(N: Int, D: Int) -> Int {
     .createBuffer(resultDerivativeV, .FP32)
   
   let N_padded = Int(kernelBackwardKeyValue.leadingDimensionDerivativeST)
+  print("N_padded", N_padded)
   var resultDerivativeST = [Float](repeating: .zero, count: N_padded * N_padded)
   var resultDerivativeK = [Float](repeating: .zero, count: N * D)
   let bufferDerivativeST = MTLContext.global
     .createBuffer(resultDerivativeST, .FP32)
   let bufferDerivativeK = MTLContext.global
     .createBuffer(resultDerivativeK, .FP32)
+  
+  var resultDerivativeSTAlt = [Float](repeating: .zero, count: N * N)
+  var resultDerivativeKAlt = resultDerivativeK
+  for i in 0..<16 {
+    resultDerivativeSTAlt[i] = Float(i) + 1
+  }
+  for i in 0..<4 * D {
+    resultDerivativeKAlt[i] = Float(i) + 1
+  }
+  resultDerivativeSTAlt[8] = 9.123
+  
+  let bufferDerivativeSTAlt = MTLContext.global
+    .createBuffer(resultDerivativeSTAlt, .FP32)
+  let bufferQAlt = MTLContext.global
+    .createBuffer(resultDerivativeKAlt, .FP32)
   
   // - Parameter dispatchCount: Number of times to duplicate the FWD / BWD
   //                            combined pass.
@@ -289,31 +309,31 @@ func profileProblemSize(N: Int, D: Int) -> Int {
         gridSize, threadsPerThreadgroup: groupSize)
     }
     
-    encoder.setBuffer(bufferQ, offset: 0, index: 0)
-    encoder.setBuffer(bufferK, offset: 0, index: 1)
-    encoder.setBuffer(bufferV, offset: 0, index: 2)
-    encoder.setBuffer(bufferO, offset: 0, index: 3)
-    encoder.setBuffer(bufferLTerms, offset: 0, index: 4)
+//    encoder.setBuffer(bufferQ, offset: 0, index: 0)
+//    encoder.setBuffer(bufferK, offset: 0, index: 1)
+//    encoder.setBuffer(bufferV, offset: 0, index: 2)
+//    encoder.setBuffer(bufferO, offset: 0, index: 3)
+//    encoder.setBuffer(bufferLTerms, offset: 0, index: 4)
+//    
+//    encoder.setBuffer(bufferDerivativeO, offset: 0, index: 5)
+//    encoder.setBuffer(bufferDTerms, offset: 0, index: 6)
+//    encoder.setBuffer(bufferDerivativeV, offset: 0, index: 7)
+//    encoder.setBuffer(bufferDerivativeST, offset: 0, index: 8)
+//    dispatch(
+//      kernel: kernelForward,
+//      pipeline: pipelineForward,
+//      along: kernelForward.blockDimensions.R)
+//    dispatch(
+//      kernel: kernelBackwardQuery,
+//      pipeline: pipelineBackwardQuery,
+//      along: kernelBackwardQuery.blockDimensions.R)
+//    dispatch(
+//      kernel: kernelBackwardKeyValue,
+//      pipeline: pipelineBackwardKeyValue,
+//      along: kernelBackwardKeyValue.blockDimensions.C)
     
-    encoder.setBuffer(bufferDerivativeO, offset: 0, index: 5)
-    encoder.setBuffer(bufferDTerms, offset: 0, index: 6)
-    encoder.setBuffer(bufferDerivativeV, offset: 0, index: 7)
-    encoder.setBuffer(bufferDerivativeST, offset: 0, index: 8)
-    dispatch(
-      kernel: kernelForward,
-      pipeline: pipelineForward,
-      along: kernelForward.blockDimensions.R)
-    dispatch(
-      kernel: kernelBackwardQuery,
-      pipeline: pipelineBackwardQuery,
-      along: kernelBackwardQuery.blockDimensions.R)
-    dispatch(
-      kernel: kernelBackwardKeyValue,
-      pipeline: pipelineBackwardKeyValue,
-      along: kernelBackwardKeyValue.blockDimensions.C)
-    
-    encoder.setBuffer(bufferDerivativeST, offset: 0, index: 0)
-    encoder.setBuffer(bufferQ, offset: 0, index: 1)
+    encoder.setBuffer(bufferDerivativeSTAlt, offset: 0, index: 0)
+    encoder.setBuffer(bufferQAlt, offset: 0, index: 1)
     encoder.setBuffer(bufferDerivativeK, offset: 0, index: 2)
     dispatch(
       kernel: gemmDerivativeK,
@@ -344,17 +364,22 @@ func profileProblemSize(N: Int, D: Int) -> Int {
   }
   MTLContext.copy(bufferDerivativeV, into: &resultDerivativeV)
   MTLContext.copy(
-    bufferDerivativeST, into: &resultDerivativeST, precision: .FP32)
+    bufferDerivativeSTAlt, into: &resultDerivativeSTAlt, precision: .FP32)
   MTLContext.copy(bufferDerivativeK, into: &resultDerivativeK)
+  MTLContext.copy(bufferQAlt, into: &resultDerivativeKAlt)
   
 #if true
   print()
   print("dST:")
-  printSquareMatrix(resultDerivativeST)
+  printSquareMatrix(resultDerivativeSTAlt)
   
   print()
   print("Q:")
   printMatrix(network.Q)
+  
+  print()
+  print("Q:")
+  printMatrix(resultDerivativeKAlt)
   
   print()
   print("V:")
@@ -399,9 +424,43 @@ func profileProblemSize(N: Int, D: Int) -> Int {
   print()
   print("dK:")
   printMatrix(resultDerivativeK)
+  
+//  func printAllValues(_ array: [Float]) {
+//    for element in array {
+//      var repr = String(format: "%.3f", element)
+//      while repr.count < 8 {
+//        repr = " " + repr
+//      }
+//      print(repr, terminator: " ")
+//    }
+//  }
+//  
+//  var resultDerivativeST2 = [Float](
+//    repeating: .zero, count: resultDerivativeST.count * 2)
+//  var resultQ2 = [Float](
+//    repeating: .zero, count: network.Q.count * 2)
+//  var resultDerivativeK2 = [Float](
+//    repeating: .zero, count: resultDerivativeK.count * 2)
+//  
+//  MTLContext.copy(bufferDerivativeST, into: &resultDerivativeST2)
+//  MTLContext.copy(bufferQ, into: &resultQ2)
+//  MTLContext.copy(bufferDerivativeK, into: &resultDerivativeK2)
+  
+//  print()
+//  print("dST(2):")
+//  printAllValues(resultDerivativeST2)
+//  
+//  print()
+//  print("Q(2):")
+//  printAllValues(resultQ2)
+//  
+//  print()
+//  print("dK(2):")
+//  printAllValues(resultDerivativeK2)
+  
 #endif
   
-#if true
+#if false
   // Check the results.
   let errorThreshold: Float = 1e-5
   var errorCount: Int = .zero
