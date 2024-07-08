@@ -1,198 +1,60 @@
-# Metal FlashAttention
+# FlashAttention (Metal Port)
 
-A faster alternative to Metal Performance Shaders, a reference implementation of modern GPU algorithms, and a step toward defragmenting the AI ecosystem.
+> WARNING: The code is not finished yet. It is currently a "minimum viable product". Meaning, a complete reproduction of the Flash2 paper with reasonable performance, massive memory savings, and no bugs. Someone skilled in the art would attain meaningful insights from examining the code. The outstanding performance issues will be resolved in July&ndash;August 2024.
 
-Algorithms:
-- [x] Attention
-  - [x] Dense (90.5% ALU)
-  - [x] Block-Sparse
-- [x] GEMM
-  - [x] FP16 (93.3% ALU)
-  - [x] FP32 (87.2% ALU)
-  - [x] Fused Biases
+This repository ports the official implementation of [FlashAttention](https://github.com/Dao-AILab/flash-attention) to Apple silicon. It is a minimal, maintainable set of source files that reproduces the FlashAttention algorithm.
 
-## Usage
+The source tree contains a customized version of the [unified GEMM kernel](https://gist.github.com/philipturner/84f613a5cc745460a914d2c6ad226131), a self-contained script for reaching peak performance in matrix multiplications. The GEMM kernel is distinct from the FlashAttention kernel. The modified GEMM kernel serves a few purposes, such as testing naive attention algorithms. Code related specifically to GEMM, and its maintenance, is out of scope for `metal-flash-attention`.
 
-| Progamming Language | MFA Supports | MPSGraph Supports | PyTorch Supports |
-| ------------------- | ------------ | ------------ | ---------------- |
-| CPU C++ (metal-cpp)                | ✅ | ❌ | ✅ |
-| GPU C++ (Indirect Command Buffers) | ✅ | ❌ | ❌ | 
-| Swift (iPadOS, Playgrounds)        | ✅ | ✅ | ❌ |
-| Swift (macOS, Xcode)               | ✅ | ✅ | ✅ |
-| Predecessor to Swift       | not tested | ✅ | ✅ |
+## Important Information
 
-Usage:
-- Download Xcode 14.2 from the Apple [developer tools archive](https://developer.apple.com/download/all/?q=xcode)
-  - Copy into `/Applications/Xcode 14.2.app`, side by side with the existing Xcode installation `/Applications/Xcode.app`
-- Run the Swift script to compile `libMetalFlashAttention.metallib`
-  - Enter this repository from Terminal and type `swift build.swift`
-- Read the [API specification](./Documentation/API.md)
-- Generate Metal shader variants at runtime
+Supports macOS and iOS. Can be compiled from within a Swift Playground on iPad.
 
-Alternatively:
-- Download the newest version of Xcode
-- Fetch the Metal library from [GitHub releases](https://github.com/philipturner/metal-flash-attention/releases)
-- Run the unit tests from this repository
+Everything is JIT compiled at runtime. This constrasts with the previous implementation, which relied on an executable embedded in Xcode 14.2.
 
-## Performance
+Everything is computed and stored in full 32-bit precision. Except for the temporary attention matrix (for algorithms that materialize it).
 
-SGEMM, every square matrix from 1&ndash;1536:
+Async copies are used extensively, mostly to simplify the code design. Even on M3, where it harms performance.
 
-![Max GFLOPS achieved](./Documentation/SGEMM.png)
+Single-headed attention only, to focus on the core bottlenecks of different attention algorithms (arithmetic intensity, parallelism).
 
-HGEMM, every square matrix from 1&ndash;2048:
+## Modifications to FlashAttention
 
-![Max GFLOPS achieved](./Documentation/HGEMM.png)
+<s>The Metal port differs from the official implementation. It relies heavily on block sparsity with programmable blockmasks (held in RAM). The memory cost of the blockmask scales quadratically with sequence length. However, the prefactor to quadratic scaling is ~1/1000 of standard attention. Both triangular (causal) attention and arbitrary sparsity patterns are supported, without any specialized code.</s>
 
-### GEMM
+> Removed block sparsity from MFA v2.0, as it was not being used in production.
 
-Scaling by square size:
-- Matrix M: every even integer
-- Matrix N: every even integer
-- Matrix K: every even integer
-- For 2x batched, every multiple of 4
-- For very large square matrices, granularity varies
+Second, the backward pass uses less memory. The official implementation allocates scratch space for atomics and partial sums. Apple hardware lacks native FP32 atomics (`metal::atomic<float>` is emulated). While attempting to circumvent the lack of hardware support, bandwidth and parallelization bottlenecks in the FlashAttention-2 backward kernel were revealed. An alternative backward pass was designed with higher compute cost (7 GEMMs instead of 5 GEMMs). It achieves 100% parallelization efficiency across both the row and column dimensions of the attention matrix. Most importantly, it is easier to code and maintain.
 
-| Function Constant | Value |
-| ------ | --------- |
-| `M_splits` | 2 |
-| `N_splits` | 2 |
-| `M_simd` | Block M / `M_splits` |
-| `N_simd` | Block N / `N_splits` |
-| `K_simd` | Block K |
-  
-| Precision | Block M | Block N | Block K |
-| - | - | - | - |
-| Float32 | 32 | 32 | 32 |
-| Float32 | 48 | 48 | 24 |
-| Float16 | 32 | 32 | 32 |
-| Float16 | 48 | 48 | 32 |
+### Alternatives Considered for Backward Pass
 
-| Size Start | Size End | Duplicate Commands/Encoder | Trials |
-| ---------- | -------- | ---------- | ------ |
-| 1 | 190 | 256 | 16 |
-| 192 | 254 | 128 | 16 |
-| 256 | 382 | 64 | 16 |
-| 384 | 510 | 32 | 16 |
-| 512 | 766 | 16 | 16 |
-| 768 | 1022 | 8 | 16 |
-| 1024 | 1534 | 4 | 16 |
-| 1536 | 2048 | 2 | 16 |
+One interesting insight, is the discovery of an optimal backward kernel. The attention matrix (`dS`) should be materialized explicitly in RAM, provided the sequence length is small enough. Each inference in the batch, or head (often 8 total) can be computed sequentially. Only one $O(n^2)$ attention matrix need be held in memory at any one time. This attention matrix will consume roughly as much memory as the partial sums for `dQ` accumulation in Flash2 backward.
 
-### Float32 Utilization (NN)
- 
-![Float32 Utilization (NN)](./CI/float32-nn-latest.png)
+The minimal compute cost, maximally parallel backward pass is:
+- Accumulate `dV` on-chip while writing `dS` to memory
+  - Register pressure may preclude fused accumulation of `dK`
+- In a second pass, use GEMM to generate `dK` and `dQ`
+  - Each GEMM traverses the attention matrix along a different direction, in which it requires no synchronization between processing units
 
-### Float32 Utilization (NT)
+Provided the head size (`D`) is 32 or greater\*, this should use less HBM bandwidth than the kernel where `dQ` is accumulated atomically. It requires the compute cost of 5 GEMMs, just like Flash2. This variant could be limited to $O($ processor count $)$ memory instead of $O(n^2)$ memory. Doing so, without a performance regression, requires knowledge of machine-specific parameters (GPU core count, cache size, etc.). Running the algorithm in production would require a lot of hardware-specific tuning.
 
-![Float32 Utilization (NT)](./CI/float32-nt-latest.png)
+> \*On Apple silicon, where the optimal block size is 32x32 due to register pressure constraints.
 
-### Float32 Utilization (NT, Large)
+Preliminary data supports the prediction that explicitly materializing an $O(n^2)$ matrix improves performance. Data quality was limited by register pressure bottlenecks and performance issues with compressing the attention matrix as BF16.
 
-![Float32 Utilization (NT)](./CI/float32-nt-large-latest.png)
+## TODO List
 
-### Float16 Utilization (NN)
+Documentation:
+- Explain how the rooflines are calculated.
+- Publish the performance data.
+- Provide example code for encoding attention kernels.
 
-![Float16 Utilization (NN)](./CI/float16-nn-latest.png)
+Performance:
+- Optimization that blocks some operands along the D dimension, and avoids caching them in registers.
+- Fix performance when operands are not aligned to the block size.
+- Compare both FlashAttention variants to standard attention.
 
-### Float16 Utilization (NT, 2x Batched)
-
-![Float16 Utilization (NT, 2x Batched)](./CI/float16-nt-batched-latest.png)
-
-### Float16 Utilization (NTN, 2x Batched, Bias)
-
-![Float16 Utilization (NTN, 2x Batched, Bias)](./CI/float16-ntn-batched-bias-latest.png)
-
-### Attention
-
-Setup:
-- Sequence dimension:
-  - R = rows (output sequence length)
-  - C = columns (input sequence length)
-  - R = C
-- Masking:
-  - Only MFA supports block-sparse masks.
-  - For "scaling by sparsity", sparse block size equals GEMM block size.
-
-Scaling by sequence length:
-- Masking:
-  - No mask
-  - Dense Mask: triangular mask
-  - Sparse Mask: triangular mask, summarized by block-sparse mask
-- Sequence length:
-  - Small sequences: every multiple of 4
-  - Large sequences: every multiple of 64
-  - Causal mask: every even integer
-- Head size: 64
-- Head count:
-  - Small sequences: 10
-  - Large sequences: 5
-  - Causal mask: 10
-
-Scaling by head size:
-- Masking: dense, no mask
-- Sequence length 4096
-- Head size: every integer
-  - &le;64: every integer
-  - &gt;64: every `roundUpToPowerOf2(D/64)` integers
-- Head count: 8
-  
-| Function Constant | Value |
-| ------ | --------- |
-| `Q_trans` | ❌ |
-| `K_trans` | ✅ |
-| `V_trans` | ❌ |
-| `O_trans` | ❌ |
-| `R_splits` | TBD |
-| `R_simd` | Block R / `R_splits` |
-| `C_simd` | Block C |
-| `D_simd` | $$8 \times \left \lceil{ \frac{D}{8} }\right \rceil $$  |
-
-### Float32 Sequence Scaling (Small)
-
-![FlashAttention (F32, H=10, D=64)](./CI/float32-small-sequences-latest.png)
-
-### Float16 Sequence Scaling (Small)
-
-Dense: Stable Diffusion XL outermost attention layer @ 512x512 (sequence length = 1024)
-
-![FlashAttention (F16, H=10, D=64)](./CI/float16-small-sequences-latest.png)
-
-### Float16 Sequence Scaling (Large)
-
-Dense: Stable Diffusion 2 outermost attention layer @ 512x512 (sequence length = 4096)
-
-![FlashAttention (F16, H=5, D=64)](./CI/float16-large-sequences-latest.png)
-
-### Float32 Sequence Scaling (Causal Mask)
-
-![FlashAttention (F32, H=10, D=64)](./CI/float32-large-causal-latest.png)
-
-### Float16 Sequence Scaling (Causal Mask)
-
-![FlashAttention (F16, H=10, D=64)](./CI/float16-small-causal-latest.png)
-
-![FlashAttention (F16, H=10, D=64)](./CI/float16-large-causal-latest.png)
-
-### Float16 Head Scaling
-
-Dense: Stable Diffusion 1 outermost attention layer @ 512x512 (head size = 40)
-
-![FlashAttention (F16, R=C=4096, H=8)](./CI/float16-head-sizes-latest.png)
-
-## Roadmap
-
-Releases:
-- v0.1.0-alpha
-  - Initial release, only non-batched GEMM without fused transposes
-- v0.2.0-alpha
-  - Fused transposes for A and B
-  - Batched GEMM
-- v1.0.0
-  - Attention: dense and block-sparse
-- v1.0.1
-  - GEMM: fused biases
- 
-Prospective Future Goals:
-- Tune the existing GEMM and Attention kernels for new A17/M3 hardware
-- Kahan block-summation with double-single accumulate, in a manner portable to other vendors
+Portability:
+- Support mixed precision.
+- Optimize performance on M3.
+- Test problems where the attention matrix is not a square.
