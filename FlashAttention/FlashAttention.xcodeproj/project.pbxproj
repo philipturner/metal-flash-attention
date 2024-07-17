@@ -37,6 +37,45 @@
 /* End PBXBuildFile section */
 
 /* Begin PBXFileReference section */
+		985C45C02C47F5CF0096535A /* README.md */ = {isa = PBXFileReference; lastKnownFileType = net.daringfireball.markdown; path = README.md; sourceTree = "<group>"; };
+		985C45C12C47F6760096535A /* Dispatch.hpp */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.cpp.h; path = Dispatch.hpp; sourceTree = "<group>"; };
+		985C45C22C47F6760096535A /* ccv_nnc_mfa_hash.hpp */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.cpp.h; path = ccv_nnc_mfa_hash.hpp; sourceTree = "<group>"; };
+		985C45C32C47F6760096535A /* ccv_nnc_mfa_error.cpp */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.cpp.cpp; path = ccv_nnc_mfa_error.cpp; sourceTree = "<group>"; };
+		985C45C42C47F6760096535A /* Metal.cpp */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.cpp.cpp; path = Metal.cpp; sourceTree = "<group>"; };
+		985C45C52C47F6760096535A /* GEMMShaderCache.cpp */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.cpp.cpp; path = GEMMShaderCache.cpp; sourceTree = "<group>"; };
+		985C45C62C47F6770096535A /* CoreCount.cpp */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.cpp.cpp; path = CoreCount.cpp; sourceTree = "<group>"; };
+		985C45C72C47F6770096535A /* CoreCount.hpp */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.cpp.h; path = CoreCount.hpp; sourceTree = "<group>"; };
+		985C45C82C47F6770096535A /* GEMMDescriptor.cpp */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.cpp.cpp; path = GEMMDescriptor.cpp; sourceTree = "<group>"; };
+		985C45C92C47F6770096535A /* GEMMDescriptor.hpp */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.cpp.h; path = GEMMDescriptor.hpp; sourceTree = "<group>"; };
+		985C45CA2C47F6770096535A /* GEMMHeaders.cpp */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.cpp.cpp; path = GEMMHeaders.cpp; sourceTree = "<group>"; };
+		985C45CB2C47F6770096535A /* GEMMHeaders.hpp */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.cpp.h; path = GEMMHeaders.hpp; sourceTree = "<group>"; };
+		985C45CC2C47F6770096535A /* GEMMKernel.cpp */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.cpp.cpp; path = GEMMKernel.cpp; sourceTree = "<group>"; };
+		985C45CD2C47F6770096535A /* GEMMKernel.hpp */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.cpp.h; path = GEMMKernel.hpp; sourceTree = "<group>"; };
+		985C45CE2C47F6770096535A /* GEMMKernelDescriptor.cpp */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.cpp.cpp; path = GEMMKernelDescriptor.cpp; sourceTree = "<group>"; };
+		985C45CF2C47F6770096535A /* GEMMKernelDescriptor.hpp */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.cpp.h; path = GEMMKernelDescriptor.hpp; sourceTree = "<group>"; };
+		985C45D02C47F6770096535A /* GEMMOperandPrecision.hpp */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.cpp.h; path = GEMMOperandPrecision.hpp; sourceTree = "<group>"; };
+		985C45D12C47F6770096535A /* GEMMShaderCache.cpp */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.cpp.cpp; path = GEMMShaderCache.cpp; sourceTree = "<group>"; };
+		985C45D22C47F6770096535A /* GEMMShaderCache.hpp */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.cpp.h; path = GEMMShaderCache.hpp; sourceTree = "<group>"; };
+		985C45D42C47F6770096535A /* CoreCount.hpp */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.cpp.h; path = CoreCount.hpp; sourceTree = "<group>"; };
+		985C45D52C47F6770096535A /* CoreCount.cpp */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.cpp.cpp; path = CoreCount.cpp; sourceTree = "<group>"; };
+		985C45D62C47F6770096535A /* GEMMKernel.cpp */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.cpp.cpp; path = GEMMKernel.cpp; sourceTree = "<group>"; };
+		985C45D72C47F6770096535A /* GEMMHeaders.cpp */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.cpp.cpp; path = GEMMHeaders.cpp; sourceTree = "<group>"; };
+		985C45D82C47F6770096535A /* Dispatch.cpp */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.cpp.cpp; path = Dispatch.cpp; sourceTree = "<group>"; };
+		985C45D92C47F6770096535A /* GEMMDescriptor.hpp */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.cpp.h; path = GEMMDescriptor.hpp; sourceTree = "<group>"; };
+		985C45DA2C47F6770096535A /* GEMMKernelDescriptor.cpp */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.cpp.cpp; path = GEMMKernelDescriptor.cpp; sourceTree = "<group>"; };
+		985C45DB2C47F6770096535A /* GEMMKernelDescriptor.hpp */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.cpp.h; path = GEMMKernelDescriptor.hpp; sourceTree = "<group>"; };
+		985C45DC2C47F6770096535A /* GEMMShaderCache.hpp */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.cpp.h; path = GEMMShaderCache.hpp; sourceTree = "<group>"; };
+		985C45DD2C47F6770096535A /* GEMMOperandPrecision.hpp */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.cpp.h; path = GEMMOperandPrecision.hpp; sourceTree = "<group>"; };
+		985C45DE2C47F6770096535A /* GEMMHeaders.hpp */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.cpp.h; path = GEMMHeaders.hpp; sourceTree = "<group>"; };
+		985C45DF2C47F6770096535A /* GEMMKernel.hpp */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.cpp.h; path = GEMMKernel.hpp; sourceTree = "<group>"; };
+		985C45E02C47F6770096535A /* main.cpp */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.cpp.cpp; path = main.cpp; sourceTree = "<group>"; };
+		985C45E12C47F6770096535A /* GEMMDescriptor.cpp */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.cpp.cpp; path = GEMMDescriptor.cpp; sourceTree = "<group>"; };
+		985C45E22C47F6770096535A /* Metal.hpp */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.cpp.h; path = Metal.hpp; sourceTree = "<group>"; };
+		985C45E32C47F6770096535A /* ccv_nnc_mfa_error.hpp */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.cpp.h; path = ccv_nnc_mfa_error.hpp; sourceTree = "<group>"; };
+		985C45E42C47F6770096535A /* Dispatch.cpp */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.cpp.cpp; path = Dispatch.cpp; sourceTree = "<group>"; };
+		985C45E52C47F6770096535A /* Dispatch.hpp */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.cpp.h; path = Dispatch.hpp; sourceTree = "<group>"; };
+		985C45E62C47F6770096535A /* Metal.cpp */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.cpp.cpp; path = Metal.cpp; sourceTree = "<group>"; };
+		985C45E72C47F6770096535A /* Metal.hpp */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.cpp.h; path = Metal.hpp; sourceTree = "<group>"; };
 		9881A9F22C24C8230056D05C /* FlashAttention.app */ = {isa = PBXFileReference; explicitFileType = wrapper.application; includeInIndex = 0; path = FlashAttention.app; sourceTree = BUILT_PRODUCTS_DIR; };
 		9881A9F52C24C8230056D05C /* FlashAttentionApp.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = FlashAttentionApp.swift; sourceTree = "<group>"; };
 		9881A9F72C24C8230056D05C /* ContentView.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = ContentView.swift; sourceTree = "<group>"; };
@@ -79,9 +118,80 @@
 /* End PBXFrameworksBuildPhase section */
 
 /* Begin PBXGroup section */
+		985C45BE2C47F5B90096535A /* Documentation */ = {
+			isa = PBXGroup;
+			children = (
+				985C45BF2C47F5C00096535A /* CppReference */,
+			);
+			path = Documentation;
+			sourceTree = "<group>";
+		};
+		985C45BF2C47F5C00096535A /* CppReference */ = {
+			isa = PBXGroup;
+			children = (
+				985C45C32C47F6760096535A /* ccv_nnc_mfa_error.cpp */,
+				985C45E32C47F6770096535A /* ccv_nnc_mfa_error.hpp */,
+				985C45C22C47F6760096535A /* ccv_nnc_mfa_hash.hpp */,
+				985C45D52C47F6770096535A /* CoreCount.cpp */,
+				985C45D42C47F6770096535A /* CoreCount.hpp */,
+				985C45D82C47F6770096535A /* Dispatch.cpp */,
+				985C45C12C47F6760096535A /* Dispatch.hpp */,
+				985C45D32C47F6770096535A /* GEMM */,
+				985C45E12C47F6770096535A /* GEMMDescriptor.cpp */,
+				985C45D92C47F6770096535A /* GEMMDescriptor.hpp */,
+				985C45D72C47F6770096535A /* GEMMHeaders.cpp */,
+				985C45DE2C47F6770096535A /* GEMMHeaders.hpp */,
+				985C45D62C47F6770096535A /* GEMMKernel.cpp */,
+				985C45DF2C47F6770096535A /* GEMMKernel.hpp */,
+				985C45DA2C47F6770096535A /* GEMMKernelDescriptor.cpp */,
+				985C45DB2C47F6770096535A /* GEMMKernelDescriptor.hpp */,
+				985C45DD2C47F6770096535A /* GEMMOperandPrecision.hpp */,
+				985C45C52C47F6760096535A /* GEMMShaderCache.cpp */,
+				985C45DC2C47F6770096535A /* GEMMShaderCache.hpp */,
+				985C45E02C47F6770096535A /* main.cpp */,
+				985C45E82C47F6770096535A /* metal-cpp */,
+				985C45C42C47F6760096535A /* Metal.cpp */,
+				985C45E22C47F6770096535A /* Metal.hpp */,
+				985C45C02C47F5CF0096535A /* README.md */,
+			);
+			path = CppReference;
+			sourceTree = "<group>";
+		};
+		985C45D32C47F6770096535A /* GEMM */ = {
+			isa = PBXGroup;
+			children = (
+				985C45C62C47F6770096535A /* CoreCount.cpp */,
+				985C45C72C47F6770096535A /* CoreCount.hpp */,
+				985C45C82C47F6770096535A /* GEMMDescriptor.cpp */,
+				985C45C92C47F6770096535A /* GEMMDescriptor.hpp */,
+				985C45CA2C47F6770096535A /* GEMMHeaders.cpp */,
+				985C45CB2C47F6770096535A /* GEMMHeaders.hpp */,
+				985C45CC2C47F6770096535A /* GEMMKernel.cpp */,
+				985C45CD2C47F6770096535A /* GEMMKernel.hpp */,
+				985C45CE2C47F6770096535A /* GEMMKernelDescriptor.cpp */,
+				985C45CF2C47F6770096535A /* GEMMKernelDescriptor.hpp */,
+				985C45D02C47F6770096535A /* GEMMOperandPrecision.hpp */,
+				985C45D12C47F6770096535A /* GEMMShaderCache.cpp */,
+				985C45D22C47F6770096535A /* GEMMShaderCache.hpp */,
+			);
+			path = GEMM;
+			sourceTree = "<group>";
+		};
+		985C45E82C47F6770096535A /* metal-cpp */ = {
+			isa = PBXGroup;
+			children = (
+				985C45E42C47F6770096535A /* Dispatch.cpp */,
+				985C45E52C47F6770096535A /* Dispatch.hpp */,
+				985C45E62C47F6770096535A /* Metal.cpp */,
+				985C45E72C47F6770096535A /* Metal.hpp */,
+			);
+			path = "metal-cpp";
+			sourceTree = "<group>";
+		};
 		9881A9E92C24C8230056D05C = {
 			isa = PBXGroup;
 			children = (
+				985C45BE2C47F5B90096535A /* Documentation */,
 				9881AA082C24C9610056D05C /* README.md */,
 				9881A9F42C24C8230056D05C /* FlashAttention */,
 				9881A9F32C24C8230056D05C /* Products */,
