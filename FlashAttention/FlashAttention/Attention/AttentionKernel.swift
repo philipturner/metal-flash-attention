@@ -272,34 +272,39 @@ extension AttentionKernel {
 
 // MARK: - Setup and Cleanup Specification
 
+// SIMD Matrix Storage
+//   register allocation per thread
+//    (scalar footprint) * (2 * D / 8) bytes
+// -> (scalar footprint) * (D / 4) bytes
+//
 // Forward
 //   cache Q, O, m, l
-//     FP32: 8 * 2 * D + 8 bytes
-//     FP16: 6 * 2 * D + 8 bytes
+//     FP32: 8 * (D / 4) + 8 bytes
+//     FP16: 6 * (D / 4) + 8 bytes
 //
 // Backward Query (true)
 //   cache dQ, dO, L[i], D[i]
-//     FP32: 8 * 2 * D + 8 bytes
-//     FP16: 6 * 2 * D + 8 bytes
+//     FP32: 8 * (D / 4) + 8 bytes
+//     FP16: 6 * (D / 4) + 8 bytes
 //   cache Q
-//     FP32: 12 * 2 * D + 8 bytes
-//     FP16:  8 * 2 * D + 8 bytes
+//     FP32: 12 * (D / 4) + 8 bytes
+//     FP16:  8 * (D / 4) + 8 bytes
 //
 // Backward Key-Value (true)
 //   cache dK, dV
-//     FP32: 8 * 2 * D bytes
-//     FP16: 8 * 2 * D bytes
+//     FP32: 8 * (D / 4) bytes
+//     FP16: 8 * (D / 4) bytes
 //   cache K, V
-//     FP32: 16 * 2 * D bytes
-//     FP16: 12 * 2 * D bytes
+//     FP32: 16 * (D / 4) bytes
+//     FP16: 12 * (D / 4) bytes
 //
 // Backward Key-Value (false)
 //   cache dV
-//     FP32: 4 * 2 * D bytes
-//     FP16: 4 * 2 * D bytes
+//     FP32: 4 * (D / 4) bytes
+//     FP16: 4 * (D / 4) bytes
 //   cache K, V
-//     FP32: 12 * 2 * D bytes
-//     FP16:  8 * 2 * D bytes
+//     FP32: 12 * (D / 4) bytes
+//     FP16:  8 * (D / 4) bytes
 //
 // Need code for:
 //   prefetching and loading 2D matrices (with async copy)
