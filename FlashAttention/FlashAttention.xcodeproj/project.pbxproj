@@ -33,6 +33,7 @@
 		98DA5B482C2DE2DA000F4E06 /* AttentionKernel.swift in Sources */ = {isa = PBXBuildFile; fileRef = 98DA5B472C2DE2DA000F4E06 /* AttentionKernel.swift */; };
 		98DA5B4A2C2EF788000F4E06 /* AttentionDescriptor.swift in Sources */ = {isa = PBXBuildFile; fileRef = 98DA5B492C2EF788000F4E06 /* AttentionDescriptor.swift */; };
 		98DA5B4C2C2F0052000F4E06 /* AttentionOperandPrecision.swift in Sources */ = {isa = PBXBuildFile; fileRef = 98DA5B4B2C2F0052000F4E06 /* AttentionOperandPrecision.swift */; };
+		98F950F92C49671600C370E4 /* StoreDerivativeSTest.swift in Sources */ = {isa = PBXBuildFile; fileRef = 98F950F82C49671600C370E4 /* StoreDerivativeSTest.swift */; };
 		98FB66E12C347CBA00C56CED /* AttentionKernel+InnerLoop.swift in Sources */ = {isa = PBXBuildFile; fileRef = 98FB66E02C347CBA00C56CED /* AttentionKernel+InnerLoop.swift */; };
 /* End PBXBuildFile section */
 
@@ -62,6 +63,7 @@
 		98DA5B472C2DE2DA000F4E06 /* AttentionKernel.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = AttentionKernel.swift; sourceTree = "<group>"; };
 		98DA5B492C2EF788000F4E06 /* AttentionDescriptor.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = AttentionDescriptor.swift; sourceTree = "<group>"; };
 		98DA5B4B2C2F0052000F4E06 /* AttentionOperandPrecision.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = AttentionOperandPrecision.swift; sourceTree = "<group>"; };
+		98F950F82C49671600C370E4 /* StoreDerivativeSTest.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = StoreDerivativeSTest.swift; sourceTree = "<group>"; };
 		98FB66E02C347CBA00C56CED /* AttentionKernel+InnerLoop.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = "AttentionKernel+InnerLoop.swift"; sourceTree = "<group>"; };
 /* End PBXFileReference section */
 
@@ -133,6 +135,7 @@
 				98DA5B372C2AFF9E000F4E06 /* FiniteDifferencingTest.swift */,
 				9881AA222C25C22B0056D05C /* LaplacianTest.swift */,
 				98DA5B3F2C2C91BF000F4E06 /* SoftmaxTest.swift */,
+				98F950F82C49671600C370E4 /* StoreDerivativeSTest.swift */,
 			);
 			path = Tests;
 			sourceTree = "<group>";
@@ -252,6 +255,7 @@
 				9881AA1C2C25B11C0056D05C /* CoreCount.swift in Sources */,
 				98DA5B442C2DB893000F4E06 /* DerivativeSoftmaxTest.swift in Sources */,
 				9881A9F62C24C8230056D05C /* FlashAttentionApp.swift in Sources */,
+				98F950F92C49671600C370E4 /* StoreDerivativeSTest.swift in Sources */,
 				98DA5B402C2C91BF000F4E06 /* SoftmaxTest.swift in Sources */,
 				9881AA1E2C25B1ED0056D05C /* GEMMKernel.swift in Sources */,
 				9881AA142C25AED50056D05C /* GEMMKernelDescriptor.swift in Sources */,

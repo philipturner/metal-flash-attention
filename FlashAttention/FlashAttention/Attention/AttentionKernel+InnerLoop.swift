@@ -742,136 +742,93 @@ extension AttentionKernel {
 
 // MARK: - Blocking Along Head Dimension
 
-// ## Subroutines
-//
-// Subroutine formS(c)
-//   S = 0
-//   repeat D / 32 times {
-//     load Q[r][32]
-//     load K[c][32]
-//     S += Q * K^T
-//   }
-//   return S
-//
-// Subroutine formPT(r)
-//   ST = 0
-//   repeat D / 32 times {
-//     load Q[r][32]
-//     load K[c][32]
-//     ST += K * Q^T
-//   load L[r]
-//   return exp(ST - L)
-//
-// Subroutine formDerivativeP(c)
-//   dP = 0
-//   repeat D / 32 times {
-//     load dO[r][32]
-//     load V[c][32]
-//     dP += dO * V^T
-//   }
-//   return dP
-//
-// Subroutine formDerivativesV_PT(r)
-//
-//
-// ## Kernels
+// The pseudocode assumes the head dimension (D) is 128.
 //
 // Forward
-//   initialize O[D]
-//   initialize m
-//   initialize l
-//   cache Q
-//   for c in 0..<C {
-//     S = formS(c)
-//     (m, l, P) = softmax(m, l, S * scaleFactor)
-//     O *= correction
-//     repeat D / 64 times {
-//       load V[c][64]
-//       O += P * V
-//     }
-//   }
-//   O /= l
-//
-// Backward Query (true)
-//   initialize dQ
-//   cache L
-//   cache D
-//   for c in 0..<C {
-//     S = formS(c)
-//     P = exp(S - L)
-//     dP = formDerivativeP(c)
-//     dS = P * (dP - D) * scaleFactor
-//     load K[c]
-//     dQ += dS * K
-//   }
-//
-// Backward Key-Value (true)
-//   initialize dK
-//   initialize dV
-//   cache V
-//   for r in 0..<R {
-//     PT = formPT(r)
-//     load dO[r]
-//     load D[r]
-//     dV += P^T * dO
-//     dP^T = V * dO^T
-//     dS^T = P^T * (dP^T - D) * scaleFactor
-//     load Q[r]
-//     dK += dS^T * Q
-//   }
-//
-// ## Kernels (Trying the 2nd Time)
-//
-// Forward
+//   // Setup
 //   initialize O[32][128]
 //   initialize m[32]
 //   initialize l[32]
-//   cache Q[32][128]
 //
+//   // Inner Loop
 //   for c in 0..<C {
-//     load K[c]
-//     S = Q * K^T
+//     repeat 4 times
+//       load Q[r][32]
+//       load K[c][32]
+//       S += Q * K^T
 //     (m, l, P) = softmax(m, l, S * scaleFactor)
+//
 //     O *= correction
-//     load V[c]
-//     O += P * V
+//     repeat 2 times
+//       load V[c][64]
+//       O[32][64] += P * V
 //   }
+//
+//   // Cleanup
 //   O /= l
+//   store dO
+//   store L
 //
 // Backward Query (true)
+//   // Setup
 //   initialize dQ[32][128]
-//   load Q[32][128]
+//   repeat 4 times
+//     load dO[r][32]
+//     load O[r][32]
+//     D += dO * O
 //   load L[32]
-//   load dO[32][128]
-//   load D[32]
 //
+//   // Inner Loop
 //   for c in 0..<C {
-//     load K[c]
-//     S = Q * K^T
+//     repeat 4 times
+//       load Q[r][32]
+//       load K[c][32]
+//       S += Q * K^T
 //     P = exp(S - L)
-//     load V[c]
-//     dP = dO * V^T
+//
+//     repeat 4 times
+//       load dO[r][32]
+//       load V[c][32]
+//       dP += dO * V^T
 //     dS = P * (dP - D) * scaleFactor
-//     load K[c]
-//     dQ += dS * K
+//
+//     repeat 2 times
+//       load K[c][64]
+//       dQ[32][64] += dS * K
 //   }
+//
+//   // Cleanup
+//   store dQ
+//   store D
 //
 // Backward Key-Value (true)
+//   // Setup
 //   initialize dK[32][128]
 //   initialize dV[32][128]
-//   load K[32][128]
-//   load V[32][128]
 //
+//   // Inner Loop
 //   for r in 0..<R {
-//     load Q[r]
 //     load L[r]
-//     S^T = K * Q^T
-//     P^T = exp(S^T - L)
-//     load dO[r]
 //     load D[r]
-//     dV += P^T * dO
-//     dP^T = V * dO^T
+//
+//     repeat 4 times
+//       load K[c][32]
+//       load Q[r][32]
+//       S^T += K * Q^T
+//     P^T = exp(S^T - L)
+//
+//     repeat 4 times
+//       load V[c][32]
+//       load dO[r][32]
+//       dV[32][32] += P^T * dO
+//       dP^T += V * dO^T
 //     dS^T = P^T * (dP^T - D) * scaleFactor
-//     load Q[r]
-//     dK += dS^T * Q
+//
+//     repeat 2 times
+//       load Q[r][64]
+//       dK[32][64] += dS^T * Q
 //   }
+//
+//   // Cleanup
+//   store dK
+//   store dV
