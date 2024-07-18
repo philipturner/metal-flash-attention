@@ -13,6 +13,16 @@ import QuartzCore
 /// when the 'main' branch is in a stable state. Clients can utilize this
 /// function to script tests in their fork.
 func executeScript() {
+  // Make a breaking change to the source code. Force all of the kernels to
+  // take on the form where operands are blocked along D. Once that is all
+  // debugged, retroactively include the original form.
+  //
+  // Tasks:
+  // - Get forward working correctly with the new algorithm.
+  // - Get backward working correctly with the new algorithm.
+  // - Reduce the amount of threadgroup memory allocated.
+  // - Profile and compare to data for the old kernel.
+  
   let N: Int = 10
   let D: Int = 3
   

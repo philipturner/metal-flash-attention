@@ -115,6 +115,9 @@ kernel void attention(
     // R/C_group * D * sizeof(float)
     threadgroupMemoryAllocation += 32 * paddedD * 4
     
+    // Temporary patch, until the new versions of the kernels are finished.
+    threadgroupMemoryAllocation *= 2
+    
     source += createArguments(type: type)
     source += createSetup(type: type)
     switch type {
@@ -337,10 +340,10 @@ extension AttentionKernel {
       accessDesc.threadgroupAddress = "threadgroup_block"
       accessDesc.transposeState = transposeState.Q
       
-      output += prefetchRows(descriptor: accessDesc)
+      // output += prefetchRows(descriptor: accessDesc)
       output += zeroInitializeAccumulator(name: "O")
       output += threadgroupBarrier()
-      output += load(descriptor: accessDesc)
+      // output += load(descriptor: accessDesc)
       
       // m, l
       output += """

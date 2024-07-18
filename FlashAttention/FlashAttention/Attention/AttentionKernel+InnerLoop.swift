@@ -63,15 +63,6 @@ extension AttentionKernel {
   func createInnerLoopForward() -> String {
     var accessDesc = AttentionHBMAccessDescriptor()
     accessDesc.index = "c"
-    accessDesc.leadingBlockDimension = leadingBlockDimensions.K
-    accessDesc.leadingDimension = leadingDimensions.K
-    accessDesc.name = "K"
-    accessDesc.threadgroupAddress = "threadgroup_block"
-    accessDesc.transposeState = transposeState.K
-    let prefetchK = prefetchColumns(descriptor: accessDesc)
-    
-    accessDesc = AttentionHBMAccessDescriptor()
-    accessDesc.index = "c"
     accessDesc.leadingBlockDimension = leadingBlockDimensions.V
     accessDesc.leadingDimension = leadingDimensions.V
     accessDesc.name = "V"
@@ -92,10 +83,6 @@ extension AttentionKernel {
   
   // Iterate over the columns.
   for (uint c = 0; c < C; c += 32) {
-    // load K[c]
-    threadgroup_barrier(mem_flags::mem_threadgroup);
-    \(prefetchK)
-    
     // S = Q * K^T
     threadgroup_barrier(mem_flags::mem_threadgroup);
     \(computeS())
@@ -387,23 +374,68 @@ extension AttentionKernel {
 extension AttentionKernel {
   func computeS() -> String {
     return """
+    if (sidx == 0) {
+      // load Q[r]
+      simdgroup_event events[2];
+      {
+        uint2 device_origin(0, gid * R_group);
+        auto src = simdgroup_matrix_storage<float>::apply_offset(
+          Q, \(leadingDimensions.Q), device_origin, \(transposeState.Q));
+        auto dst = (threadgroup float*)(threadgroup_block);
+        
+        ushort R_tile_dimension = min(uint(R_group), R - gid * R_group);
+        ushort2 tile_src(D, R_tile_dimension);
+        ushort2 tile_dst(\(paddedD), R_group);
+        
+        events[0].async_copy(
+          dst, \(leadingBlockDimensions.Q), tile_dst,
+          src, \(leadingDimensions.Q), tile_src, \(transposeState.Q));
+      }
 
-    auto KT_block = (threadgroup float*)(threadgroup_block);
+      // load K[c]
+      {
+        uint2 device_origin(0, c);
+        auto src = simdgroup_matrix_storage<float>::apply_offset(
+          K, \(leadingDimensions.K), device_origin, \(transposeState.K));
+        auto dst = (threadgroup float*)(threadgroup_block) + \(32 * paddedD);
+        
+        ushort C_tile_dimension = min(uint(C_group), C - c);
+        ushort2 tile_src(D, C_tile_dimension);
+        ushort2 tile_dst(\(paddedD), C_group);
+        
+        events[1].async_copy(
+        dst, \(leadingBlockDimensions.K), tile_dst,
+        src, \(leadingDimensions.K), tile_src, \(transposeState.K));
+      }
+      simdgroup_event::wait(2, events);
+    }
+    threadgroup_barrier(mem_flags::mem_threadgroup);
+
+    auto Q_block = (threadgroup float*)(threadgroup_block);
+    Q_block = simdgroup_matrix_storage<float>::apply_offset(
+      Q_block, \(leadingBlockDimensions.Q),
+      ushort2(0, sidx * 8) + morton_offset, \(transposeState.Q));
+    
+    auto KT_block = (threadgroup float*)(threadgroup_block) + \(32 * paddedD);
     KT_block = simdgroup_matrix_storage<float>::apply_offset(
-      KT_block, \(leadingBlockDimensions.K), morton_offset,
-      \(!transposeState.K));
-
+      KT_block, \(leadingBlockDimensions.K), 
+      morton_offset, \(!transposeState.K));
+    
     simdgroup_matrix_storage<float> S_sram[32 / 8];
 #pragma clang loop unroll(full)
     for (ushort d = 0; d < \(paddedD); d += 8) {
+      simdgroup_matrix_storage<float> Q;
+      Q.load(
+        Q_block, \(leadingBlockDimensions.Q),
+        ushort2(d, 0), \(transposeState.Q));
 #pragma clang loop unroll(full)
       for (ushort c = 0; c < 32; c += 8) {
-        ushort2 origin(c, d);
         simdgroup_matrix_storage<float> KT;
         KT.load(
-          KT_block, \(leadingBlockDimensions.K), origin, \(!transposeState.K));
+          KT_block, \(leadingBlockDimensions.K),
+          ushort2(c, d), \(!transposeState.K));
         S_sram[c / 8]
-          .multiply(Q_sram[d / 8], KT, d > 0);
+          .multiply(Q, KT, d > 0);
       }
     }
 
