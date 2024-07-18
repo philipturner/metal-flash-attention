@@ -72,7 +72,8 @@ using namespace metal;
     
     // Determine the block dimensions from the transpose state.
     leadingDimensions = ("D", "D", "D", "D")
-    leadingBlockDimensions = (paddedD, paddedD, paddedD, paddedD)
+    //leadingBlockDimensions = (paddedD, paddedD, paddedD, paddedD)
+    leadingBlockDimensions = (32, 32, paddedD, paddedD)
     if transposeState.Q {
       leadingDimensions.Q = "R"
       leadingBlockDimensions.Q = 32
@@ -113,10 +114,7 @@ kernel void attention(
 """
     
     // R/C_group * D * sizeof(float)
-    threadgroupMemoryAllocation += 32 * paddedD * 4
-    
-    // Temporary patch, until the new versions of the kernels are finished.
-    threadgroupMemoryAllocation *= 2
+    threadgroupMemoryAllocation += 32 * max(paddedD, 32) * 4
     
     source += createArguments(type: type)
     source += createSetup(type: type)
@@ -135,6 +133,11 @@ kernel void attention(
       source += createInnerLoopKeyValue(
         computeDerivativeK: computeDerivativeK)
     }
+    
+    // Temporary patch, until the new versions of the kernels are finished.
+    threadgroupMemoryAllocation *= 2
+    
+    
     source += createCleanup(type: type)
     source += """
 

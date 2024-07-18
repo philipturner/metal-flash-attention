@@ -23,8 +23,8 @@ func executeScript() {
   // - Reduce the amount of threadgroup memory allocated.
   // - Profile and compare to data for the old kernel.
   
-  let N: Int = 10
-  let D: Int = 3
+  let N: Int = 4
+  let D: Int = 2
   
   var networkDesc = NetworkDescriptor()
   networkDesc.N = N

@@ -34,7 +34,7 @@ func executeScript() {
   //
   // Test N=10, D=3/80
   // Test N=8/9/24/25, D=2
-  // Test N=192, D=80
+  // Test N=192, D=77/80
   // Test N=64, D=32
   // Test N=32, D=64
   // Test N=4, D=1/2
@@ -43,6 +43,7 @@ func executeScript() {
   _ = profileProblemSize(N: 8, D: 2)
   _ = profileProblemSize(N: 9, D: 2)
   _ = profileProblemSize(N: 24, D: 2)
+  _ = profileProblemSize(N: 192, D: 77)
   _ = profileProblemSize(N: 192, D: 80)
   _ = profileProblemSize(N: 64, D: 32)
   _ = profileProblemSize(N: 32, D: 64)
