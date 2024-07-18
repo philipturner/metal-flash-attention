@@ -375,12 +375,7 @@ extension AttentionKernel {
   // multiplications.
   func computeS() -> String {
     return """
-    // Zero-initialize the accumulator (we'll optimize this away later).
     simdgroup_matrix_storage<float> S_sram[32 / 8];
-  #pragma clang loop unroll(full)
-    for (ushort c = 0; c < 32; c += 8) {
-      S_sram[c / 8] = simdgroup_matrix_storage<float>(0);
-    }
 
     // Find where the Q data will be read from.
     auto Q_block = (threadgroup float*)(threadgroup_block);
@@ -447,14 +442,18 @@ extension AttentionKernel {
         Q.load(
           Q_block, \(leadingBlockDimensions.Q),
           ushort2(d, 0), \(transposeState.Q));
+        
+        // Inner loop over C.
 #pragma clang loop unroll(full)
         for (ushort c = 0; c < 32; c += 8) {
           simdgroup_matrix_storage<float> KT;
           KT.load(
             KT_block, \(leadingBlockDimensions.K),
             ushort2(c, d), \(!transposeState.K));
-          S_sram[c / 8]
-            .multiply(Q, KT, true);
+
+          // Mask out the first accumulate at compile-time.
+          bool accumulate = (d_outer > 0) || (d > 0);
+          S_sram[c / 8].multiply(Q, KT, accumulate);
         }
       }
     }
