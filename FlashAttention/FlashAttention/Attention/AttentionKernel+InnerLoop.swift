@@ -366,8 +366,12 @@ extension AttentionKernel {
 // MARK: - Attention Matrix
 
 extension AttentionKernel {
-  // We may need to recycle this code across similarly shaped matrix
-  // multiplications.
+  // Tasks:
+  // - Generalize the function to support any matrix multiplication.
+  // - Apply to the 4 immediately applicable matrix multiplications.
+  // - Refactor the D[i] computation to not depend on async copy'd data.
+  //
+  // Alternatively, duplicate the code and modify on a case-by-case basis.
   func computeS() -> String {
     return """
     simdgroup_matrix_storage<float> S_sram[32 / 8];

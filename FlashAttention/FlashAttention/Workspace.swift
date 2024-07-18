@@ -12,7 +12,23 @@ import QuartzCore
 /// The contents of this function have no meaning, and ideally will be blank
 /// when the 'main' branch is in a stable state. Clients can utilize this
 /// function to script tests in their fork.
+
 func executeScript() {
+  // Automate the execution of the test suite.
+  profileProblemSize(N: 10, D: 3)
+  profileProblemSize(N: 10, D: 80)
+  profileProblemSize(N: 8, D: 2)
+  profileProblemSize(N: 9, D: 2)
+  profileProblemSize(N: 24, D: 2)
+  profileProblemSize(N: 192, D: 77)
+  profileProblemSize(N: 192, D: 80)
+  profileProblemSize(N: 64, D: 32)
+  profileProblemSize(N: 32, D: 64)
+  profileProblemSize(N: 4, D: 1)
+  profileProblemSize(N: 4, D: 2)
+}
+
+func profileProblemSize(N: Int, D: Int) {
   // Make a breaking change to the source code. Force all of the kernels to
   // take on the form where operands are blocked along D. Once that is all
   // debugged, retroactively include the original form.
@@ -22,9 +38,6 @@ func executeScript() {
   // - Get backward working correctly with the new algorithm.
   // - Reduce the amount of threadgroup memory allocated.
   // - Profile and compare to data for the old kernel.
-  
-  let N: Int = 10
-  let D: Int = 3
   
   var networkDesc = NetworkDescriptor()
   networkDesc.N = N
@@ -63,6 +76,8 @@ func executeScript() {
   let O = network.inferenceAttention()
   let LTerms = (0..<N).map(network.createLTerm(rowID:))
   let DTerms = (0..<N).map(network.createDTerm(rowID:))
+  let dV = network.derivativeV()
+  let dK = network.derivativeK()
   let dQ = network.derivativeQ()
   
   var attentionDesc = AttentionDescriptor()
@@ -75,6 +90,9 @@ func executeScript() {
   
   attentionDesc.type = .backwardQuery(true)
   let kernelBackwardQuery = AttentionKernel(descriptor: attentionDesc)
+  
+  attentionDesc.type = .backwardKeyValue(true)
+  let kernelBackwardKeyValue = AttentionKernel(descriptor: attentionDesc)
   
   func createPipeline(kernel: AttentionKernel) -> MTLComputePipelineState {
     // Set the function constants.
@@ -94,6 +112,7 @@ func executeScript() {
   }
   let pipelineForward = createPipeline(kernel: kernelForward)
   let pipelineBackwardQuery = createPipeline(kernel: kernelBackwardQuery)
+  let pipelineBackwardKeyValue = createPipeline(kernel: kernelBackwardKeyValue)
   
   let bufferQ = MTLContext.global.createBuffer(network.Q, .FP32)
   let bufferK = MTLContext.global.createBuffer(network.K, .FP32)
@@ -103,11 +122,17 @@ func executeScript() {
   var resultO = [Float](repeating: .zero, count: N * D)
   var resultLTerms = [Float](repeating: .zero, count: N)
   var resultDTerms = [Float](repeating: .zero, count: N)
+  var resultDerivativeV = [Float](repeating: .zero, count: N * D)
+  var resultDerivativeK = [Float](repeating: .zero, count: N * D)
   var resultDerivativeQ = [Float](repeating: .zero, count: N * D)
   
   let bufferO = MTLContext.global.createBuffer(resultO, .FP32)
   let bufferLTerms = MTLContext.global.createBuffer(resultLTerms, .FP32)
   let bufferDTerms = MTLContext.global.createBuffer(resultDTerms, .FP32)
+  let bufferDerivativeV = MTLContext.global
+    .createBuffer(resultDerivativeV, .FP32)
+  let bufferDerivativeK = MTLContext.global
+    .createBuffer(resultDerivativeK, .FP32)
   let bufferDerivativeQ = MTLContext.global
     .createBuffer(resultDerivativeQ, .FP32)
   
@@ -157,6 +182,8 @@ func executeScript() {
       
       encoder.setBuffer(bufferDerivativeO, offset: 0, index: 5)
       encoder.setBuffer(bufferDTerms, offset: 0, index: 6)
+      encoder.setBuffer(bufferDerivativeV, offset: 0, index: 7)
+      encoder.setBuffer(bufferDerivativeK, offset: 0, index: 8)
       encoder.setBuffer(bufferDerivativeQ, offset: 0, index: 9)
       
       dispatch(
@@ -167,6 +194,10 @@ func executeScript() {
         kernel: kernelBackwardQuery,
         pipeline: pipelineBackwardQuery,
         along: kernelBackwardQuery.blockDimensions.R)
+      dispatch(
+        kernel: kernelBackwardKeyValue,
+        pipeline: pipelineBackwardKeyValue,
+        along: kernelBackwardKeyValue.blockDimensions.C)
     }
     
     encoder.endEncoding()
@@ -192,8 +223,11 @@ func executeScript() {
   for i in resultDTerms.indices {
     resultDTerms[i] /= 1 / Float(D).squareRoot()
   }
+  MTLContext.copy(bufferDerivativeV, into: &resultDerivativeV)
+  MTLContext.copy(bufferDerivativeK, into: &resultDerivativeK)
   MTLContext.copy(bufferDerivativeQ, into: &resultDerivativeQ)
   
+  #if false
   print()
   print("Q:")
   printMatrix(network.Q)
@@ -227,12 +261,29 @@ func executeScript() {
   printVector(resultDTerms)
   
   print()
+  print("dV:")
+  printMatrix(dV)
+  
+  print()
+  print("dV:")
+  printMatrix(resultDerivativeV)
+  
+  print()
+  print("dK:")
+  printMatrix(dK)
+  
+  print()
+  print("dK:")
+  printMatrix(resultDerivativeK)
+  
+  print()
   print("dQ:")
   printMatrix(dQ)
   
   print()
   print("dQ:")
   printMatrix(resultDerivativeQ)
+  #endif
   
   // Check the results.
   //
@@ -263,5 +314,7 @@ func executeScript() {
   check(expected: O, actual: resultO)
   check(expected: LTerms, actual: resultLTerms)
   check(expected: DTerms, actual: resultDTerms)
+  check(expected: dV, actual: resultDerivativeV)
+  check(expected: dK, actual: resultDerivativeK)
   check(expected: dQ, actual: resultDerivativeQ)
 }
