@@ -141,12 +141,7 @@ extension AttentionKernel {
   
   // Iterate over the columns.
   for (uint c = 0; c < C; c += 32) {
-    // load K[c]
-    threadgroup_barrier(mem_flags::mem_threadgroup);
-    \(prefetchK)
-    
     // S = Q * K^T
-    threadgroup_barrier(mem_flags::mem_threadgroup);
     \(computeS())
     
     // P = softmax(S * scaleFactor)
@@ -380,14 +375,12 @@ extension AttentionKernel {
     // Find where the Q data will be read from.
     auto Q_block = (threadgroup float*)(threadgroup_block);
     Q_block = simdgroup_matrix_storage<float>::apply_offset(
-      Q_block, \(leadingBlockDimensions.Q),
-      ushort2(0, sidx * 8) + morton_offset, \(transposeState.Q));
+      Q_block, 32, ushort2(0, sidx * 8) + morton_offset, \(transposeState.Q));
 
     // Find where the K data will be read from.
     auto KT_block = (threadgroup float*)(threadgroup_block) + \(32 * 32);
     KT_block = simdgroup_matrix_storage<float>::apply_offset(
-      KT_block, \(leadingBlockDimensions.K),
-      morton_offset, \(!transposeState.K));
+      KT_block, 32, morton_offset, \(!transposeState.K));
 
     // Outer loop over D.
 #pragma clang loop unroll(full)
@@ -411,7 +404,7 @@ extension AttentionKernel {
           ushort2 tile_dst(D_dst_dimension, R_group); // excessive R padding
           
           events[0].async_copy(
-            dst, \(leadingBlockDimensions.Q), tile_dst,
+            dst, 32, tile_dst,
             src, \(leadingDimensions.Q), tile_src, \(transposeState.Q));
         }
         
@@ -427,7 +420,7 @@ extension AttentionKernel {
           ushort2 tile_dst(D_dst_dimension, C_group); // excessive C padding
           
           events[1].async_copy(
-          dst, \(leadingBlockDimensions.K), tile_dst,
+          dst, 32, tile_dst,
           src, \(leadingDimensions.K), tile_src, \(transposeState.K));
         }
         simdgroup_event::wait(2, events);
@@ -439,17 +432,13 @@ extension AttentionKernel {
 #pragma clang loop unroll(full)
       for (ushort d = 0; d < min(32, \(paddedD) - d_outer); d += 8) {
         simdgroup_matrix_storage<float> Q;
-        Q.load(
-          Q_block, \(leadingBlockDimensions.Q),
-          ushort2(d, 0), \(transposeState.Q));
+        Q.load(Q_block, 32, ushort2(d, 0), \(transposeState.Q));
         
         // Inner loop over C.
 #pragma clang loop unroll(full)
         for (ushort c = 0; c < 32; c += 8) {
           simdgroup_matrix_storage<float> KT;
-          KT.load(
-            KT_block, \(leadingBlockDimensions.K),
-            ushort2(c, d), \(!transposeState.K));
+          KT.load(KT_block, 32, ushort2(c, d), \(!transposeState.K));
 
           // Mask out the first accumulate at compile-time.
           bool accumulate = (d_outer > 0) || (d > 0);

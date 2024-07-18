@@ -72,8 +72,7 @@ using namespace metal;
     
     // Determine the block dimensions from the transpose state.
     leadingDimensions = ("D", "D", "D", "D")
-    //leadingBlockDimensions = (paddedD, paddedD, paddedD, paddedD)
-    leadingBlockDimensions = (32, 32, paddedD, paddedD)
+    leadingBlockDimensions = (paddedD, paddedD, paddedD, paddedD)
     if transposeState.Q {
       leadingDimensions.Q = "R"
       leadingBlockDimensions.Q = 32
@@ -136,7 +135,6 @@ kernel void attention(
     
     // Temporary patch, until the new versions of the kernels are finished.
     threadgroupMemoryAllocation *= 2
-    
     
     source += createCleanup(type: type)
     source += """
@@ -334,21 +332,8 @@ extension AttentionKernel {
     // Loading everything that could possibly be loaded, for now.
     switch type {
     case .forward:
-      // Q, O
-      var accessDesc = AttentionHBMAccessDescriptor()
-      accessDesc.index = "gid * R_group"
-      accessDesc.leadingBlockDimension = leadingBlockDimensions.Q
-      accessDesc.leadingDimension = leadingDimensions.Q
-      accessDesc.name = "Q"
-      accessDesc.threadgroupAddress = "threadgroup_block"
-      accessDesc.transposeState = transposeState.Q
-      
-      // output += prefetchRows(descriptor: accessDesc)
+      // O, m, l
       output += zeroInitializeAccumulator(name: "O")
-      output += threadgroupBarrier()
-      // output += load(descriptor: accessDesc)
-      
-      // m, l
       output += """
 
   float m = -numeric_limits<float>::max();
@@ -403,7 +388,6 @@ extension AttentionKernel {
         accessDesc.threadgroupAddress = "threadgroup_block"
         accessDesc.transposeState = transposeState.Q
         
-        output += prefetchRows(descriptor: accessDesc)
         output += """
 
   float L_term = L_terms[linear_array_slot];
@@ -411,7 +395,6 @@ extension AttentionKernel {
 """
         output += zeroInitializeAccumulator(name: "dQ")
         output += threadgroupBarrier()
-        output += load(descriptor: accessDesc)
       }
       
     case .backwardKeyValue(let computeDerivativeK):

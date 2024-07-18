@@ -23,8 +23,8 @@ func executeScript() {
   // - Reduce the amount of threadgroup memory allocated.
   // - Profile and compare to data for the old kernel.
   
-  let N: Int = 4
-  let D: Int = 2
+  let N: Int = 10
+  let D: Int = 3
   
   var networkDesc = NetworkDescriptor()
   networkDesc.N = N
@@ -61,13 +61,20 @@ func executeScript() {
   }
   
   let O = network.inferenceAttention()
+  let LTerms = (0..<N).map(network.createLTerm(rowID:))
+  let DTerms = (0..<N).map(network.createDTerm(rowID:))
+  let dQ = network.derivativeQ()
   
   var attentionDesc = AttentionDescriptor()
   attentionDesc.matrixDimensions = (R: UInt32(N), C: UInt32(N), D: UInt16(D))
   attentionDesc.memoryPrecisions = (Q: .full, K: .full, V: .full, O: .full)
   attentionDesc.transposeState = (Q: false, K: false, V: false, O: false)
-  attentionDesc.type = .forward(false)
+  
+  attentionDesc.type = .forward(true)
   let kernelForward = AttentionKernel(descriptor: attentionDesc)
+  
+  attentionDesc.type = .backwardQuery(true)
+  let kernelBackwardQuery = AttentionKernel(descriptor: attentionDesc)
   
   func createPipeline(kernel: AttentionKernel) -> MTLComputePipelineState {
     // Set the function constants.
@@ -86,13 +93,23 @@ func executeScript() {
     return try! device.makeComputePipelineState(function: function)
   }
   let pipelineForward = createPipeline(kernel: kernelForward)
+  let pipelineBackwardQuery = createPipeline(kernel: kernelBackwardQuery)
   
   let bufferQ = MTLContext.global.createBuffer(network.Q, .FP32)
   let bufferK = MTLContext.global.createBuffer(network.K, .FP32)
   let bufferV = MTLContext.global.createBuffer(network.V, .FP32)
+  let bufferDerivativeO = MTLContext.global.createBuffer(network.C, .FP32)
   
   var resultO = [Float](repeating: .zero, count: N * D)
+  var resultLTerms = [Float](repeating: .zero, count: N)
+  var resultDTerms = [Float](repeating: .zero, count: N)
+  var resultDerivativeQ = [Float](repeating: .zero, count: N * D)
+  
   let bufferO = MTLContext.global.createBuffer(resultO, .FP32)
+  let bufferLTerms = MTLContext.global.createBuffer(resultLTerms, .FP32)
+  let bufferDTerms = MTLContext.global.createBuffer(resultDTerms, .FP32)
+  let bufferDerivativeQ = MTLContext.global
+    .createBuffer(resultDerivativeQ, .FP32)
   
   // - Parameter dispatchCount: Number of times to duplicate the FWD / BWD
   //                            combined pass.
@@ -136,10 +153,20 @@ func executeScript() {
       encoder.setBuffer(bufferK, offset: 0, index: 1)
       encoder.setBuffer(bufferV, offset: 0, index: 2)
       encoder.setBuffer(bufferO, offset: 0, index: 3)
+      encoder.setBuffer(bufferLTerms, offset: 0, index: 4)
+      
+      encoder.setBuffer(bufferDerivativeO, offset: 0, index: 5)
+      encoder.setBuffer(bufferDTerms, offset: 0, index: 6)
+      encoder.setBuffer(bufferDerivativeQ, offset: 0, index: 9)
+      
       dispatch(
         kernel: kernelForward,
         pipeline: pipelineForward,
         along: kernelForward.blockDimensions.R)
+      dispatch(
+        kernel: kernelBackwardQuery,
+        pipeline: pipelineBackwardQuery,
+        along: kernelBackwardQuery.blockDimensions.R)
     }
     
     encoder.endEncoding()
@@ -157,6 +184,15 @@ func executeScript() {
   
   // Copy the results.
   MTLContext.copy(bufferO, into: &resultO)
+  MTLContext.copy(bufferLTerms, into: &resultLTerms)
+  MTLContext.copy(bufferDTerms, into: &resultDTerms)
+  for i in resultLTerms.indices {
+    resultLTerms[i] /= 1.44269504089
+  }
+  for i in resultDTerms.indices {
+    resultDTerms[i] /= 1 / Float(D).squareRoot()
+  }
+  MTLContext.copy(bufferDerivativeQ, into: &resultDerivativeQ)
   
   print()
   print("Q:")
@@ -173,6 +209,30 @@ func executeScript() {
   print()
   print("O:")
   printMatrix(resultO)
+  
+  print()
+  print("L_terms:")
+  printVector(LTerms)
+  
+  print()
+  print("L_terms:")
+  printVector(resultLTerms)
+  
+  print()
+  print("D_terms:")
+  printVector(DTerms)
+  
+  print()
+  print("D_terms:")
+  printVector(resultDTerms)
+  
+  print()
+  print("dQ:")
+  printMatrix(dQ)
+  
+  print()
+  print("dQ:")
+  printMatrix(resultDerivativeQ)
   
   // Check the results.
   //
@@ -201,4 +261,7 @@ func executeScript() {
   }
   
   check(expected: O, actual: resultO)
+  check(expected: LTerms, actual: resultLTerms)
+  check(expected: DTerms, actual: resultDTerms)
+  check(expected: dQ, actual: resultDerivativeQ)
 }
