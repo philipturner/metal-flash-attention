@@ -188,28 +188,6 @@ extension AttentionKernel {
 """
       
     case .backwardQuery(let computeDerivativeQ):
-      // O, dO, D[i]
-      do {
-        var accessDesc = AttentionHBMAccessDescriptor()
-        accessDesc.index = "gid * R_group"
-        accessDesc.leadingBlockDimension = leadingBlockDimensions.O
-        accessDesc.leadingDimension = leadingDimensions.O
-        accessDesc.threadgroupAddress = "threadgroup_block"
-        accessDesc.transposeState = transposeState.O
-        
-        accessDesc.name = "O"
-        output += prefetchRows(descriptor: accessDesc)
-        output += threadgroupBarrier()
-        output += load(descriptor: accessDesc)
-        
-        accessDesc.name = "dO"
-        output += prefetchRows(descriptor: accessDesc)
-        output += threadgroupBarrier()
-        output += load(descriptor: accessDesc)
-        
-        output += computeDTerm()
-      }
-      
       // dQ, L[i]
       if computeDerivativeQ {
         output += zeroInitializeAccumulator(name: "dQ")
@@ -219,6 +197,9 @@ extension AttentionKernel {
 
 """
       }
+      
+      // D[i]
+      output += computeDTerm()
       
     case .backwardKeyValue(let computeDerivativeK):
       var accessDesc = AttentionHBMAccessDescriptor()

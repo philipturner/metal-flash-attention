@@ -129,13 +129,6 @@ struct AttentionOuterProductDescriptor {
 }
 
 extension AttentionKernel {
-  // Tasks:
-  // - Generalize the function to support any matrix multiplication.
-  // - Apply to the 4 immediately applicable matrix multiplications.
-  // - Remove as many cached operands as possible.
-  // - Factor out the prefetching part of this function, so it can be used
-  //   for D[i] and another, similar matrix multiplication.
-  
   // Accepts the operands A and B, then performs the multiplication A * B^T.
   //
   // A and C are divided along four SIMDs in the M dimension. Each SIMD carries
@@ -200,38 +193,6 @@ extension AttentionKernel {
 """
     
     return twoOperandAccess(descriptor: accessDesc)
-  }
-  
-  // Prevent the zero padding from changing the values of 'm' and 'l'.
-  func maskAlongColumns(sram: String) -> String {
-    return """
-    
-    if ((C % 32 != 0) && (c + 32 > C)) {
-      const ushort remainder32 = uint(C % 32);
-      const ushort remainder32_floor = remainder32 - ushort(remainder32 % 8);
-      
-      // Prevent the value from becoming -INF during the FMA before the
-      // exponentiation. If the multiplication during FMA returns -INF,
-      // subtracting a positive 'm' value will turn it into zero. We don't want
-      // that. exp(0) evaluates to 1.00 and corrupts the value of 'l'.
-      const float mask_value =
-      (0.875 / M_LOG2E_F) * -numeric_limits<float>::max();
-      
-#pragma clang loop unroll(full)
-      for (ushort index = 0; index < 2; ++index) {
-        if (morton_offset.x + index >= remainder32 - remainder32_floor) {
-          auto S_elements = \(sram)[remainder32_floor / 8].thread_elements();
-          (*S_elements)[index] = mask_value;
-        }
-      }
-#pragma clang loop unroll(full)
-      for (ushort c = remainder32_floor + 8; c < 32; c += 8) {
-        auto S_elements = \(sram)[c / 8].thread_elements();
-        *S_elements = mask_value;
-      }
-    }
-    
-"""
   }
 }
 

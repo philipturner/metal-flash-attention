@@ -91,11 +91,11 @@
 // Backward Query (true)
 //   // Setup
 //   initialize dQ[32][128]
+//   load L[32]
 //   repeat 4 times
 //     load dO[r][32]
 //     load O[r][32]
 //     D += dO * O
-//   load L[32]
 //
 //   // Inner Loop
 //   for c in 0..<C {

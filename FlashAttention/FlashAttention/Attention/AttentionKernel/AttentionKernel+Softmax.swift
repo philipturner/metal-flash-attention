@@ -7,8 +7,6 @@
 
 // MARK: - L Terms and D Terms
 
-// TODO: Refactor the D terms computation to use the blocked algorithm.
-
 extension AttentionKernel {
   func computeLTerm() -> String {
     return """
@@ -20,20 +18,93 @@ extension AttentionKernel {
   }
   
   func computeDTerm() -> String {
+    var accessDesc = AttentionTwoOperandAccessDescriptor()
+    accessDesc.A = "dO"
+    accessDesc.B = "O"
+    accessDesc.transposeA = transposeState.O
+    accessDesc.transposeB = transposeState.O
+    accessDesc.leadingDimensionA = leadingDimensions.O
+    accessDesc.leadingDimensionB = leadingDimensions.O
+    accessDesc.matrixDimensions = (M: "R", N: "R")
+    accessDesc.matrixOffset = (M: "gid * R_group", N: "gid * R_group")
+    
+    accessDesc.reservePointers = """
+
+      // Find where the dO data will be read from.
+      ushort2 A_block_offset(morton_offset.x, morton_offset.y + sidx * 8);
+      auto dO_block = (threadgroup float*)(threadgroup_block);
+      dO_block = simdgroup_matrix_storage<float>::apply_offset(
+        dO_block, 32, A_block_offset, \(transposeState.O));
+      
+      // Find where the O data will be read from.
+      ushort2 B_block_offset(morton_offset.x, morton_offset.y + sidx * 8);
+      auto O_block = (threadgroup float*)(threadgroup_block) + \(32 * 32);
+      O_block = simdgroup_matrix_storage<float>::apply_offset(
+        O_block, 32, B_block_offset, \(transposeState.O));
+
+"""
+    
+    accessDesc.innerLoop = """
+
+          simdgroup_matrix_storage<float> dO;
+          simdgroup_matrix_storage<float> O;
+          dO.load(dO_block, 32, ushort2(d, 0), \(transposeState.O));
+          O.load(O_block, 32, ushort2(d, 0), \(transposeState.O));
+
+          float2 dO_value = *(dO.thread_elements());
+          float2 O_value = *(O.thread_elements());
+          D_term_accumulator += dO_value * O_value;
+
+"""
+    
+    let dOO = twoOperandAccess(descriptor: accessDesc)
+    
     return """
 
-  float D_term = 0;
-#pragma clang loop unroll(full)
-  for (ushort d = 0; d < \(paddedD); d += 8) {
-    float2 O_value = *(O_sram[d / 8].thread_elements());
-    float2 dO_value = *(dO_sram[d / 8].thread_elements());
-    D_term += O_value[0] * dO_value[0];
-    D_term += O_value[1] * dO_value[1];
-  }
+  float2 D_term_accumulator(0);
+  \(dOO)
+  
+  float D_term = D_term_accumulator[0] + D_term_accumulator[1];
   D_term += simd_shuffle_xor(D_term, 1);
   D_term += simd_shuffle_xor(D_term, 8);
   D_term *= 1 / sqrt(float(D));
 
+"""
+  }
+}
+
+// MARK: - Masking the Matrix Edge
+
+extension AttentionKernel {
+  // Prevent the zero padding from changing the values of 'm' and 'l'.
+  func maskAlongColumns(sram: String) -> String {
+    return """
+    
+    if ((C % 32 != 0) && (c + 32 > C)) {
+      const ushort remainder32 = uint(C % 32);
+      const ushort remainder32_floor = remainder32 - ushort(remainder32 % 8);
+      
+      // Prevent the value from becoming -INF during the FMA before the
+      // exponentiation. If the multiplication during FMA returns -INF,
+      // subtracting a positive 'm' value will turn it into zero. We don't want
+      // that. exp(0) evaluates to 1.00 and corrupts the value of 'l'.
+      const float mask_value =
+      (0.875 / M_LOG2E_F) * -numeric_limits<float>::max();
+      
+#pragma clang loop unroll(full)
+      for (ushort index = 0; index < 2; ++index) {
+        if (morton_offset.x + index >= remainder32 - remainder32_floor) {
+          auto S_elements = \(sram)[remainder32_floor / 8].thread_elements();
+          (*S_elements)[index] = mask_value;
+        }
+      }
+#pragma clang loop unroll(full)
+      for (ushort c = remainder32_floor + 8; c < 32; c += 8) {
+        auto S_elements = \(sram)[c / 8].thread_elements();
+        *S_elements = mask_value;
+      }
+    }
+    
 """
   }
 }
