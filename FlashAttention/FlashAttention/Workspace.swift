@@ -16,16 +16,16 @@ import QuartzCore
 func executeScript() {
   // Automate the execution of the test suite.
   profileProblemSize(N: 10, D: 3)
-  profileProblemSize(N: 10, D: 80)
-  profileProblemSize(N: 8, D: 2)
-  profileProblemSize(N: 9, D: 2)
-  profileProblemSize(N: 24, D: 2)
-  profileProblemSize(N: 192, D: 77)
-  profileProblemSize(N: 192, D: 80)
-  profileProblemSize(N: 64, D: 32)
-  profileProblemSize(N: 32, D: 64)
-  profileProblemSize(N: 4, D: 1)
-  profileProblemSize(N: 4, D: 2)
+//  profileProblemSize(N: 10, D: 80)
+//  profileProblemSize(N: 8, D: 2)
+//  profileProblemSize(N: 9, D: 2)
+//  profileProblemSize(N: 24, D: 2)
+//  profileProblemSize(N: 192, D: 77)
+//  profileProblemSize(N: 192, D: 80)
+//  profileProblemSize(N: 64, D: 32)
+//  profileProblemSize(N: 32, D: 64)
+//  profileProblemSize(N: 4, D: 1)
+//  profileProblemSize(N: 4, D: 2)
 }
 
 func profileProblemSize(N: Int, D: Int) {

@@ -372,81 +372,105 @@ extension AttentionKernel {
   // - Refactor the D[i] computation to not depend on async copy'd data.
   //
   // Alternatively, duplicate the code and modify on a case-by-case basis.
+  //
+  // ## Documentation for Generalized Function
+  //
+  // Accepts the operands A and B, then performs the multiplication A * B^T.
+  // - Parameter A: Name of left-hand side, source of a 32 x D block.
+  // - Parameter B: Name of right-hand side, source of a 32 x D block.
+  // - Parameter C: Name of product register allocation (32 x 32).
+  //
+  // A and C are divided along four SIMDs in the M dimension. Each SIMD carries
+  // out an (8 x D) x (D x 32) matrix multiplication. The product has
+  // dimensions 8 (M dimension) x 32 (N dimension). The caller specifies which
+  // attention dimension (R, C) corresponds to N.
   func computeS() -> String {
+    let A = "Q"
+    let B = "K"
+    let C = "S"
+    let transposeA = transposeState.Q
+    let transposeB = transposeState.K
+    let leadingDimensionA = leadingDimensions.Q
+    let leadingDimensionB = leadingDimensions.K
+    
     return """
-    simdgroup_matrix_storage<float> S_sram[32 / 8];
-
-    // Find where the Q data will be read from.
-    auto Q_block = (threadgroup float*)(threadgroup_block);
-    Q_block = simdgroup_matrix_storage<float>::apply_offset(
-      Q_block, 32, ushort2(0, sidx * 8) + morton_offset, \(transposeState.Q));
-
-    // Find where the K data will be read from.
-    auto KT_block = (threadgroup float*)(threadgroup_block) + \(32 * 32);
-    KT_block = simdgroup_matrix_storage<float>::apply_offset(
-      KT_block, 32, morton_offset, \(!transposeState.K));
-
-    // Outer loop over D.
-#pragma clang loop unroll(full)
-    for (ushort d = 0; d < D; d += 32) {
-      threadgroup_barrier(mem_flags::mem_threadgroup);
+    simdgroup_matrix_storage<float> \(C)_sram[32 / 8];
+    
+    {
+      uint \(A)_src_origin = gid * R_group;
+      uint \(B)_src_origin = c;
+      ushort M_src_dimension = min(uint(R_group), R - gid * R_group);
+      ushort N_src_dimension = min(uint(C_group), C - c);
+      ushort M_offset = sidx * 8;
       
-      if (sidx == 0) {
-        ushort D_src_dimension = min(ushort(32), ushort(D - d));
-        ushort D_dst_dimension = min(ushort(32), ushort(\(paddedD) - d));
+      // Find where the \(A) data will be read from.
+      auto \(A)_block = (threadgroup float*)(threadgroup_block);
+      \(A)_block = simdgroup_matrix_storage<float>::apply_offset(
+        \(A)_block, 32, ushort2(0, M_offset) + morton_offset, \(transposeA));
+      
+      // Find where the \(B) data will be read from.
+      auto \(B)T_block = (threadgroup float*)(threadgroup_block) + \(32 * 32);
+      \(B)T_block = simdgroup_matrix_storage<float>::apply_offset(
+        \(B)T_block, 32, morton_offset, \(!transposeB));
+      
+      // Outer loop over D.
+  #pragma clang loop unroll(full)
+      for (ushort d = 0; d < D; d += 32) {
+        threadgroup_barrier(mem_flags::mem_threadgroup);
         
-        // load Q[r]
-        simdgroup_event events[2];
-        {
-          uint2 device_origin(d, gid * R_group);
-          auto src = simdgroup_matrix_storage<float>::apply_offset(
-            Q, \(leadingDimensions.Q), device_origin, \(transposeState.Q));
-          auto dst = (threadgroup float*)(threadgroup_block);
+        if (sidx == 0) {
+          ushort D_src_dimension = min(ushort(32), ushort(D - d));
+          ushort D_dst_dimension = min(ushort(32), ushort(\(paddedD) - d));
           
-          ushort R_src_dimension = min(uint(R_group), R - gid * R_group);
-          ushort2 tile_src(D_src_dimension, R_src_dimension);
-          ushort2 tile_dst(D_dst_dimension, R_group); // excessive R padding
+          // load \(A)[m]
+          simdgroup_event events[2];
+          {
+            uint2 device_origin(d, \(A)_src_origin);
+            auto src = simdgroup_matrix_storage<float>::apply_offset(
+              \(A), \(leadingDimensionA), device_origin, \(transposeA));
+            auto dst = (threadgroup float*)(threadgroup_block);
+            
+            ushort2 tile_src(D_src_dimension, M_src_dimension);
+            ushort2 tile_dst(D_dst_dimension, 32); // excessive padding
+            events[0].async_copy(
+              dst, 32, tile_dst,
+              src, \(leadingDimensionA), tile_src, \(transposeA));
+          }
           
-          events[0].async_copy(
-            dst, 32, tile_dst,
-            src, \(leadingDimensions.Q), tile_src, \(transposeState.Q));
+          // load \(B)[n]
+          {
+            uint2 device_origin(d, \(B)_src_origin);
+            auto src = simdgroup_matrix_storage<float>::apply_offset(
+              K, \(leadingDimensionB), device_origin, \(transposeB));
+            auto dst = (threadgroup float*)(threadgroup_block) + \(32 * 32);
+            
+            ushort2 tile_src(D_src_dimension, N_src_dimension);
+            ushort2 tile_dst(D_dst_dimension, 32); // excessive padding
+            events[1].async_copy(
+              dst, 32, tile_dst,
+              src, \(leadingDimensionB), tile_src, \(transposeB));
+          }
+          simdgroup_event::wait(2, events);
         }
-        
-        // load K[c]
-        {
-          uint2 device_origin(d, c);
-          auto src = simdgroup_matrix_storage<float>::apply_offset(
-            K, \(leadingDimensions.K), device_origin, \(transposeState.K));
-          auto dst = (threadgroup float*)(threadgroup_block) + \(32 * 32);
-          
-          ushort C_src_dimension = min(uint(C_group), C - c);
-          ushort2 tile_src(D_src_dimension, C_src_dimension);
-          ushort2 tile_dst(D_dst_dimension, C_group); // excessive C padding
-          
-          events[1].async_copy(
-          dst, 32, tile_dst,
-          src, \(leadingDimensions.K), tile_src, \(transposeState.K));
-        }
-        simdgroup_event::wait(2, events);
-      }
-      threadgroup_barrier(mem_flags::mem_threadgroup);
+        threadgroup_barrier(mem_flags::mem_threadgroup);
 
-      // Inner loop over D.
-      ushort d_outer = d;
-#pragma clang loop unroll(full)
-      for (ushort d = 0; d < min(32, \(paddedD) - d_outer); d += 8) {
-        simdgroup_matrix_storage<float> Q;
-        Q.load(Q_block, 32, ushort2(d, 0), \(transposeState.Q));
-        
-        // Inner loop over C.
-#pragma clang loop unroll(full)
-        for (ushort c = 0; c < 32; c += 8) {
-          simdgroup_matrix_storage<float> KT;
-          KT.load(KT_block, 32, ushort2(c, d), \(!transposeState.K));
+        // Inner loop over D.
+        ushort d_outer = d;
+  #pragma clang loop unroll(full)
+        for (ushort d = 0; d < min(32, \(paddedD) - d_outer); d += 8) {
+          simdgroup_matrix_storage<float> \(A);
+          \(A).load(\(A)_block, 32, ushort2(d, 0), \(transposeA));
+          
+          // Inner loop over N.
+  #pragma clang loop unroll(full)
+          for (ushort n = 0; n < 32; n += 8) {
+            simdgroup_matrix_storage<float> \(B)T;
+            \(B)T.load(\(B)T_block, 32, ushort2(n, d), \(!transposeB));
 
-          // Mask out the first accumulate at compile-time.
-          bool accumulate = (d_outer > 0) || (d > 0);
-          S_sram[c / 8].multiply(Q, KT, accumulate);
+            // Mask out the first accumulate at compile-time.
+            bool accumulate = (d_outer > 0) || (d > 0);
+            \(C)_sram[n / 8].multiply(\(A), \(B)T, accumulate);
+          }
         }
       }
     }
