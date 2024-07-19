@@ -61,6 +61,18 @@
 
 extension AttentionKernel {
   func createInnerLoopForward() -> String {
+    var outerProductDesc = AttentionOuterProductDescriptor()
+    outerProductDesc.A = "Q"
+    outerProductDesc.B = "K"
+    outerProductDesc.C = "S"
+    outerProductDesc.transposeA = transposeState.Q
+    outerProductDesc.transposeB = transposeState.K
+    outerProductDesc.leadingDimensionA = leadingDimensions.Q
+    outerProductDesc.leadingDimensionB = leadingDimensions.K
+    outerProductDesc.matrixDimensions = (M: "R", N: "C")
+    outerProductDesc.matrixOffset = (M: "gid * R_group", N: "c")
+    let QKT = outerProduct(descriptor: outerProductDesc)
+    
     var accessDesc = AttentionHBMAccessDescriptor()
     accessDesc.index = "c"
     accessDesc.leadingBlockDimension = leadingBlockDimensions.V
@@ -84,7 +96,8 @@ extension AttentionKernel {
   // Iterate over the columns.
   for (uint c = 0; c < C; c += 32) {
     // S = Q * K^T
-    \(computeS())
+    simdgroup_matrix_storage<float> S_sram[32 / 8];
+    \(QKT)
     \(maskAlongColumns(sram: "S_sram"))
     
     // (m, l, P) = softmax(m, l, S * scaleFactor)
@@ -110,6 +123,30 @@ extension AttentionKernel {
   }
   
   func createInnerLoopBackwardQuery() -> String {
+    var outerProductDesc = AttentionOuterProductDescriptor()
+    outerProductDesc.A = "Q"
+    outerProductDesc.B = "K"
+    outerProductDesc.C = "S"
+    outerProductDesc.transposeA = transposeState.Q
+    outerProductDesc.transposeB = transposeState.K
+    outerProductDesc.leadingDimensionA = leadingDimensions.Q
+    outerProductDesc.leadingDimensionB = leadingDimensions.K
+    outerProductDesc.matrixDimensions = (M: "R", N: "C")
+    outerProductDesc.matrixOffset = (M: "gid * R_group", N: "c")
+    let QKT = outerProduct(descriptor: outerProductDesc)
+    
+    outerProductDesc = AttentionOuterProductDescriptor()
+    outerProductDesc.A = "dO"
+    outerProductDesc.B = "V"
+    outerProductDesc.C = "dP"
+    outerProductDesc.transposeA = transposeState.O
+    outerProductDesc.transposeB = transposeState.V
+    outerProductDesc.leadingDimensionA = leadingDimensions.O
+    outerProductDesc.leadingDimensionB = leadingDimensions.V
+    outerProductDesc.matrixDimensions = (M: "R", N: "C")
+    outerProductDesc.matrixOffset = (M: "gid * R_group", N: "c")
+    let dOVT = outerProduct(descriptor: outerProductDesc)
+    
     var accessDesc = AttentionHBMAccessDescriptor()
     accessDesc.index = "c"
     accessDesc.leadingBlockDimension = leadingBlockDimensions.K
@@ -118,15 +155,6 @@ extension AttentionKernel {
     accessDesc.threadgroupAddress = "threadgroup_block"
     accessDesc.transposeState = transposeState.K
     let prefetchK = prefetchColumns(descriptor: accessDesc)
-    
-    accessDesc = AttentionHBMAccessDescriptor()
-    accessDesc.index = "c"
-    accessDesc.leadingBlockDimension = leadingBlockDimensions.V
-    accessDesc.leadingDimension = leadingDimensions.V
-    accessDesc.name = "V"
-    accessDesc.threadgroupAddress = "threadgroup_block"
-    accessDesc.transposeState = transposeState.V
-    let prefetchV = prefetchColumns(descriptor: accessDesc)
     
     var accumulateDesc = AttentionAccumulateDescriptor()
     accumulateDesc.index = "c"
@@ -142,18 +170,15 @@ extension AttentionKernel {
   // Iterate over the columns.
   for (uint c = 0; c < C; c += 32) {
     // S = Q * K^T
-    \(computeS())
+    simdgroup_matrix_storage<float> S_sram[32 / 8];
+    \(QKT)
     
     // P = softmax(S * scaleFactor)
     \(checkpointSoftmax())
     
-    // load V[c]
-    threadgroup_barrier(mem_flags::mem_threadgroup);
-    \(prefetchV)
-    
     // dP = dO * V^T
-    threadgroup_barrier(mem_flags::mem_threadgroup);
-    \(computeDerivativeP())
+    simdgroup_matrix_storage<float> dP_sram[32 / 8];
+    \(dOVT)
     
     // dS = P * (dP - D) * scaleFactor
     \(computeDerivativeSoftmax())
@@ -171,6 +196,18 @@ extension AttentionKernel {
   }
   
   func createInnerLoopKeyValue(computeDerivativeK: Bool) -> String {
+    var outerProductDesc = AttentionOuterProductDescriptor()
+    outerProductDesc.A = "K"
+    outerProductDesc.B = "Q"
+    outerProductDesc.C = "ST"
+    outerProductDesc.transposeA = transposeState.K
+    outerProductDesc.transposeB = transposeState.Q
+    outerProductDesc.leadingDimensionA = leadingDimensions.K
+    outerProductDesc.leadingDimensionB = leadingDimensions.Q
+    outerProductDesc.matrixDimensions = (M: "C", N: "R")
+    outerProductDesc.matrixOffset = (M: "gid * C_group", N: "r")
+    let KQT = outerProduct(descriptor: outerProductDesc)
+    
     var accessDesc = AttentionHBMAccessDescriptor()
     accessDesc.index = "r"
     accessDesc.leadingBlockDimension = leadingBlockDimensions.Q
@@ -202,16 +239,17 @@ extension AttentionKernel {
 
   // Iterate over the rows.
   for (uint r = 0; r < R; r += 32) {
+    // S^T = K * Q^T
+    simdgroup_matrix_storage<float> ST_sram[32 / 8];
+    \(KQT)
+
     // load Q[r]
     // load L[r]
     threadgroup_barrier(mem_flags::mem_threadgroup);
     \(prefetchQLTerms())
     
-    // S^T = K * Q^T
-    threadgroup_barrier(mem_flags::mem_threadgroup);
-    \(computeST())
-    
     // P^T = exp(S^T - L)
+    threadgroup_barrier(mem_flags::mem_threadgroup);
     \(checkpointSoftmaxT())
     
     // load dO[r]
@@ -365,53 +403,69 @@ extension AttentionKernel {
 
 // MARK: - Attention Matrix
 
+struct AttentionOuterProductDescriptor {
+  /// Name of left-hand side, source of a 32 x D block.
+  var A: String?
+  
+  /// Name of right-hand side, source of a 32 x D block.
+  var B: String?
+  
+  /// Name of product register allocation (32 x 32).
+  var C: String?
+  
+  var transposeA: Bool?
+  var transposeB: Bool?
+  var leadingDimensionA: String?
+  var leadingDimensionB: String?
+  var matrixDimensions: (M: String, N: String)?
+  var matrixOffset: (M: String, N: String)?
+}
+
 extension AttentionKernel {
   // Tasks:
   // - Generalize the function to support any matrix multiplication.
   // - Apply to the 4 immediately applicable matrix multiplications.
-  // - Refactor the D[i] computation to not depend on async copy'd data.
-  //
-  // Alternatively, duplicate the code and modify on a case-by-case basis.
-  //
-  // ## Documentation for Generalized Function
-  //
+  // - Remove as many cached operands as possible.
+  // - Factor out the prefetching part of this function, so it can be used
+  //   for D[i] and another, similar matrix multiplication.
+  
   // Accepts the operands A and B, then performs the multiplication A * B^T.
-  // - Parameter A: Name of left-hand side, source of a 32 x D block.
-  // - Parameter B: Name of right-hand side, source of a 32 x D block.
-  // - Parameter C: Name of product register allocation (32 x 32).
   //
   // A and C are divided along four SIMDs in the M dimension. Each SIMD carries
   // out an (8 x D) x (D x 32) matrix multiplication. The product has
   // dimensions 8 (M dimension) x 32 (N dimension). The caller specifies which
   // attention dimension (R, C) corresponds to N.
-  func computeS() -> String {
-    let A = "Q"
-    let B = "K"
-    let C = "S"
-    let transposeA = transposeState.Q
-    let transposeB = transposeState.K
-    let leadingDimensionA = leadingDimensions.Q
-    let leadingDimensionB = leadingDimensions.K
+  func outerProduct(descriptor: AttentionOuterProductDescriptor) -> String {
+    guard let A = descriptor.A,
+          let B = descriptor.B,
+          let C = descriptor.C,
+          let transposeA = descriptor.transposeA,
+          let transposeB = descriptor.transposeB,
+          let leadingDimensionA = descriptor.leadingDimensionA,
+          let leadingDimensionB = descriptor.leadingDimensionB,
+          let matrixDimensions = descriptor.matrixDimensions,
+          let matrixOffset = descriptor.matrixOffset else {
+      fatalError("Descriptor was incomplete.")
+    }
     
     return """
-    simdgroup_matrix_storage<float> \(C)_sram[32 / 8];
-    
     {
-      uint \(A)_src_origin = gid * R_group;
-      uint \(B)_src_origin = c;
-      ushort M_src_dimension = min(uint(R_group), R - gid * R_group);
-      ushort N_src_dimension = min(uint(C_group), C - c);
-      ushort M_offset = sidx * 8;
+      uint M_offset = \(matrixOffset.M);
+      uint N_offset = \(matrixOffset.N);
+      ushort M_src_dimension = min(uint(32), \(matrixDimensions.M) - M_offset);
+      ushort N_src_dimension = min(uint(32), \(matrixDimensions.N) - N_offset);
       
       // Find where the \(A) data will be read from.
+      ushort2 A_block_offset(morton_offset.x, morton_offset.y + sidx * 8);
       auto \(A)_block = (threadgroup float*)(threadgroup_block);
       \(A)_block = simdgroup_matrix_storage<float>::apply_offset(
-        \(A)_block, 32, ushort2(0, M_offset) + morton_offset, \(transposeA));
+        \(A)_block, 32, A_block_offset, \(transposeA));
       
       // Find where the \(B) data will be read from.
+      ushort2 B_block_offset(morton_offset.x, morton_offset.y);
       auto \(B)T_block = (threadgroup float*)(threadgroup_block) + \(32 * 32);
       \(B)T_block = simdgroup_matrix_storage<float>::apply_offset(
-        \(B)T_block, 32, morton_offset, \(!transposeB));
+        \(B)T_block, 32, B_block_offset, \(!transposeB));
       
       // Outer loop over D.
   #pragma clang loop unroll(full)
@@ -425,9 +479,9 @@ extension AttentionKernel {
           // load \(A)[m]
           simdgroup_event events[2];
           {
-            uint2 device_origin(d, \(A)_src_origin);
+            uint2 A_offset(d, M_offset);
             auto src = simdgroup_matrix_storage<float>::apply_offset(
-              \(A), \(leadingDimensionA), device_origin, \(transposeA));
+              \(A), \(leadingDimensionA), A_offset, \(transposeA));
             auto dst = (threadgroup float*)(threadgroup_block);
             
             ushort2 tile_src(D_src_dimension, M_src_dimension);
@@ -439,9 +493,9 @@ extension AttentionKernel {
           
           // load \(B)[n]
           {
-            uint2 device_origin(d, \(B)_src_origin);
+            uint2 B_offset(d, N_offset);
             auto src = simdgroup_matrix_storage<float>::apply_offset(
-              K, \(leadingDimensionB), device_origin, \(transposeB));
+              \(B), \(leadingDimensionB), B_offset, \(transposeB));
             auto dst = (threadgroup float*)(threadgroup_block) + \(32 * 32);
             
             ushort2 tile_src(D_src_dimension, N_src_dimension);
@@ -472,31 +526,6 @@ extension AttentionKernel {
             \(C)_sram[n / 8].multiply(\(A), \(B)T, accumulate);
           }
         }
-      }
-    }
-
-"""
-  }
-  
-  func computeST() -> String {
-    return """
-
-    auto QT_block = \(blockQ());
-    QT_block = simdgroup_matrix_storage<float>::apply_offset(
-      QT_block, \(leadingBlockDimensions.Q), morton_offset,
-      \(!transposeState.Q));
-
-    simdgroup_matrix_storage<float> ST_sram[32 / 8];
-#pragma clang loop unroll(full)
-    for (ushort d = 0; d < \(paddedD); d += 8) {
-#pragma clang loop unroll(full)
-      for (ushort r = 0; r < 32; r += 8) {
-        ushort2 origin(r, d);
-        simdgroup_matrix_storage<float> QT;
-        QT.load(
-          QT_block, \(leadingBlockDimensions.Q), origin, \(!transposeState.Q));
-        ST_sram[r / 8]
-          .multiply(K_sram[d / 8], QT, d > 0);
       }
     }
 
@@ -691,34 +720,9 @@ extension AttentionKernel {
 // MARK: - Attention Matrix Derivative
 
 extension AttentionKernel {
-  func computeDerivativeP() -> String {
-    return """
-
-    auto VT_block = (threadgroup float*)(threadgroup_block);
-    VT_block = simdgroup_matrix_storage<float>::apply_offset(
-      VT_block, \(leadingBlockDimensions.V), morton_offset,
-      \(!transposeState.V));
-    
-    simdgroup_matrix_storage<float> dP_sram[32 / 8];
-#pragma clang loop unroll(full)
-    for (ushort d = 0; d < \(paddedD); d += 8) {
-#pragma clang loop unroll(full)
-      for (ushort c = 0; c < 32; c += 8) {
-        ushort2 origin(c, d);
-        simdgroup_matrix_storage<float> VT;
-        VT.load(
-          VT_block, \(leadingBlockDimensions.V), origin, \(!transposeState.V));
-        dP_sram[c / 8]
-          .multiply(dO_sram[d / 8], VT, d > 0);
-      }
-    }
-    
-"""
-  }
-  
   func computeDerivativePT() -> String {
     return """
-
+    
     auto dOT_block = \(blockDerivativeO());
     dOT_block = simdgroup_matrix_storage<float>::apply_offset(
       dOT_block, \(leadingBlockDimensions.O), morton_offset,
@@ -737,7 +741,7 @@ extension AttentionKernel {
           .multiply(V_sram[d / 8], dOT, d > 0);
       }
     }
-
+    
 """
   }
 }

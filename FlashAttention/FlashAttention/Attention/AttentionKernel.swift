@@ -113,6 +113,8 @@ kernel void attention(
 """
     
     // R/C_group * D * sizeof(float)
+    //
+    // Temporary patch: paddedD -> max(paddedD, 32)
     threadgroupMemoryAllocation += 32 * max(paddedD, 32) * 4
     
     source += createArguments(type: type)
@@ -378,59 +380,33 @@ extension AttentionKernel {
 """
       }
       
-      // Q, dQ, L[i]
+      // dQ, L[i]
       if computeDerivativeQ {
-        var accessDesc = AttentionHBMAccessDescriptor()
-        accessDesc.index = "gid * R_group"
-        accessDesc.leadingBlockDimension = leadingBlockDimensions.Q
-        accessDesc.leadingDimension = leadingDimensions.Q
-        accessDesc.name = "Q"
-        accessDesc.threadgroupAddress = "threadgroup_block"
-        accessDesc.transposeState = transposeState.Q
-        
+        output += zeroInitializeAccumulator(name: "dQ")
         output += """
 
   float L_term = L_terms[linear_array_slot];
 
 """
-        output += zeroInitializeAccumulator(name: "dQ")
-        output += threadgroupBarrier()
       }
       
     case .backwardKeyValue(let computeDerivativeK):
-      // dK, K
-      do {
-        var accessDesc = AttentionHBMAccessDescriptor()
-        accessDesc.index = "gid * C_group"
-        accessDesc.leadingBlockDimension = leadingBlockDimensions.K
-        accessDesc.leadingDimension = leadingDimensions.K
-        accessDesc.name = "K"
-        accessDesc.threadgroupAddress = "threadgroup_block"
-        accessDesc.transposeState = transposeState.K
-        
-        output += prefetchColumns(descriptor: accessDesc)
-        if computeDerivativeK {
-          output += zeroInitializeAccumulator(name: "dK")
-        }
-        output += threadgroupBarrier()
-        output += load(descriptor: accessDesc)
-      }
+      var accessDesc = AttentionHBMAccessDescriptor()
+      accessDesc.index = "gid * C_group"
+      accessDesc.leadingBlockDimension = leadingBlockDimensions.V
+      accessDesc.leadingDimension = leadingDimensions.V
+      accessDesc.name = "V"
+      accessDesc.threadgroupAddress = "threadgroup_block"
+      accessDesc.transposeState = transposeState.V
       
-      // dV, V
-      do {
-        var accessDesc = AttentionHBMAccessDescriptor()
-        accessDesc.index = "gid * C_group"
-        accessDesc.leadingBlockDimension = leadingBlockDimensions.V
-        accessDesc.leadingDimension = leadingDimensions.V
-        accessDesc.name = "V"
-        accessDesc.threadgroupAddress = "threadgroup_block"
-        accessDesc.transposeState = transposeState.V
-        
-        output += prefetchColumns(descriptor: accessDesc)
-        output += zeroInitializeAccumulator(name: "dV")
-        output += threadgroupBarrier()
-        output += load(descriptor: accessDesc)
+      // dK, dV, V
+      if computeDerivativeK {
+        output += zeroInitializeAccumulator(name: "dK")
       }
+      output += prefetchColumns(descriptor: accessDesc)
+      output += zeroInitializeAccumulator(name: "dV")
+      output += threadgroupBarrier()
+      output += load(descriptor: accessDesc)
     }
     
     return output
