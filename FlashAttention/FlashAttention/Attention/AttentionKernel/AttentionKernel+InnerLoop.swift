@@ -187,6 +187,16 @@ extension AttentionKernel {
     accumulateDesc.transposeStateRHS = transposeState.V
     let accumulateO = accumulate(descriptor: accumulateDesc)
     
+    var accumulateDesc2 = AttentionAccumulateDescriptor2()
+    accumulateDesc2.A = "P"
+    accumulateDesc2.B = "V"
+    accumulateDesc2.C = "O"
+    accumulateDesc2.transposeB = transposeState.V
+    accumulateDesc2.leadingDimensionB = leadingDimensions.V
+    accumulateDesc2.matrixDimensionK = "C"
+    accumulateDesc2.matrixOffsetK = "c"
+    let accumulateO2 = accumulate2(descriptor: accumulateDesc2)
+    
     return """
   
   // Iterate over the columns.
@@ -199,13 +209,8 @@ extension AttentionKernel {
     // (m, l, P) = softmax(m, l, S * scaleFactor)
     \(onlineSoftmax())
     
-    // load V[c]
-    threadgroup_barrier(mem_flags::mem_threadgroup);
-    \(prefetchV)
-    
     // O += P * V
-    threadgroup_barrier(mem_flags::mem_threadgroup);
-    \(accumulateO)
+    \(accumulateO2)
   }
   
   // O /= l
@@ -261,6 +266,16 @@ extension AttentionKernel {
     accumulateDesc.transposeStateRHS = transposeState.K
     let accumulateDerivativeQ = accumulate(descriptor: accumulateDesc)
     
+    var accumulateDesc2 = AttentionAccumulateDescriptor2()
+    accumulateDesc2.A = "dS"
+    accumulateDesc2.B = "K"
+    accumulateDesc2.C = "dQ"
+    accumulateDesc2.transposeB = transposeState.K
+    accumulateDesc2.leadingDimensionB = leadingDimensions.K
+    accumulateDesc2.matrixDimensionK = "C"
+    accumulateDesc2.matrixOffsetK = "c"
+    let accumulateDerivativeQ2 = accumulate2(descriptor: accumulateDesc2)
+    
     return """
   
   // Iterate over the columns.
@@ -279,13 +294,8 @@ extension AttentionKernel {
     // dS = P * (dP - D) * scaleFactor
     \(computeDerivativeSoftmax())
     
-    // load K[c]
-    threadgroup_barrier(mem_flags::mem_threadgroup);
-    \(prefetchK)
-    
     // dQ += dS * K
-    threadgroup_barrier(mem_flags::mem_threadgroup);
-    \(accumulateDerivativeQ)
+    \(accumulateDerivativeQ2)
   }
     
 """
@@ -350,6 +360,16 @@ extension AttentionKernel {
     accumulateDesc.transposeStateRHS = transposeState.Q
     let accumulateDerivativeK = accumulate(descriptor: accumulateDesc)
     
+    var accumulateDesc2 = AttentionAccumulateDescriptor2()
+    accumulateDesc2.A = "dST"
+    accumulateDesc2.B = "Q"
+    accumulateDesc2.C = "dK"
+    accumulateDesc2.transposeB = transposeState.Q
+    accumulateDesc2.leadingDimensionB = leadingDimensions.Q
+    accumulateDesc2.matrixDimensionK = "R"
+    accumulateDesc2.matrixOffsetK = "r"
+    let accumulateDerivativeK2 = accumulate2(descriptor: accumulateDesc2)
+    
     var output = """
 
   // Iterate over the rows.
@@ -376,13 +396,9 @@ extension AttentionKernel {
     if computeDerivativeK {
       output += """
   
-    // load Q[r]
-    threadgroup_barrier(mem_flags::mem_threadgroup);
-    \(prefetchQ)
-
     // dK += dS^T * Q
     threadgroup_barrier(mem_flags::mem_threadgroup);
-    \(accumulateDerivativeK)
+    \(accumulateDerivativeK2)
   }
   
 """

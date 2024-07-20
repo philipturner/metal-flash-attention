@@ -98,6 +98,9 @@ using namespace metal;
     
     source += """
 
+#pragma clang diagnostic push
+#pragma clang diagnostic ignored "-Wunused-const-variable"
+
 // Dimensions of each matrix.
 constant uint R [[function_constant(0)]];
 constant uint C [[function_constant(1)]];
@@ -106,6 +109,8 @@ constant ushort D [[function_constant(2)]];
 // Define the memory layout of the matrix block.
 constant ushort R_group = 32;
 constant ushort C_group = 32;
+
+#pragma clang diagnostic pop
 
 // Declare the function.
 kernel void attention(

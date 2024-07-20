@@ -50,11 +50,14 @@ extension AttentionKernel {
         ushort d_outer = d;
 #pragma clang loop unroll(full)
         for (ushort d = 0; d < min(32, \(paddedD) - d_outer); d += 8) {
+          // Load the LHS and RHS from threadgroup memory.
+          ushort2 origin(d, 0);
           simdgroup_matrix_storage<float> dO;
           simdgroup_matrix_storage<float> O;
-          dO.load(dO_block, 32, ushort2(d, 0), \(transposeState.O));
-          O.load(O_block, 32, ushort2(d, 0), \(transposeState.O));
-
+          dO.load(dO_block, 32, origin, \(transposeState.O));
+          O.load(O_block, 32, origin, \(transposeState.O));
+          
+          // Perform the pointwise multiplication.
           float2 dO_value = *(dO.thread_elements());
           float2 O_value = *(O.thread_elements());
           D_term_accumulator += dO_value * O_value;
