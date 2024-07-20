@@ -8,71 +8,7 @@
 // Operations where one operand is the attention matrix, the other operand is
 // read from RAM.
 
-// TODO: Refactor 'accumulate' to use the blocked algorithm.
-
 struct AttentionAccumulateDescriptor {
-  var index: String?
-  var indexedBlockDimension: UInt16?
-  var leadingBlockDimensionRHS: UInt16?
-  var names: (accumulator: String, lhs: String, rhs: String)?
-  var threadgroupAddress: String?
-  var transposeStateRHS: Bool?
-}
-
-extension AttentionKernel {
-  func accumulate(descriptor: AttentionAccumulateDescriptor) -> String {
-    guard let index = descriptor.index,
-          let indexedBlockDimension = descriptor.indexedBlockDimension,
-          let leadingBlockDimensionRHS = descriptor.leadingBlockDimensionRHS,
-          let names = descriptor.names,
-          let threadgroupAddress = descriptor.threadgroupAddress,
-          let transposeStateRHS = descriptor.transposeStateRHS else {
-      fatalError("Descriptor was incomplete.")
-    }
-    
-    return """
-    
-    // Where the did the async copy put the RHS?
-    auto \(names.rhs)_block = (threadgroup float*)(\(threadgroupAddress));
-    \(names.rhs)_block = simdgroup_matrix_storage<float>::apply_offset(
-      \(names.rhs)_block,
-      \(leadingBlockDimensionRHS),
-      morton_offset,
-      \(transposeStateRHS));
-    
-    // Iterate over the row/column dimension.
-#pragma clang loop unroll(full)
-    for (
-      ushort \(index) = 0; \(index) < \(indexedBlockDimension); \(index) += 8
-    ) {
-
-      // Iterate over the head dimension.
-#pragma clang loop unroll(full)
-      for (ushort d = 0; d < \(paddedD); d += 8) {
-        ushort2 origin(d, \(index));
-        simdgroup_matrix_storage<float> \(names.rhs);
-        
-        // Load the RHS from threadgroup memory.
-        \(names.rhs).load(
-          \(names.rhs)_block,
-          \(leadingBlockDimensionRHS),
-          origin,
-          \(transposeStateRHS));
-        
-        // Add the contributions from the c-th/r-th element of the attention
-        // matrix row/column.
-        \(names.accumulator)_sram[d / 8].multiply(
-          \(names.lhs)_sram[\(index) / 8],
-          \(names.rhs),
-          /*accumulate=*/true);
-      }
-    }
-
-"""
-  }
-}
-
-struct AttentionAccumulateDescriptor2 {
   /// Name of left-hand side register allocation (32 x 32).
   var A: String?
   
@@ -93,7 +29,7 @@ struct AttentionAccumulateDescriptor2 {
 }
 
 extension AttentionKernel {
-  func accumulate2(descriptor: AttentionAccumulateDescriptor2) -> String {
+  func accumulate(descriptor: AttentionAccumulateDescriptor) -> String {
     guard let A = descriptor.A,
           let B = descriptor.B,
           let C = descriptor.C,
@@ -161,19 +97,18 @@ simdgroup_matrix_storage<float> \(B);
         }
         threadgroup_barrier(mem_flags::mem_threadgroup);
         
-        ushort d_outer = d;
-        
         // Iterate over the row/column dimension.
-    #pragma clang loop unroll(full)
+#pragma clang loop unroll(full)
         for (ushort k = 0; k < 32; k += 8) {
+          // Iterate over the head dimension.
+          ushort d_outer = d;
           if (\(paddedD) - d_outer >= 64) {
-    #pragma clang loop unroll(full)
+#pragma clang loop unroll(full)
             for (ushort d = 0; d < 64; d += 8) {
               \(loopBody)
             }
           } else {
-          // Iterate over the head dimension.
-    #pragma clang loop unroll(full)
+#pragma clang loop unroll(full)
             for (ushort d = 0; d < \(paddedD) % 64; d += 8) {
               \(loopBody)
             }
@@ -226,53 +161,79 @@ extension AttentionKernel {
     
 """
     
-    accessDesc.innerLoop = """
-        
-        ushort d_outer = d;
-        
-        // First multiplication: dV += P^T * dO
-        //
-        // Inner loop over the column dimension.
-#pragma clang loop unroll(full)
-        for (ushort r = 0; r < 32; r += 8) {
-          // Inner loop over the head dimension.
-#pragma clang loop unroll(full)
-          for (ushort d = 0; d < min(32, \(paddedD) - d_outer); d += 8) {
-            // Load the RHS from threadgroup memory.
-            ushort2 origin(d, r);
-            simdgroup_matrix_storage<float> dO;
-            dO.load(dO_block, 32, origin, \(transposeState.O));
-            
-            // Add the contributions from the r-th element of the attention
-            // matrix column.
-            dV_sram[(d_outer + d) / 8].multiply(
-              PT_sram[r / 8], dO, /*accumulate=*/true);
-          }
-        }
-        
-        // Second multiplication: dP = V * dO^T
-        //
-        // Inner loop over the head dimension.
-#pragma clang loop unroll(full)
-        for (ushort d = 0; d < min(32, \(paddedD) - d_outer); d += 8) {
-          // Load the LHS from threadgroup memory.
-          ushort2 origin(d, 0);
-          simdgroup_matrix_storage<float> V;
-          V.load(V_block, 32, origin, \(transposeState.V));
-          
-          // Inner loop over the column dimension.
-#pragma clang loop unroll(full)
-          for (ushort c = 0; c < 32; c += 8) {
-            // Load the RHS from threadgroup memory.
-            ushort2 origin(c, d);
-            simdgroup_matrix_storage<float> dOT;
-            dOT.load(dOT_block, 32, origin, \(!transposeState.O));
+    let innerLoopDerivativeV = """
 
-            // Mask out the first accumulate at compile-time.
-            bool accumulate = (d_outer > 0) || (d > 0);
-            dPT_sram[c / 8].multiply(V, dOT, accumulate);
-          }
-        }
+// Load the RHS from threadgroup memory.
+ushort2 origin(d, r);
+simdgroup_matrix_storage<float> dO;
+dO.load(dO_block, 32, origin, \(transposeState.O));
+
+// Add the contributions from the r-th element of the attention
+// matrix column.
+dV_sram[(d_outer + d) / 8].multiply(
+  PT_sram[r / 8], dO, /*accumulate=*/true);
+
+"""
+    
+    let innerLoopDerivativeP = """
+
+// Load the LHS from threadgroup memory.
+ushort2 origin(d, 0);
+simdgroup_matrix_storage<float> V;
+V.load(V_block, 32, origin, \(transposeState.V));
+
+// Inner loop over the column dimension.
+#pragma clang loop unroll(full)
+for (ushort c = 0; c < 32; c += 8) {
+  // Load the RHS from threadgroup memory.
+  ushort2 origin(c, d);
+  simdgroup_matrix_storage<float> dOT;
+  dOT.load(dOT_block, 32, origin, \(!transposeState.O));
+
+  // Mask out the first accumulate at compile-time.
+  bool accumulate = (d_outer > 0) || (d > 0);
+  dPT_sram[c / 8].multiply(V, dOT, accumulate);
+}
+
+"""
+    
+    accessDesc.innerLoop = """
+
+ushort d_outer = d;
+
+// First multiplication: dV += P^T * dO
+//
+// Inner loop over the column dimension.
+#pragma clang loop unroll(full)
+for (ushort r = 0; r < 32; r += 8) {
+  // Inner loop over the head dimension.
+  if (\(paddedD) - d_outer >= 32) {
+  #pragma clang loop unroll(full)
+    for (ushort d = 0; d < 32; d += 8) {
+      \(innerLoopDerivativeV)
+    }
+  } else {
+  #pragma clang loop unroll(full)
+    for (ushort d = 0; d < \(paddedD) % 32; d += 8) {
+      \(innerLoopDerivativeV)
+    }
+  }
+}
+
+// Second multiplication: dP = V * dO^T
+//
+// Inner loop over the head dimension.
+if (\(paddedD) - d_outer >= 32) {
+#pragma clang loop unroll(full)
+  for (ushort d = 0; d < 32; d += 8) {
+    \(innerLoopDerivativeP)
+  }
+} else {
+#pragma clang loop unroll(full)
+  for (ushort d = 0; d < \(paddedD) % 32; d += 8) {
+    \(innerLoopDerivativeP)
+  }
+}
 
 """
     

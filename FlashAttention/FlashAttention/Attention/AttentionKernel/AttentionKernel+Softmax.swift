@@ -44,24 +44,37 @@ extension AttentionKernel {
 
 """
     
+    let loopBody = """
+
+// Load the LHS and RHS from threadgroup memory.
+ushort2 origin(d, 0);
+simdgroup_matrix_storage<float> dO;
+simdgroup_matrix_storage<float> O;
+dO.load(dO_block, 32, origin, \(transposeState.O));
+O.load(O_block, 32, origin, \(transposeState.O));
+
+// Perform the pointwise multiplication.
+float2 dO_value = *(dO.thread_elements());
+float2 O_value = *(O.thread_elements());
+D_term_accumulator += dO_value * O_value;
+
+"""
+    
     accessDesc.innerLoop = """
 
-        // Inner loop over D.
-        ushort d_outer = d;
+// Inner loop over D.
+ushort d_outer = d;
+if (\(paddedD) - d_outer >= 32) {
 #pragma clang loop unroll(full)
-        for (ushort d = 0; d < min(32, \(paddedD) - d_outer); d += 8) {
-          // Load the LHS and RHS from threadgroup memory.
-          ushort2 origin(d, 0);
-          simdgroup_matrix_storage<float> dO;
-          simdgroup_matrix_storage<float> O;
-          dO.load(dO_block, 32, origin, \(transposeState.O));
-          O.load(O_block, 32, origin, \(transposeState.O));
-          
-          // Perform the pointwise multiplication.
-          float2 dO_value = *(dO.thread_elements());
-          float2 O_value = *(O.thread_elements());
-          D_term_accumulator += dO_value * O_value;
-        }
+  for (ushort d = 0; d < 32; d += 8) {
+    \(loopBody)
+  }
+} else {
+#pragma clang loop unroll(full)
+  for (ushort d = 0; d < \(paddedD) % 32; d += 8) {
+    \(loopBody)
+  }
+}
 
 """
     

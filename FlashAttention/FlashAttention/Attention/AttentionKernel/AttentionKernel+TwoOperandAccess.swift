@@ -183,33 +183,45 @@ extension AttentionKernel {
 
 """
     
-    accessDesc.innerLoop = """
+    let loopBody = """
 
-        // Inner loop over D.
-        ushort d_outer = d;
+// Load the LHS from threadgroup memory.
+ushort2 origin(d, 0);
+simdgroup_matrix_storage<float> \(A);
+\(A).load(\(A)_block, 32, origin, \(transposeA));
+
+// Inner loop over N.
 #pragma clang loop unroll(full)
-        for (ushort d = 0; d < min(32, \(paddedD) - d_outer); d += 8) {
-          // Load the LHS from threadgroup memory.
-          ushort2 origin(d, 0);
-          simdgroup_matrix_storage<float> \(A);
-          \(A).load(\(A)_block, 32, origin, \(transposeA));
-          
-          // Inner loop over N.
-#pragma clang loop unroll(full)
-          for (ushort n = 0; n < 32; n += 8) {
-            // Load the RHS from threadgroup memory.
-            ushort2 origin(n, d);
-            simdgroup_matrix_storage<float> \(B)T;
-            \(B)T.load(\(B)T_block, 32, origin, \(!transposeB));
-            
-            // Mask out the first accumulate at compile-time.
-            bool accumulate = (d_outer > 0) || (d > 0);
-            \(C)_sram[n / 8].multiply(\(A), \(B)T, accumulate);
-          }
-        }
+for (ushort n = 0; n < 32; n += 8) {
+  // Load the RHS from threadgroup memory.
+  ushort2 origin(n, d);
+  simdgroup_matrix_storage<float> \(B)T;
+  \(B)T.load(\(B)T_block, 32, origin, \(!transposeB));
+  
+  // Mask out the first accumulate at compile-time.
+  bool accumulate = (d_outer > 0) || (d > 0);
+  \(C)_sram[n / 8].multiply(\(A), \(B)T, accumulate);
+}
 
 """
     
+    accessDesc.innerLoop = """
+
+// Inner loop over D.
+ushort d_outer = d;
+if (\(paddedD) - d_outer >= 32) {
+#pragma clang loop unroll(full)
+  for (ushort d = 0; d < 32; d += 8) {
+    \(loopBody)
+  }
+} else {
+#pragma clang loop unroll(full)
+  for (ushort d = 0; d < \(paddedD) % 32; d += 8) {
+    \(loopBody)
+  }
+}
+
+"""
     return accessDesc
   }
 }

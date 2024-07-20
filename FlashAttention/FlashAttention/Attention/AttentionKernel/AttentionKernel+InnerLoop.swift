@@ -169,33 +169,14 @@ extension AttentionKernel {
     outerProductDesc.matrixOffset = (M: "gid * R_group", N: "c")
     let QKT_Descriptor = outerProduct(descriptor: outerProductDesc)
     
-    var accessDesc = AttentionHBMAccessDescriptor()
-    accessDesc.index = "c"
-    accessDesc.leadingBlockDimension = leadingBlockDimensions.V
-    accessDesc.leadingDimension = leadingDimensions.V
-    accessDesc.name = "V"
-    accessDesc.threadgroupAddress = "threadgroup_block"
-    accessDesc.transposeState = transposeState.V
-    let prefetchV = prefetchColumns(descriptor: accessDesc)
-    
     var accumulateDesc = AttentionAccumulateDescriptor()
-    accumulateDesc.index = "c"
-    accumulateDesc.indexedBlockDimension = blockDimensions.C
-    accumulateDesc.leadingBlockDimensionRHS = leadingBlockDimensions.V
-    accumulateDesc.names = (accumulator: "O", lhs: "P", rhs: "V")
-    accumulateDesc.threadgroupAddress = "threadgroup_block"
-    accumulateDesc.transposeStateRHS = transposeState.V
-    let accumulateO = accumulate(descriptor: accumulateDesc)
-    
-    var accumulateDesc2 = AttentionAccumulateDescriptor2()
-    accumulateDesc2.A = "P"
-    accumulateDesc2.B = "V"
-    accumulateDesc2.C = "O"
-    accumulateDesc2.transposeB = transposeState.V
-    accumulateDesc2.leadingDimensionB = leadingDimensions.V
-    accumulateDesc2.matrixDimensionK = "C"
-    accumulateDesc2.matrixOffsetK = "c"
-    let accumulateO2 = accumulate2(descriptor: accumulateDesc2)
+    accumulateDesc.A = "P"
+    accumulateDesc.B = "V"
+    accumulateDesc.C = "O"
+    accumulateDesc.transposeB = transposeState.V
+    accumulateDesc.leadingDimensionB = leadingDimensions.V
+    accumulateDesc.matrixDimensionK = "C"
+    accumulateDesc.matrixOffsetK = "c"
     
     return """
   
@@ -210,7 +191,7 @@ extension AttentionKernel {
     \(onlineSoftmax())
     
     // O += P * V
-    \(accumulateO2)
+    \(accumulate(descriptor: accumulateDesc))
   }
   
   // O /= l
@@ -248,33 +229,14 @@ extension AttentionKernel {
     outerProductDesc.matrixOffset = (M: "gid * R_group", N: "c")
     let dOVT_Descriptor = outerProduct(descriptor: outerProductDesc)
     
-    var accessDesc = AttentionHBMAccessDescriptor()
-    accessDesc.index = "c"
-    accessDesc.leadingBlockDimension = leadingBlockDimensions.K
-    accessDesc.leadingDimension = leadingDimensions.K
-    accessDesc.name = "K"
-    accessDesc.threadgroupAddress = "threadgroup_block"
-    accessDesc.transposeState = transposeState.K
-    let prefetchK = prefetchColumns(descriptor: accessDesc)
-    
     var accumulateDesc = AttentionAccumulateDescriptor()
-    accumulateDesc.index = "c"
-    accumulateDesc.indexedBlockDimension = blockDimensions.C
-    accumulateDesc.leadingBlockDimensionRHS = leadingBlockDimensions.K
-    accumulateDesc.names = (accumulator: "dQ", lhs: "dS", rhs: "K")
-    accumulateDesc.threadgroupAddress = "threadgroup_block"
-    accumulateDesc.transposeStateRHS = transposeState.K
-    let accumulateDerivativeQ = accumulate(descriptor: accumulateDesc)
-    
-    var accumulateDesc2 = AttentionAccumulateDescriptor2()
-    accumulateDesc2.A = "dS"
-    accumulateDesc2.B = "K"
-    accumulateDesc2.C = "dQ"
-    accumulateDesc2.transposeB = transposeState.K
-    accumulateDesc2.leadingDimensionB = leadingDimensions.K
-    accumulateDesc2.matrixDimensionK = "C"
-    accumulateDesc2.matrixOffsetK = "c"
-    let accumulateDerivativeQ2 = accumulate2(descriptor: accumulateDesc2)
+    accumulateDesc.A = "dS"
+    accumulateDesc.B = "K"
+    accumulateDesc.C = "dQ"
+    accumulateDesc.transposeB = transposeState.K
+    accumulateDesc.leadingDimensionB = leadingDimensions.K
+    accumulateDesc.matrixDimensionK = "C"
+    accumulateDesc.matrixOffsetK = "c"
     
     return """
   
@@ -295,7 +257,7 @@ extension AttentionKernel {
     \(computeDerivativeSoftmax())
     
     // dQ += dS * K
-    \(accumulateDerivativeQ2)
+    \(accumulate(descriptor: accumulateDesc))
   }
     
 """
@@ -342,34 +304,6 @@ extension AttentionKernel {
     
 """
     
-    var accessDesc = AttentionHBMAccessDescriptor()
-    accessDesc.index = "r"
-    accessDesc.leadingBlockDimension = leadingBlockDimensions.Q
-    accessDesc.leadingDimension = leadingDimensions.Q
-    accessDesc.name = "Q"
-    accessDesc.threadgroupAddress = "threadgroup_block"
-    accessDesc.transposeState = transposeState.Q
-    let prefetchQ = prefetchRows(descriptor: accessDesc)
-    
-    var accumulateDesc = AttentionAccumulateDescriptor()
-    accumulateDesc.index = "r"
-    accumulateDesc.indexedBlockDimension = blockDimensions.R
-    accumulateDesc.leadingBlockDimensionRHS = leadingBlockDimensions.Q
-    accumulateDesc.names = (accumulator: "dK", lhs: "dST", rhs: "Q")
-    accumulateDesc.threadgroupAddress = "threadgroup_block"
-    accumulateDesc.transposeStateRHS = transposeState.Q
-    let accumulateDerivativeK = accumulate(descriptor: accumulateDesc)
-    
-    var accumulateDesc2 = AttentionAccumulateDescriptor2()
-    accumulateDesc2.A = "dST"
-    accumulateDesc2.B = "Q"
-    accumulateDesc2.C = "dK"
-    accumulateDesc2.transposeB = transposeState.Q
-    accumulateDesc2.leadingDimensionB = leadingDimensions.Q
-    accumulateDesc2.matrixDimensionK = "R"
-    accumulateDesc2.matrixOffsetK = "r"
-    let accumulateDerivativeK2 = accumulate2(descriptor: accumulateDesc2)
-    
     var output = """
 
   // Iterate over the rows.
@@ -394,11 +328,19 @@ extension AttentionKernel {
 """
     
     if computeDerivativeK {
+      var accumulateDesc = AttentionAccumulateDescriptor()
+      accumulateDesc.A = "dST"
+      accumulateDesc.B = "Q"
+      accumulateDesc.C = "dK"
+      accumulateDesc.transposeB = transposeState.Q
+      accumulateDesc.leadingDimensionB = leadingDimensions.Q
+      accumulateDesc.matrixDimensionK = "R"
+      accumulateDesc.matrixOffsetK = "r"
+      
       output += """
   
     // dK += dS^T * Q
-    threadgroup_barrier(mem_flags::mem_threadgroup);
-    \(accumulateDerivativeK2)
+    \(accumulate(descriptor: accumulateDesc))
   }
   
 """

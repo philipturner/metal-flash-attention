@@ -38,13 +38,6 @@ func profileProblemSize(N: Int, D: Int) {
   // - Get backward working correctly with the new algorithm.
   // - Reduce the amount of threadgroup memory allocated.
   // - Profile and compare to data for the old kernel.
-  //
-  // TODO List:
-  // - Migrate the two multiplications that use dO to the new algorithm, for
-  //   backward key-value.
-  // - Change the code that reads L/D from memory.
-  // - Delete the calls to the Q/L, dO/D prefetching functions.
-  // - Migrate the accumulate functions to the blocked algorithm.
   
   var networkDesc = NetworkDescriptor()
   networkDesc.N = N
