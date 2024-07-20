@@ -43,9 +43,7 @@ extension AttentionKernel {
     // Iterate over the row/column dimension.
 #pragma clang loop unroll(full)
     for (
-      ushort \(index) = 0;
-      \(index) < \(indexedBlockDimension);
-      \(index) += 8
+      ushort \(index) = 0; \(index) < \(indexedBlockDimension); \(index) += 8
     ) {
 
       // Iterate over the head dimension.

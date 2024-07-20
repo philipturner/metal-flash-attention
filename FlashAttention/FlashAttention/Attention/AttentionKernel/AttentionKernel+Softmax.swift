@@ -46,6 +46,10 @@ extension AttentionKernel {
     
     accessDesc.innerLoop = """
 
+        // Inner loop over D.
+        ushort d_outer = d;
+#pragma clang loop unroll(full)
+        for (ushort d = 0; d < min(32, \(paddedD) - d_outer); d += 8) {
           simdgroup_matrix_storage<float> dO;
           simdgroup_matrix_storage<float> O;
           dO.load(dO_block, 32, ushort2(d, 0), \(transposeState.O));
@@ -54,6 +58,7 @@ extension AttentionKernel {
           float2 dO_value = *(dO.thread_elements());
           float2 O_value = *(O.thread_elements());
           D_term_accumulator += dO_value * O_value;
+        }
 
 """
     
@@ -70,6 +75,16 @@ extension AttentionKernel {
   D_term *= 1 / sqrt(float(D));
 
 """
+  }
+  
+  func blockLTerms() -> String {
+    let offset = 2 * 32 * 32
+    return "(threadgroup float*)(threadgroup_block) + (\(offset))"
+  }
+  
+  func blockDTerms() -> String {
+    let offset = 2 * 32 * 32 + 1 * 32
+    return "(threadgroup float*)(threadgroup_block) + (\(offset))"
   }
 }
 

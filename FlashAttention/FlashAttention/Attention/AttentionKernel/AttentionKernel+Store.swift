@@ -134,8 +134,10 @@ extension AttentionKernel {
       if computeL {
         output += computeLTerm()
         output += """
-
-  L_terms[linear_array_slot] = L_term;
+  
+  if (linear_array_slot < R) {
+    L_terms[linear_array_slot] = L_term;
+  }
 
 """
       }
@@ -160,7 +162,9 @@ extension AttentionKernel {
       // D[i]
       output += """
 
-  D_terms[linear_array_slot] = D_term;
+  if (linear_array_slot < R) {
+    D_terms[linear_array_slot] = D_term;
+  }
 
 """
       

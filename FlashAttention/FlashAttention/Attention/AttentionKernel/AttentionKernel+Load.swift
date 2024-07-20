@@ -154,31 +154,20 @@ extension AttentionKernel {
     func zeroInitializeAccumulator(name: String) -> String {
       return """
 
-    simdgroup_matrix_storage<float> \(name)_sram[\(paddedD / 8)];
-  #pragma clang loop unroll(full)
-    for (ushort d = 0; d < \(paddedD); d += 8) {
-      \(name)_sram[d / 8] = simdgroup_matrix_storage<float>(0);
-    }
+  simdgroup_matrix_storage<float> \(name)_sram[\(paddedD / 8)];
+#pragma clang loop unroll(full)
+  for (ushort d = 0; d < \(paddedD); d += 8) {
+    \(name)_sram[d / 8] = simdgroup_matrix_storage<float>(0);
+  }
 
-  """
-    }
-    
-    // A threadgroup barrier, formatted to match the correct indentation.
-    func threadgroupBarrier() -> String {
-      return """
-
-    threadgroup_barrier(mem_flags::mem_threadgroup);
-
-  """
+"""
     }
     
     // Initialize the output string.
     var output: String = ""
     
-    // Loading everything that could possibly be loaded, for now.
     switch type {
     case .forward:
-      // O, m, l
       output += zeroInitializeAccumulator(name: "O")
       output += """
 
@@ -188,7 +177,6 @@ extension AttentionKernel {
 """
       
     case .backwardQuery(let computeDerivativeQ):
-      // dQ, L[i]
       if computeDerivativeQ {
         output += zeroInitializeAccumulator(name: "dQ")
         output += """
@@ -197,122 +185,15 @@ extension AttentionKernel {
 
 """
       }
-      
-      // D[i]
       output += computeDTerm()
       
     case .backwardKeyValue(let computeDerivativeK):
-      var accessDesc = AttentionHBMAccessDescriptor()
-      accessDesc.index = "gid * C_group"
-      accessDesc.leadingBlockDimension = leadingBlockDimensions.V
-      accessDesc.leadingDimension = leadingDimensions.V
-      accessDesc.name = "V"
-      accessDesc.threadgroupAddress = "threadgroup_block"
-      accessDesc.transposeState = transposeState.V
-      
-      // dK, dV, V
       if computeDerivativeK {
         output += zeroInitializeAccumulator(name: "dK")
       }
-      output += prefetchColumns(descriptor: accessDesc)
       output += zeroInitializeAccumulator(name: "dV")
-      output += threadgroupBarrier()
-      output += load(descriptor: accessDesc)
     }
     
     return output
-  }
-}
-
-// TODO: Delete the functions below, when the remaining code switches to the
-// blocked algorithm.
-
-extension AttentionKernel {
-  func blockQ() -> String {
-    "(threadgroup float*)(threadgroup_block)"
-  }
-  
-  func blockLTerms() -> String {
-    if transposeState.Q {
-      // D x R, where R is the row stride.
-      return "\(blockQ()) + \(paddedD) * \(leadingBlockDimensions.Q)"
-    } else {
-      // R x D, where D is the row stride.
-      return "\(blockQ()) + R_group * \(leadingBlockDimensions.Q)"
-    }
-  }
-  
-  func prefetchQLTerms() -> String {
-    return """
-    
-    if (sidx == 0) {
-      uint2 device_origin(0, r);
-      auto Q_src = simdgroup_matrix_storage<float>::apply_offset(
-        Q, \(leadingDimensions.Q), device_origin, \(transposeState.Q));
-      auto Q_dst = \(blockQ());
-      auto L_terms_src = L_terms + r;
-      auto L_terms_dst = \(blockLTerms());
-      
-      // Zero-padding for safety, which should harm performance.
-      ushort R_tile_dimension = min(uint(R_group), R - r);
-      ushort2 tile_src(D, R_tile_dimension);
-      ushort2 tile_dst(\(paddedD), R_group);
-      
-      // Issue two async copies.
-      simdgroup_event events[2];
-      events[0].async_copy(
-        Q_dst, \(leadingBlockDimensions.Q), tile_dst,
-        Q_src, \(leadingDimensions.Q), tile_src, \(transposeState.Q));
-      events[1].async_copy(
-        L_terms_dst, 1, ushort2(tile_dst.y, 1),
-        L_terms_src, 1, ushort2(tile_src.y, 1));
-      simdgroup_event::wait(2, events);
-    }
-
-"""
-  }
-  
-  func blockDerivativeO() -> String {
-    "(threadgroup float*)(threadgroup_block)"
-  }
-  
-  func blockDTerms() -> String {
-    if transposeState.O {
-      // D x R, where R is the row stride.
-      return "\(blockDerivativeO()) + \(paddedD) * \(leadingBlockDimensions.O)"
-    } else {
-      // R x D, where D is the row stride.
-      return "\(blockDerivativeO()) + R_group * \(leadingBlockDimensions.O)"
-    }
-  }
-  
-  func prefetchDerivativeODTerms() -> String {
-    return """
-    
-    if (sidx == 0) {
-      uint2 device_origin(0, r);
-      auto dO_src = simdgroup_matrix_storage<float>::apply_offset(
-        dO, \(leadingDimensions.O), device_origin, \(transposeState.O));
-      auto dO_dst = \(blockDerivativeO());
-      auto D_terms_src = D_terms + r;
-      auto D_terms_dst = \(blockDTerms());
-      
-      // Zero-padding for safety, which should harm performance.
-      ushort R_tile_dimension = min(uint(R_group), R - r);
-      ushort2 tile_src(D, R_tile_dimension);
-      ushort2 tile_dst(\(paddedD), R_group);
-      
-      // Issue two async copies.
-      simdgroup_event events[2];
-      events[0].async_copy(
-        dO_dst, \(leadingBlockDimensions.O), tile_dst,
-        dO_src, \(leadingDimensions.O), tile_src, \(transposeState.O));
-      events[1].async_copy(
-        D_terms_dst, 1, ushort2(tile_dst.y, 1),
-        D_terms_src, 1, ushort2(tile_src.y, 1));
-      simdgroup_event::wait(2, events);
-    }
-
-"""
   }
 }

@@ -21,10 +21,13 @@ struct AttentionTwoOperandAccessDescriptor {
   var matrixDimensions: (M: String, N: String)?
   var matrixOffset: (M: String, N: String)?
   
-  /// Code that sets the various pointers into threadgroup memory.
+  /// Required. Code that sets the various pointers into threadgroup memory.
   var reservePointers: String?
   
-  /// Code for the inner loop, scoped over D.
+  /// Optional. Loading code to only execute on the first D iteration.
+  var firstIterationLoading: String?
+  
+  /// Required. Code for the inner loop, scoped over D.
   var innerLoop: String?
 }
 
@@ -45,6 +48,8 @@ extension AttentionKernel {
       fatalError("Descriptor was incomplete.")
     }
     
+    let firstIterationLoading = descriptor.firstIterationLoading ?? ""
+    
     return """
     {
       uint M_offset = \(matrixOffset.M);
@@ -55,9 +60,13 @@ extension AttentionKernel {
       \(reservePointers)
       
       // Outer loop over D.
-  #pragma clang loop unroll(full)
+#pragma clang loop unroll(full)
       for (ushort d = 0; d < D; d += 32) {
         threadgroup_barrier(mem_flags::mem_threadgroup);
+        
+        if (d == 0) {
+          \(firstIterationLoading)
+        }
         
         if (sidx == 0) {
           ushort D_src_dimension = min(ushort(32), ushort(D - d));
@@ -94,13 +103,8 @@ extension AttentionKernel {
           simdgroup_event::wait(2, events);
         }
         threadgroup_barrier(mem_flags::mem_threadgroup);
-
-        // Inner loop over D.
-        ushort d_outer = d;
-  #pragma clang loop unroll(full)
-        for (ushort d = 0; d < min(32, \(paddedD) - d_outer); d += 8) {
-          \(innerLoop)
-        }
+        
+        \(innerLoop)
       }
     }
 
@@ -135,7 +139,12 @@ extension AttentionKernel {
   // out an (8 x D) x (D x 32) matrix multiplication. The product has
   // dimensions 8 (M dimension) x 32 (N dimension). The caller specifies which
   // attention dimension (R, C) corresponds to N.
-  func outerProduct(descriptor: AttentionOuterProductDescriptor) -> String {
+  //
+  // Returns: Another descriptor, which you can intercept before materializing
+  // the final source code.
+  func outerProduct(
+    descriptor: AttentionOuterProductDescriptor
+  ) -> AttentionTwoOperandAccessDescriptor {
     guard let A = descriptor.A,
           let B = descriptor.B,
           let C = descriptor.C,
@@ -176,11 +185,15 @@ extension AttentionKernel {
     
     accessDesc.innerLoop = """
 
+        // Inner loop over D.
+        ushort d_outer = d;
+#pragma clang loop unroll(full)
+        for (ushort d = 0; d < min(32, \(paddedD) - d_outer); d += 8) {
           simdgroup_matrix_storage<float> \(A);
           \(A).load(\(A)_block, 32, ushort2(d, 0), \(transposeA));
           
           // Inner loop over N.
-  #pragma clang loop unroll(full)
+#pragma clang loop unroll(full)
           for (ushort n = 0; n < 32; n += 8) {
             simdgroup_matrix_storage<float> \(B)T;
             \(B)T.load(\(B)T_block, 32, ushort2(n, d), \(!transposeB));
@@ -189,87 +202,18 @@ extension AttentionKernel {
             bool accumulate = (d_outer > 0) || (d > 0);
             \(C)_sram[n / 8].multiply(\(A), \(B)T, accumulate);
           }
+        }
 
 """
     
-    return twoOperandAccess(descriptor: accessDesc)
+    return accessDesc
   }
 }
 
 // MARK: - Attention Matrix Derivative
 
-// TODO: Refactor 'dPT' to use the blocked algorithm.
-
 extension AttentionKernel {
-  func computeDerivativePT() -> String {
-    return """
-    
-    auto dOT_block = \(blockDerivativeO());
-    dOT_block = simdgroup_matrix_storage<float>::apply_offset(
-      dOT_block, \(leadingBlockDimensions.O), morton_offset,
-      \(!transposeState.O));
-    
-#pragma clang loop unroll(full)
-    for (ushort d = 0; d < \(paddedD); d += 8) {
-#pragma clang loop unroll(full)
-      for (ushort r = 0; r < 32; r += 8) {
-        ushort2 origin(r, d);
-        simdgroup_matrix_storage<float> dOT;
-        dOT.load(
-          dOT_block, \(leadingBlockDimensions.O), origin, \(!transposeState.O));
-        dPT_sram[r / 8]
-          .multiply(V_sram[d / 8], dOT, d > 0);
-      }
-    }
-    
-"""
-  }
-  
-  func computeDerivativePT2() -> String {
-    /*
-     if (sidx == 0) {
-       uint2 device_origin(0, r);
-       auto dO_src = simdgroup_matrix_storage<float>::apply_offset(
-         dO, \(leadingDimensions.O), device_origin, \(transposeState.O));
-       auto dO_dst = \(blockDerivativeO());
-       auto D_terms_src = D_terms + r;
-       auto D_terms_dst = \(blockDTerms());
-       
-       // Zero-padding for safety, which should harm performance.
-       ushort R_tile_dimension = min(uint(R_group), R - r);
-       ushort2 tile_src(D, R_tile_dimension);
-       ushort2 tile_dst(\(paddedD), R_group);
-       
-       // Issue two async copies.
-       simdgroup_event events[2];
-       events[0].async_copy(
-         dO_dst, \(leadingBlockDimensions.O), tile_dst,
-         dO_src, \(leadingDimensions.O), tile_src, \(transposeState.O));
-       events[1].async_copy(
-         D_terms_dst, 1, ushort2(tile_dst.y, 1),
-         D_terms_src, 1, ushort2(tile_src.y, 1));
-       simdgroup_event::wait(2, events);
-     }
-     
-     var accessDesc = AttentionTwoOperandAccessDescriptor()
-     accessDesc.A = "dO"
-     accessDesc.B = "O"
-     accessDesc.transposeA = transposeState.O
-     accessDesc.transposeB = transposeState.O
-     accessDesc.leadingDimensionA = leadingDimensions.O
-     accessDesc.leadingDimensionB = leadingDimensions.O
-     accessDesc.matrixDimensions = (M: "R", N: "R")
-     accessDesc.matrixOffset = (M: "gid * R_group", N: "gid * R_group")
-     
-     var accessDesc = AttentionHBMAccessDescriptor()
-     accessDesc.index = "gid * C_group"
-     accessDesc.leadingBlockDimension = leadingBlockDimensions.V
-     accessDesc.leadingDimension = leadingDimensions.V
-     accessDesc.name = "V"
-     accessDesc.threadgroupAddress = "threadgroup_block"
-     accessDesc.transposeState = transposeState.V
-     */
-    
+  func computeDerivativeVDerivativePT() -> String {
     var accessDesc = AttentionTwoOperandAccessDescriptor()
     accessDesc.A = "V"
     accessDesc.B = "dO"
@@ -283,34 +227,68 @@ extension AttentionKernel {
     accessDesc.reservePointers = """
 
       // Find where the V data will be read from.
-      ushort2 A_block_offset(morton_offset.x, morton_offset.y + sidx * 8);
+      ushort2 V_block_offset(morton_offset.x, morton_offset.y + sidx * 8);
       auto V_block = (threadgroup float*)(threadgroup_block);
       V_block = simdgroup_matrix_storage<float>::apply_offset(
-        V_block, 32, A_block_offset, \(transposeState.V));
+        V_block, 32, V_block_offset, \(transposeState.V));
       
       // Find where the dO data will be read from.
-      ushort2 B_block_offset(morton_offset.x, morton_offset.y);
+      ushort2 dO_block_offset(morton_offset.x, morton_offset.y);
       auto dO_block = (threadgroup float*)(threadgroup_block) + \(32 * 32);
       dO_block = simdgroup_matrix_storage<float>::apply_offset(
-        dO_block, 32, B_block_offset, \(!transposeState.O));
-
+        dO_block, 32, dO_block_offset, \(transposeState.O));
+      
+      // Find where the dO^T data will be read from.
+      ushort2 dOT_block_offset(morton_offset.x, morton_offset.y);
+      auto dOT_block = (threadgroup float*)(threadgroup_block) + \(32 * 32);
+      dOT_block = simdgroup_matrix_storage<float>::apply_offset(
+        dOT_block, 32, dOT_block_offset, \(!transposeState.O));
+    
 """
     
     accessDesc.innerLoop = """
-
+        
+        ushort d_outer = d;
+        
+        // First multiplication: dV += P^T * dO
+        //
+        // Inner loop over the column dimension.
+#pragma clang loop unroll(full)
+        for (ushort r = 0; r < 32; r += 8) {
+          // Inner loop over the head dimension.
+#pragma clang loop unroll(full)
+          for (ushort d = 0; d < min(32, \(paddedD) - d_outer); d += 8) {
+            // Load the RHS from threadgroup memory.
+            simdgroup_matrix_storage<float> dO;
+            dO.load(
+              dO_block, 32, ushort2(d, r), \(transposeState.O));
+            
+            // Add the contributions from the r-th element of the attention
+            // matrix column.
+            dV_sram[(d_outer + d) / 8].multiply(
+              PT_sram[r / 8], dO, /*accumulate=*/true);
+          }
+        }
+        
+        // Second multiplication: dP = V * dO^T
+        //
+        // Inner loop over the head dimension.
+#pragma clang loop unroll(full)
+        for (ushort d = 0; d < min(32, \(paddedD) - d_outer); d += 8) {
           simdgroup_matrix_storage<float> V;
           V.load(V_block, 32, ushort2(d, 0), \(transposeState.V));
           
-          // Inner loop over N.
-  #pragma clang loop unroll(full)
-          for (ushort n = 0; n < 32; n += 8) {
+          // Inner loop over the column dimension.
+#pragma clang loop unroll(full)
+          for (ushort c = 0; c < 32; c += 8) {
             simdgroup_matrix_storage<float> dOT;
-            dOT.load(dO_block, 32, ushort2(n, d), \(!transposeState.O));
+            dOT.load(dOT_block, 32, ushort2(c, d), \(!transposeState.O));
 
             // Mask out the first accumulate at compile-time.
             bool accumulate = (d_outer > 0) || (d > 0);
-            dPT_sram[n / 8].multiply(V, dOT, accumulate);
+            dPT_sram[c / 8].multiply(V, dOT, accumulate);
           }
+        }
 
 """
     

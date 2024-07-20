@@ -167,7 +167,7 @@ extension AttentionKernel {
     outerProductDesc.leadingDimensionB = leadingDimensions.K
     outerProductDesc.matrixDimensions = (M: "R", N: "C")
     outerProductDesc.matrixOffset = (M: "gid * R_group", N: "c")
-    let QKT = outerProduct(descriptor: outerProductDesc)
+    let QKT_Descriptor = outerProduct(descriptor: outerProductDesc)
     
     var accessDesc = AttentionHBMAccessDescriptor()
     accessDesc.index = "c"
@@ -193,7 +193,7 @@ extension AttentionKernel {
   for (uint c = 0; c < C; c += 32) {
     // S = Q * K^T
     simdgroup_matrix_storage<float> S_sram[32 / 8];
-    \(QKT)
+    \(twoOperandAccess(descriptor: QKT_Descriptor))
     \(maskAlongColumns(sram: "S_sram"))
     
     // (m, l, P) = softmax(m, l, S * scaleFactor)
@@ -229,7 +229,7 @@ extension AttentionKernel {
     outerProductDesc.leadingDimensionB = leadingDimensions.K
     outerProductDesc.matrixDimensions = (M: "R", N: "C")
     outerProductDesc.matrixOffset = (M: "gid * R_group", N: "c")
-    let QKT = outerProduct(descriptor: outerProductDesc)
+    let QKT_Descriptor = outerProduct(descriptor: outerProductDesc)
     
     outerProductDesc = AttentionOuterProductDescriptor()
     outerProductDesc.A = "dO"
@@ -241,7 +241,7 @@ extension AttentionKernel {
     outerProductDesc.leadingDimensionB = leadingDimensions.V
     outerProductDesc.matrixDimensions = (M: "R", N: "C")
     outerProductDesc.matrixOffset = (M: "gid * R_group", N: "c")
-    let dOVT = outerProduct(descriptor: outerProductDesc)
+    let dOVT_Descriptor = outerProduct(descriptor: outerProductDesc)
     
     var accessDesc = AttentionHBMAccessDescriptor()
     accessDesc.index = "c"
@@ -267,14 +267,14 @@ extension AttentionKernel {
   for (uint c = 0; c < C; c += 32) {
     // S = Q * K^T
     simdgroup_matrix_storage<float> S_sram[32 / 8];
-    \(QKT)
+    \(twoOperandAccess(descriptor: QKT_Descriptor))
     
     // P = softmax(S * scaleFactor)
     \(checkpointSoftmax())
     
     // dP = dO * V^T
     simdgroup_matrix_storage<float> dP_sram[32 / 8];
-    \(dOVT)
+    \(twoOperandAccess(descriptor: dOVT_Descriptor))
     
     // dS = P * (dP - D) * scaleFactor
     \(computeDerivativeSoftmax())
@@ -302,7 +302,35 @@ extension AttentionKernel {
     outerProductDesc.leadingDimensionB = leadingDimensions.Q
     outerProductDesc.matrixDimensions = (M: "C", N: "R")
     outerProductDesc.matrixOffset = (M: "gid * C_group", N: "r")
-    let KQT = outerProduct(descriptor: outerProductDesc)
+    
+    var KQT_Descriptor = outerProduct(descriptor: outerProductDesc)
+    KQT_Descriptor.firstIterationLoading = """
+    
+    if (sidx == 0) {
+      // Locate the L[i] in device and threadgroup memory.
+      auto L_terms_src = L_terms + r;
+      auto L_terms_dst = \(blockLTerms());
+
+      // Locate the D[i] in device and threadgroup memory.
+      auto D_terms_src = D_terms + r;
+      auto D_terms_dst = \(blockDTerms());
+      
+      // Zero-padding for safety, which should harm performance.
+      ushort R_src_dimension = min(uint(R_group), R - r);
+      ushort R_dst_dimension = 32;
+      
+      // Issue two async copies.
+      simdgroup_event events[2];
+      events[0].async_copy(
+        L_terms_dst, 1, ushort2(R_dst_dimension, 1),
+        L_terms_src, 1, ushort2(R_src_dimension, 1));
+      events[1].async_copy(
+        D_terms_dst, 1, ushort2(R_dst_dimension, 1),
+        D_terms_src, 1, ushort2(R_src_dimension, 1));
+      simdgroup_event::wait(2, events);
+    }
+    
+"""
     
     var accessDesc = AttentionHBMAccessDescriptor()
     accessDesc.index = "r"
@@ -316,15 +344,6 @@ extension AttentionKernel {
     var accumulateDesc = AttentionAccumulateDescriptor()
     accumulateDesc.index = "r"
     accumulateDesc.indexedBlockDimension = blockDimensions.R
-    accumulateDesc.leadingBlockDimensionRHS = leadingBlockDimensions.O
-    accumulateDesc.names = (accumulator: "dV", lhs: "PT", rhs: "dO")
-    accumulateDesc.threadgroupAddress = "threadgroup_block"
-    accumulateDesc.transposeStateRHS = transposeState.O
-    let accumulateDerivativeV = accumulate(descriptor: accumulateDesc)
-    
-    accumulateDesc = AttentionAccumulateDescriptor()
-    accumulateDesc.index = "r"
-    accumulateDesc.indexedBlockDimension = blockDimensions.R
     accumulateDesc.leadingBlockDimensionRHS = leadingBlockDimensions.Q
     accumulateDesc.names = (accumulator: "dK", lhs: "dST", rhs: "Q")
     accumulateDesc.threadgroupAddress = "threadgroup_block"
@@ -335,32 +354,19 @@ extension AttentionKernel {
 
   // Iterate over the rows.
   for (uint r = 0; r < R; r += 32) {
+    // load L[r]
+    // load D[r]
     // S^T = K * Q^T
     simdgroup_matrix_storage<float> ST_sram[32 / 8];
-    \(KQT)
-    
-    // load Q[r]
-    // load L[r]
-    threadgroup_barrier(mem_flags::mem_threadgroup);
-    \(prefetchQLTerms())
+    \(twoOperandAccess(descriptor: KQT_Descriptor))
     
     // P^T = exp(S^T - L)
-    threadgroup_barrier(mem_flags::mem_threadgroup);
     \(checkpointSoftmaxT())
 
-    // dP^T = V * dO^T
-    threadgroup_barrier(mem_flags::mem_threadgroup);
-    simdgroup_matrix_storage<float> dPT_sram[32 / 8];
-    \(computeDerivativePT2())
-    
-    // load dO[r]
-    // load D[r]
-    threadgroup_barrier(mem_flags::mem_threadgroup);
-    \(prefetchDerivativeODTerms())
-    
     // dV += P^T * dO
-    threadgroup_barrier(mem_flags::mem_threadgroup);
-    \(accumulateDerivativeV)
+    // dP^T = V * dO^T
+    simdgroup_matrix_storage<float> dPT_sram[32 / 8];
+    \(computeDerivativeVDerivativePT())
     
     // dS^T = P^T * (dP^T - D) * scaleFactor
     \(computeDerivativeSoftmaxT())

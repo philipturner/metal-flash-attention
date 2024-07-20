@@ -44,6 +44,7 @@ func profileProblemSize(N: Int, D: Int) {
   //   backward key-value.
   // - Change the code that reads L/D from memory.
   // - Delete the calls to the Q/L, dO/D prefetching functions.
+  // - Migrate the accumulate functions to the blocked algorithm.
   
   var networkDesc = NetworkDescriptor()
   networkDesc.N = N
