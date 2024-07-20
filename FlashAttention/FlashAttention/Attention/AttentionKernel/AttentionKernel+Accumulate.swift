@@ -40,19 +40,18 @@ extension AttentionKernel {
       fatalError("Descriptor was incomplete.")
     }
     
-    // Abbreviating 'leadingBlockDimensionB' to fit 80 characters.
-    //
     // 32 x 64 allocation in threadgroup memory
     // leading dimension = transposeB ? 32 : 64
-    let blockDimB = transposeB ? UInt16(32) : UInt16(64)
+    let leadingBlockDimensionB = transposeB ? UInt16(32) : UInt16(64)
     
-    let loopBody = """
+    let loopBodyAB = """
 
 ushort2 origin(d, k);
 
 // Load the RHS from threadgroup memory.
 simdgroup_matrix_storage<float> \(B);
-\(B).load(\(B)_block, \(blockDimB), origin, \(transposeB));
+\(B).load(
+  \(B)_block, \(leadingBlockDimensionB), origin, \(transposeB));
 
 // Add the contributions from the c-th/r-th element of the
 // attention matrix row/column.
@@ -63,15 +62,12 @@ simdgroup_matrix_storage<float> \(B);
     
     return """
     {
-      // 'K' as in the accumulation dimension of GEMM.
-      uint K_offset = \(matrixOffsetK);
-      ushort K_src_dimension = min(uint(32), \(matrixDimensionK) - K_offset);
-      
-      // Where the did the async copy put the RHS?
+      // Find where the \(B) data will be read from.
       ushort2 \(B)_block_offset(morton_offset.x, morton_offset.y);
       auto \(B)_block = (threadgroup float*)(threadgroup_block);
       \(B)_block = simdgroup_matrix_storage<float>::apply_offset(
-        \(B)_block, \(blockDimB), \(B)_block_offset, \(transposeB));
+        \(B)_block, \(leadingBlockDimensionB),
+        \(B)_block_offset, \(transposeB));
       
       // Outer loop over D.
 #pragma clang loop unroll(full)
@@ -79,19 +75,21 @@ simdgroup_matrix_storage<float> \(B);
         threadgroup_barrier(mem_flags::mem_threadgroup);
         
         if (sidx == 0) {
-          uint2 B_offset(d, K_offset);
+          uint2 B_offset(d, \(matrixOffsetK));
           auto src = simdgroup_matrix_storage<float>::apply_offset(
             \(B), \(leadingDimensionB), B_offset, \(transposeB));
           auto dst = (threadgroup float*)(threadgroup_block);
           
+          ushort RC_src_dimension = min(
+            uint(32), \(matrixDimensionK) - \(matrixOffsetK));
           ushort D_src_dimension = min(ushort(64), ushort(D - d));
           ushort D_dst_dimension = min(ushort(64), ushort(\(paddedD) - d));
-          ushort2 tile_src(D_src_dimension, K_src_dimension);
+          ushort2 tile_src(D_src_dimension, RC_src_dimension);
           ushort2 tile_dst(D_dst_dimension, 32); // excessive padding
           
           simdgroup_event event;
           event.async_copy(
-            dst, \(blockDimB), tile_dst,
+            dst, \(leadingBlockDimensionB), tile_dst,
             src, \(leadingDimensionB), tile_src, \(transposeB));
           simdgroup_event::wait(1, &event);
         }
@@ -105,12 +103,12 @@ simdgroup_matrix_storage<float> \(B);
           if (\(paddedD) - d_outer >= 64) {
 #pragma clang loop unroll(full)
             for (ushort d = 0; d < 64; d += 8) {
-              \(loopBody)
+              \(loopBodyAB)
             }
           } else {
 #pragma clang loop unroll(full)
             for (ushort d = 0; d < \(paddedD) % 64; d += 8) {
-              \(loopBody)
+              \(loopBodyAB)
             }
           }
         }

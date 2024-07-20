@@ -200,7 +200,7 @@ extension AttentionKernel {
   for (ushort d = 0; d < \(paddedD); d += 8) {
    *(O_sram[d / 8].thread_elements()) *= l_reciprocal;
   }
-  
+
 """
   }
   

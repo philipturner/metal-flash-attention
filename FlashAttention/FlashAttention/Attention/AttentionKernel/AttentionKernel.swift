@@ -119,15 +119,14 @@ kernel void attention(
     
     // R/C_group * D * sizeof(float)
     //
-    // Temporary patch: paddedD -> max(paddedD, 32)
-    threadgroupMemoryAllocation += 32 * max(paddedD, 32) * 4
+    // Temporary patch: paddedD -> max(paddedD, 64)
+    threadgroupMemoryAllocation += 32 * max(paddedD, 64) * 4
     
     source += createArguments(type: type)
     source += createSetup(type: type)
     switch type {
     case .forward:
       source += createInnerLoopForward()
-      
     case .backwardQuery(let computeDerivativeQ):
       if computeDerivativeQ {
         source += createInnerLoopBackwardQuery()

@@ -22,6 +22,8 @@ func executeScript() {
   profileProblemSize(N: 24, D: 2)
   profileProblemSize(N: 192, D: 77)
   profileProblemSize(N: 192, D: 80)
+  profileProblemSize(N: 93, D: 32)
+  profileProblemSize(N: 99, D: 35)
   profileProblemSize(N: 64, D: 32)
   profileProblemSize(N: 32, D: 64)
   profileProblemSize(N: 4, D: 1)
@@ -42,6 +44,8 @@ func profileProblemSize(N: Int, D: Int) {
   // Next:
   // - Store the operands in chunks of D=64, so we can eliminate the large
   //   threadgroup memory allocation entirely.
+  // - Check whether you can fill the edge along R/C with garbage, for certain
+  //   operations.
   
   var networkDesc = NetworkDescriptor()
   networkDesc.N = N

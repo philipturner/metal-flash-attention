@@ -44,7 +44,7 @@ extension AttentionKernel {
 
 """
     
-    let loopBody = """
+    let loopBodyDerivativeOO = """
 
 // Load the LHS and RHS from threadgroup memory.
 ushort2 origin(d, 0);
@@ -67,12 +67,12 @@ ushort d_outer = d;
 if (\(paddedD) - d_outer >= 32) {
 #pragma clang loop unroll(full)
   for (ushort d = 0; d < 32; d += 8) {
-    \(loopBody)
+    \(loopBodyDerivativeOO)
   }
 } else {
 #pragma clang loop unroll(full)
   for (ushort d = 0; d < \(paddedD) % 32; d += 8) {
-    \(loopBody)
+    \(loopBodyDerivativeOO)
   }
 }
 

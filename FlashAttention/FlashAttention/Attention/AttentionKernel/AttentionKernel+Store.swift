@@ -14,6 +14,17 @@ struct AttentionHBMAccessDescriptor {
   var transposeState: Bool?
 }
 
+struct AttentionHBMAccessDescriptor2 {
+  /// Name of the output, destination of a 32 x D block.
+  var O: String?
+  
+  var transposeO: Bool?
+  var leadingDimensionO: String?
+  
+  var matrixDimension: String?
+  var matrixOffset: String?
+}
+
 extension AttentionKernel {
   func store(descriptor: AttentionHBMAccessDescriptor) -> String {
     guard let leadingBlockDimension = descriptor.leadingBlockDimension,
@@ -38,6 +49,81 @@ extension AttentionKernel {
         dst, \(leadingBlockDimension), thread_origin, \(transposeState));
     }
   }
+
+"""
+  }
+  
+  func store2(descriptor: AttentionHBMAccessDescriptor2) -> String {
+    guard let O = descriptor.O,
+          let transposeO = descriptor.transposeO,
+          let leadingDimensionO = descriptor.leadingDimensionO,
+          let matrixDimension = descriptor.matrixDimension,
+          let matrixOffset = descriptor.matrixOffset else {
+      fatalError("Descriptor was incomplete.")
+    }
+    
+    // 32 x 64 allocation in threadgroup memory
+    // leading dimension = transposeO ? 32 : 64
+    let leadingBlockDimensionO = transposeO ? UInt16(32) : UInt16(64)
+    
+    let loopBodyStoreO = """
+
+ushort2 origin(d, 0);
+\(O)_sram[(d_outer + d) / 8].store(
+  \(O)_block, \(leadingBlockDimensionO), origin, \(transposeO));
+
+"""
+    
+    return """
+
+{
+  // Find where the \(O) data will be written to.
+  ushort2 \(O)_block_offset(morton_offset.x, morton_offset.y + sidx * 8);
+  auto \(O)_block = (threadgroup float*)(threadgroup_block);
+  \(O)_block = simdgroup_matrix_storage<float>::apply_offset(
+    \(O)_block, \(leadingBlockDimensionO),
+    \(O)_block_offset, \(transposeO));
+  
+  // Outer loop over D.
+#pragma clang loop unroll(full)
+  for (ushort d = 0; d < D; d += 64) {
+    threadgroup_barrier(mem_flags::mem_threadgroup);
+    
+    // Iterate over the head dimension.
+    ushort d_outer = d;
+    if (\(paddedD) - d_outer >= 64) {
+#pragma clang loop unroll(full)
+      for (ushort d = 0; d < 64; d += 8) {
+        \(loopBodyStoreO)
+      }
+    } else {
+#pragma clang loop unroll(full)
+      for (ushort d = 0; d < \(paddedD) % 64; d += 8) {
+        \(loopBodyStoreO)
+      }
+    }
+    threadgroup_barrier(mem_flags::mem_threadgroup);
+    
+    if (sidx == 0) {
+      uint2 \(O)_offset(d, \(matrixOffset));
+      auto src = (threadgroup float*)(threadgroup_block);
+      auto dst = simdgroup_matrix_storage<float>::apply_offset(
+        \(O), \(leadingDimensionO), \(O)_offset, \(transposeO));
+     
+      ushort D_dimension = min(ushort(64), ushort(D - d));
+      ushort RC_dimension = min(
+        uint(32), \(matrixDimension) - \(matrixOffset));
+      ushort2 tile_src(D_dimension, RC_dimension);
+      ushort2 tile_dst(D_dimension, RC_dimension);
+      
+      simdgroup_event event;
+      event.async_copy(
+        dst, \(leadingDimensionO), tile_dst,
+        src, \(leadingBlockDimensionO), tile_src, \(transposeO));
+      simdgroup_event::wait(1, &event);
+    }
+  }
+}
 
 """
   }
@@ -126,31 +212,27 @@ extension AttentionKernel {
     switch type {
     case .forward(let computeL):
       // O
-      var accessDesc = AttentionHBMAccessDescriptor()
-      accessDesc.index = "gid * R_group"
-      accessDesc.leadingBlockDimension = leadingBlockDimensions.O
-      accessDesc.leadingDimension = leadingDimensions.O
-      accessDesc.name = "O"
-      accessDesc.threadgroupAddress = "threadgroup_block"
-      accessDesc.transposeState = transposeState.O
+      var accessDesc = AttentionHBMAccessDescriptor2()
+      accessDesc.O = "O"
+      accessDesc.transposeO = transposeState.O
+      accessDesc.leadingDimensionO = leadingDimensions.O
+      accessDesc.matrixDimension = "R"
+      accessDesc.matrixOffset = "gid * R_group"
       
-      output += threadgroupBarrier()
-      output += store(descriptor: accessDesc)
-      output += threadgroupBarrier()
-      output += commitRows(descriptor: accessDesc)
+      output += store2(descriptor: accessDesc)
       
       // L[i]
       if computeL {
-        output += computeLTerm()
         output += """
-  
-  if (linear_array_slot < R) {
-    L_terms[linear_array_slot] = L_term;
-  }
+
+    if (linear_array_slot < R) {
+      \(computeLTerm())
+      L_terms[linear_array_slot] = L_term;
+    }
 
 """
       }
-      
+
     case .backwardQuery(let computeDerivativeQ):
       // dQ
       if computeDerivativeQ {
@@ -187,7 +269,6 @@ extension AttentionKernel {
         accessDesc.name = "dK"
         accessDesc.threadgroupAddress = "threadgroup_block"
         accessDesc.transposeState = transposeState.K
-        
         
         output += threadgroupBarrier()
         output += store(descriptor: accessDesc)
