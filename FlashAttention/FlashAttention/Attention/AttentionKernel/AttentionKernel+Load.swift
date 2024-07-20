@@ -5,14 +5,12 @@
 //  Created by Philip Turner on 7/19/24.
 //
 
-struct AttentionHBMAccessDescriptor {
-  var index: String?
-  var leadingBlockDimension: UInt16?
-  var leadingDimension: String?
-  var name: String?
-  var threadgroupAddress: String?
-  var transposeState: Bool?
-}
+// The functions for prefetching and loading are currently unused. They may
+// become used again when retroactively supporting the caching of certain
+// operands. I am archiving them for reference by commenting them out. This
+// means I don't have to maintain the functions as the code is refactored.
+
+#if false
 
 extension AttentionKernel {
   // Cache something during a pass that parallelizes over rows.
@@ -113,6 +111,8 @@ extension AttentionKernel {
 """
   }
 }
+
+#endif
 
 // SIMD Matrix Storage
 //   register allocation per thread

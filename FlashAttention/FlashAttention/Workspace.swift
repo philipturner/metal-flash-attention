@@ -38,6 +38,10 @@ func profileProblemSize(N: Int, D: Int) {
   // - Get backward working correctly with the new algorithm.
   // - Reduce the amount of threadgroup memory allocated.
   // - Profile and compare to data for the old kernel.
+  //
+  // Next:
+  // - Store the operands in chunks of D=64, so we can eliminate the large
+  //   threadgroup memory allocation entirely.
   
   var networkDesc = NetworkDescriptor()
   networkDesc.N = N

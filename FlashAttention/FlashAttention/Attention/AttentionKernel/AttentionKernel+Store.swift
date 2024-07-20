@@ -5,6 +5,15 @@
 //  Created by Philip Turner on 7/19/24.
 //
 
+struct AttentionHBMAccessDescriptor {
+  var index: String?
+  var leadingBlockDimension: UInt16?
+  var leadingDimension: String?
+  var name: String?
+  var threadgroupAddress: String?
+  var transposeState: Bool?
+}
+
 extension AttentionKernel {
   func store(descriptor: AttentionHBMAccessDescriptor) -> String {
     guard let leadingBlockDimension = descriptor.leadingBlockDimension,
