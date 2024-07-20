@@ -338,7 +338,7 @@ extension AttentionKernel {
     // S^T = K * Q^T
     simdgroup_matrix_storage<float> ST_sram[32 / 8];
     \(KQT)
-
+    
     // load Q[r]
     // load L[r]
     threadgroup_barrier(mem_flags::mem_threadgroup);
@@ -347,6 +347,11 @@ extension AttentionKernel {
     // P^T = exp(S^T - L)
     threadgroup_barrier(mem_flags::mem_threadgroup);
     \(checkpointSoftmaxT())
+
+    // dP^T = V * dO^T
+    threadgroup_barrier(mem_flags::mem_threadgroup);
+    simdgroup_matrix_storage<float> dPT_sram[32 / 8];
+    \(computeDerivativePT2())
     
     // load dO[r]
     // load D[r]
@@ -356,9 +361,6 @@ extension AttentionKernel {
     // dV += P^T * dO
     threadgroup_barrier(mem_flags::mem_threadgroup);
     \(accumulateDerivativeV)
-    
-    // dP^T = V * dO^T
-    \(computeDerivativePT())
     
     // dS^T = P^T * (dP^T - D) * scaleFactor
     \(computeDerivativeSoftmaxT())
