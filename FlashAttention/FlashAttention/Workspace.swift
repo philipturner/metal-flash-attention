@@ -116,21 +116,34 @@ func executeScript() {
 // Returns: Throughput in GINSTRS.
 @discardableResult
 func profileProblemSize(N: Int, D: Int) -> Int {
-  // Make a breaking change to the source code. Force all of the kernels to
-  // take on the form where operands are blocked along D. Once that is all
-  // debugged, retroactively include the original form.
-  //
-  // Tasks:
-  // - Get forward working correctly with the new algorithm.
-  // - Get backward working correctly with the new algorithm.
-  // - Reduce the amount of threadgroup memory allocated.
-  // - Profile and compare to data for the old kernel.
-  //
-  // Next:
-  // - Store the operands in chunks of D=64, so we can eliminate the large
-  //   threadgroup memory allocation entirely.
+  // Remaining optimizations for online attention:
   // - Check whether you can fill the edge along R/C with garbage, for certain
   //   operations.
+  // - Cache more data in registers for small head dimensions. Add a new
+  //   version of outer-product where one operand is in registers, the other is
+  //   paged in chunks of 64.
+  // - Elide async copies on M3, when possible.
+  // - Elide async copies for L[i]/D[i], if/when it improves performance.
+  //
+  // Other kernel variants:
+  // - Fix the issues with BF16 encoding/decoding performance.
+  // - Add in-place accumulation to the GEMM kernel and attention kernels, so
+  //   dST can have constant-scaling RAM consumption.
+  // - Benchmark naive attention with fused softmax/dsoftmax.
+  //
+  // 4096x4096   |   32 MB | 4 groups/core
+  // 8192x8192   |  128 MB | 8 groups/core
+  // 16834x16384 |  512 MB | 16 groups/core
+  // 32768x32768 | 2048 MB | 32 groups/core
+  //
+  // 4096x3072   |   24 MB | 3 groups/core
+  // 8192x1536   |   24 MB | 1.5 groups/core
+  // 16384x768   |   24 MB | 0.75 groups/core
+  // 32768x384   |   24 MB | 0.38 groups/core
+  //
+  // 2048x2048   |    8 MB | 2 groups/core
+  // 2048x4096   |   16 MB | 4 groups/core
+  // 1024x8192   |   16 MB | 8 groups/core
   
   var networkDesc = NetworkDescriptor()
   networkDesc.N = N
@@ -422,6 +435,7 @@ func profileProblemSize(N: Int, D: Int) -> Int {
   check(expected: dQ, actual: resultDerivativeQ)
   #endif
   
+  #if false
   // Benchmark performance.
   var maxGINSTRS: Int = .zero
   for _ in 0..<5 {
@@ -441,4 +455,5 @@ func profileProblemSize(N: Int, D: Int) -> Int {
     maxGINSTRS = max(maxGINSTRS, ginstrs)
   }
   return maxGINSTRS
+  #endif
 }
