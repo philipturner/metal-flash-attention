@@ -21,12 +21,9 @@ struct AttentionKernel {
   // The source code to compile.
   var source: String = ""
   
-  // These variables should be 'private', but we need to split the code into
-  // multiple files. Swift treats 'private' as a synonym for 'fileprivate'.
+  var blockDimensions: (R: UInt16, C: UInt16)
   var leadingDimensions: (
     Q: String, K: String, V: String, O: String)
-  var leadingBlockDimensions: (
-    Q: UInt16, K: UInt16, V: UInt16, O: UInt16)
   var matrixDimensionD: UInt16
   var memoryPrecisions: (
     Q: AttentionOperandPrecision,
@@ -37,20 +34,15 @@ struct AttentionKernel {
   var transposeState: (
     Q: Bool, K: Bool, V: Bool, O: Bool)
   
-  // Reads of very large K/V operands may be read in small chunks along 'D',
-  // to minimize register pressure. Therefore, there can be a block dimension
-  // for D.
-  var blockDimensions: (R: UInt16, C: UInt16, D: UInt16)
-  
   // The row stride of the intermediate attention matrix.
   var leadingDimensionDerivativeST: UInt32
+  
+  // The number of threads per group.
+  var threadgroupSize: UInt16
   
   // If you allocate threadgroup memory after compiling the kernel, the code
   // has higher performance.
   var threadgroupMemoryAllocation: UInt16
-  
-  // The number of threads per group.
-  var threadgroupSize: UInt16
   
   init(descriptor: AttentionDescriptor) {
     guard let matrixDimensions = descriptor.matrixDimensions,
@@ -74,57 +66,25 @@ using namespace metal;
     // Declare the size of the register allocation.
     paddedD = (matrixDimensions.D + 8 - 1) / 8 * 8
     
-    // Determine the block dimensions from the transpose state.
+    blockDimensions = (R: 32, C: 32)
     leadingDimensions = ("D", "D", "D", "D")
-    leadingBlockDimensions = (paddedD, paddedD, paddedD, paddedD)
-    if transposeState.Q {
-      leadingDimensions.Q = "R"
-      leadingBlockDimensions.Q = 32
-    }
-    if transposeState.K {
-      leadingDimensions.K = "C"
-      leadingBlockDimensions.K = 32
-    }
-    if transposeState.V {
-      leadingDimensions.V = "C"
-      leadingBlockDimensions.V = 32
-    }
-    if transposeState.O {
-      leadingDimensions.O = "R"
-      leadingBlockDimensions.O = 32
-    }
     leadingDimensionDerivativeST = matrixDimensions.C + 32 - 1
     leadingDimensionDerivativeST = leadingDimensionDerivativeST / 32 * 32
-    
-    blockDimensions = (R: 32, C: 32, D: paddedD)
-    threadgroupMemoryAllocation = .zero
     threadgroupSize = 128
     
     source += """
-
-#pragma clang diagnostic push
-#pragma clang diagnostic ignored "-Wunused-const-variable"
 
 // Dimensions of each matrix.
 constant uint R [[function_constant(0)]];
 constant uint C [[function_constant(1)]];
 constant ushort D [[function_constant(2)]];
 
-// Define the memory layout of the matrix block.
-constant ushort R_group = 32;
-constant ushort C_group = 32;
-
-#pragma clang diagnostic pop
-
 // Declare the function.
 kernel void attention(
 
 """
     
-    // R/C_group * D * sizeof(float)
-    //
-    // Temporary patch: paddedD -> max(paddedD, 64)
-    threadgroupMemoryAllocation += 32 * max(paddedD, 64) * 4
+    threadgroupMemoryAllocation = (32 * 32 + 32 * 32) * 4
     
     source += createArguments(type: type)
     source += createSetup(type: type)
@@ -136,15 +96,10 @@ kernel void attention(
         source += createInnerLoopBackwardQuery()
       }
     case .backwardKeyValue(let computeDerivativeK):
-      // R_group * sizeof(float)
-      threadgroupMemoryAllocation += 32 * 4
-      
       source += createInnerLoopKeyValue(
         computeDerivativeK: computeDerivativeK)
+      threadgroupMemoryAllocation += (32 + 32) * 4
     }
-    
-    // Temporary patch, until the new versions of the kernels are finished.
-    threadgroupMemoryAllocation *= 2
     
     source += createCleanup(type: type)
     source += """

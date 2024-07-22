@@ -28,7 +28,7 @@ extension AttentionKernel {
     accessDesc.leadingDimensionA = leadingDimensions.O
     accessDesc.leadingDimensionB = leadingDimensions.O
     accessDesc.matrixDimensions = (M: "R", N: "R")
-    accessDesc.matrixOffset = (M: "gid * R_group", N: "gid * R_group")
+    accessDesc.matrixOffset = (M: "gid * 32", N: "gid * 32")
     
     accessDesc.reservePointers = """
 

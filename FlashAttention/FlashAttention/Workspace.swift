@@ -28,6 +28,46 @@ func executeScript() {
   profileProblemSize(N: 32, D: 64)
   profileProblemSize(N: 4, D: 1)
   profileProblemSize(N: 4, D: 2)
+  profileProblemSize(N: 384, D: 95)
+  profileProblemSize(N: 777, D: 199)
+  
+  /*
+   Mac
+   
+   latency: 77
+   latency: 143
+   latency: 74
+   latency: 78
+   latency: 52
+   latency: 602
+   latency: 575
+   latency: 85
+   latency: 265
+   latency: 126
+   latency: 112
+   latency: 66
+   latency: 75
+   latency: 1308
+   latency: 3922
+   
+   iPad
+   
+   latency: 57
+   latency: 252
+   latency: 52
+   latency: 53
+   latency: 72
+   latency: 1086
+   latency: 667
+   latency: 114
+   latency: 168
+   latency: 82
+   latency: 110
+   latency: 25
+   latency: 22
+   latency: 2827
+   latency: 9638
+   */
 }
 
 func profileProblemSize(N: Int, D: Int) {

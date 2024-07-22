@@ -168,7 +168,7 @@ extension AttentionKernel {
     outerProductDesc.leadingDimensionA = leadingDimensions.Q
     outerProductDesc.leadingDimensionB = leadingDimensions.K
     outerProductDesc.matrixDimensions = (M: "R", N: "C")
-    outerProductDesc.matrixOffset = (M: "gid * R_group", N: "c")
+    outerProductDesc.matrixOffset = (M: "gid * 32", N: "c")
     let QKT_Descriptor = outerProduct(descriptor: outerProductDesc)
     
     var accumulateDesc = AttentionAccumulateDescriptor()
@@ -216,7 +216,7 @@ extension AttentionKernel {
     outerProductDesc.leadingDimensionA = leadingDimensions.Q
     outerProductDesc.leadingDimensionB = leadingDimensions.K
     outerProductDesc.matrixDimensions = (M: "R", N: "C")
-    outerProductDesc.matrixOffset = (M: "gid * R_group", N: "c")
+    outerProductDesc.matrixOffset = (M: "gid * 32", N: "c")
     let QKT_Descriptor = outerProduct(descriptor: outerProductDesc)
     
     outerProductDesc = AttentionOuterProductDescriptor()
@@ -228,7 +228,7 @@ extension AttentionKernel {
     outerProductDesc.leadingDimensionA = leadingDimensions.O
     outerProductDesc.leadingDimensionB = leadingDimensions.V
     outerProductDesc.matrixDimensions = (M: "R", N: "C")
-    outerProductDesc.matrixOffset = (M: "gid * R_group", N: "c")
+    outerProductDesc.matrixOffset = (M: "gid * 32", N: "c")
     let dOVT_Descriptor = outerProduct(descriptor: outerProductDesc)
     
     var accumulateDesc = AttentionAccumulateDescriptor()
@@ -275,7 +275,7 @@ extension AttentionKernel {
     outerProductDesc.leadingDimensionA = leadingDimensions.K
     outerProductDesc.leadingDimensionB = leadingDimensions.Q
     outerProductDesc.matrixDimensions = (M: "C", N: "R")
-    outerProductDesc.matrixOffset = (M: "gid * C_group", N: "r")
+    outerProductDesc.matrixOffset = (M: "gid * 32", N: "r")
     
     var KQT_Descriptor = outerProduct(descriptor: outerProductDesc)
     KQT_Descriptor.firstIterationLoading = """
@@ -290,7 +290,7 @@ extension AttentionKernel {
       auto D_terms_dst = \(blockDTerms());
       
       // Zero-padding for safety, which should harm performance.
-      ushort R_src_dimension = min(uint(R_group), R - r);
+      ushort R_src_dimension = min(uint(32), R - r);
       ushort R_dst_dimension = 32;
       
       // Issue two async copies.

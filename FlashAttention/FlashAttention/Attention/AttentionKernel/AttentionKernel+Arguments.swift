@@ -251,7 +251,7 @@ extension AttentionKernel {
     case .forward, .backwardQuery:
       output += """
 
-  uint linear_array_slot = gid * R_group + sidx * 8 + morton_offset.y;
+  uint linear_array_slot = gid * 32 + sidx * 8 + morton_offset.y;
 
 """
     default:
@@ -334,8 +334,7 @@ extension AttentionKernel {
       accessDesc.transposeO = transposeState.O
       accessDesc.leadingDimensionO = leadingDimensions.O
       accessDesc.matrixDimension = "R"
-      accessDesc.matrixOffset = "gid * R_group"
-      
+      accessDesc.matrixOffset = "gid * 32"
       output += store(descriptor: accessDesc)
       
       // L[i]
@@ -358,8 +357,7 @@ extension AttentionKernel {
         accessDesc.transposeO = transposeState.Q
         accessDesc.leadingDimensionO = leadingDimensions.Q
         accessDesc.matrixDimension = "R"
-        accessDesc.matrixOffset = "gid * R_group"
-        
+        accessDesc.matrixOffset = "gid * 32"
         output += store(descriptor: accessDesc)
       }
       
@@ -380,8 +378,7 @@ extension AttentionKernel {
         accessDesc.transposeO = transposeState.K
         accessDesc.leadingDimensionO = leadingDimensions.K
         accessDesc.matrixDimension = "C"
-        accessDesc.matrixOffset = "gid * C_group"
-        
+        accessDesc.matrixOffset = "gid * 32"
         output += store(descriptor: accessDesc)
       }
       
@@ -392,8 +389,7 @@ extension AttentionKernel {
         accessDesc.transposeO = transposeState.V
         accessDesc.leadingDimensionO = leadingDimensions.V
         accessDesc.matrixDimension = "C"
-        accessDesc.matrixOffset = "gid * C_group"
-        
+        accessDesc.matrixOffset = "gid * 32"
         output += store(descriptor: accessDesc)
       }
     }
