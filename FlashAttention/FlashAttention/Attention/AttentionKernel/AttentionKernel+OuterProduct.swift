@@ -1,11 +1,13 @@
 //
-//  AttentionKernel+TwoOperandAccess.swift
+//  AttentionKernel+OuterProduct.swift
 //  FlashAttention
 //
 //  Created by Philip Turner on 7/19/24.
 //
 
-// Operations where both operands are read from RAM.
+// Operations where both arguments are read from RAM.
+
+// MARK: - Two-Operand Access
 
 struct AttentionTwoOperandAccessDescriptor {
   /// Name of left-hand side, source of a 32 x D block.

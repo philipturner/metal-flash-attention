@@ -5,7 +5,9 @@
 //  Created by Philip Turner on 7/2/24.
 //
 
-// MARK: - Simplest Form of the Pseudocode
+// High-level specification of the code structure.
+
+// MARK: - Minimal Pseudocode
 
 // Forward
 //   for c in 0..<C {

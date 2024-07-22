@@ -5,6 +5,8 @@
 //  Created by Philip Turner on 7/19/24.
 //
 
+// Elementwise operations on the attention matrix.
+
 // MARK: - L Terms and D Terms
 
 extension AttentionKernel {

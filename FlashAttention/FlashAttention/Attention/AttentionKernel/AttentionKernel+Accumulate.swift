@@ -5,8 +5,10 @@
 //  Created by Philip Turner on 7/19/24.
 //
 
-// Operations where one operand is the attention matrix, the other operand is
+// Operations where one argument is the attention matrix, the other argument is
 // read from RAM.
+
+// MARK: - Accumulate
 
 struct AttentionAccumulateDescriptor {
   /// Name of left-hand side register allocation (32 x 32).
@@ -122,7 +124,7 @@ simdgroup_matrix_storage<float> \(B);
 // MARK: - Attention Matrix Derivative
 
 // A hybrid between 'accumulate' and 'outerProduct'. To more uniformly
-// distribute code between 'Accumulate' and 'TwoOperandAccess', the function
+// distribute code between 'Accumulate' and 'OuterProduct', the function
 // is placed here.
 
 extension AttentionKernel {
