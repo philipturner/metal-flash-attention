@@ -511,8 +511,8 @@ func profileProblemSize(N: Int, D: Int) -> Int {
     operations *= dispatchCount
     
     // Divide the work by the latency, resulting in throughput.
-    let intrs = Double(operations) / Double(latencySeconds)
-    let gintrs = Int(intrs / 1e9)
+    let instrs = Double(operations) / Double(latencySeconds)
+    let gintrs = Int(instrs / 1e9)
     print(gintrs, "GINSTRS", "-", latencyMicroseconds, "μs")
     
     // Accumulate the sample from this trial.

@@ -15,21 +15,32 @@ import QuartzCore
 
 func executeScript() {
   // Automate the execution of the test suite.
-  profileProblemSize(N: 10, D: 3)
-  profileProblemSize(N: 10, D: 80)
-  profileProblemSize(N: 8, D: 2)
-  profileProblemSize(N: 9, D: 2)
-  profileProblemSize(N: 24, D: 2)
-  profileProblemSize(N: 192, D: 77)
-  profileProblemSize(N: 192, D: 80)
-  profileProblemSize(N: 93, D: 32)
-  profileProblemSize(N: 99, D: 35)
-  profileProblemSize(N: 64, D: 32)
-  profileProblemSize(N: 32, D: 64)
-  profileProblemSize(N: 4, D: 1)
-  profileProblemSize(N: 4, D: 2)
-  profileProblemSize(N: 384, D: 95)
-  profileProblemSize(N: 777, D: 199)
+//  profileProblemSize(N: 10, D: 3)
+//  profileProblemSize(N: 10, D: 80)
+//  profileProblemSize(N: 8, D: 2)
+//  profileProblemSize(N: 9, D: 2)
+//  profileProblemSize(N: 24, D: 2)
+//  profileProblemSize(N: 192, D: 77)
+//  profileProblemSize(N: 192, D: 80)
+//  profileProblemSize(N: 93, D: 32)
+//  profileProblemSize(N: 99, D: 35)
+//  profileProblemSize(N: 64, D: 32)
+//  profileProblemSize(N: 32, D: 64)
+//  profileProblemSize(N: 4, D: 1)
+//  profileProblemSize(N: 4, D: 2)
+//  profileProblemSize(N: 384, D: 95)
+//  profileProblemSize(N: 777, D: 199)
+  
+  let N_array = [128, 256]
+  let D_array = [32, 64, 128, 192]
+  for N in N_array {
+    print("N =", N, terminator: ", ")
+    for D in D_array {
+      let ginstrs = profileProblemSize(N: N, D: D)
+      print(ginstrs, terminator: ", ")
+    }
+    print()
+  }
   
   /*
    Mac
@@ -50,6 +61,22 @@ func executeScript() {
    latency: 1308
    latency: 3922
    
+   GINSTRS: 0
+   GINSTRS: 0
+   GINSTRS: 0
+   GINSTRS: 0
+   GINSTRS: 0
+   GINSTRS: 34
+   GINSTRS: 48
+   GINSTRS: 26
+   GINSTRS: 22
+   GINSTRS: 17
+   GINSTRS: 7
+   GINSTRS: 0
+   GINSTRS: 0
+   GINSTRS: 134
+   GINSTRS: 440
+   
    iPad
    
    latency: 57
@@ -67,10 +94,28 @@ func executeScript() {
    latency: 22
    latency: 2827
    latency: 9638
+   
+   GINSTRS: 0
+   GINSTRS: 0
+   GINSTRS: 0
+   GINSTRS: 0
+   GINSTRS: 0
+   GINSTRS: 53
+   GINSTRS: 64
+   GINSTRS: 26
+   GINSTRS: 20
+   GINSTRS: 16
+   GINSTRS: 7
+   GINSTRS: 0
+   GINSTRS: 0
+   GINSTRS: 140
+   GINSTRS: 236
    */
 }
 
-func profileProblemSize(N: Int, D: Int) {
+// Returns: Throughput in GINSTRS.
+@discardableResult
+func profileProblemSize(N: Int, D: Int) -> Int {
   // Make a breaking change to the source code. Force all of the kernels to
   // take on the form where operands are blocked along D. Once that is all
   // debugged, retroactively include the original form.
@@ -91,42 +136,6 @@ func profileProblemSize(N: Int, D: Int) {
   networkDesc.N = N
   networkDesc.D = D
   let network = Network(descriptor: networkDesc)
-  
-  // Displays a matrix with dimensions N * 1.
-  func printVector(_ matrix: [Float]) {
-    for n in 0..<min(N, 10) {
-      let matrixValue = matrix[n]
-      var repr = String(format: "%.3f", matrixValue)
-      while repr.count < 8 {
-        repr = " " + repr
-      }
-      print(repr, terminator: " ")
-    }
-    print()
-  }
-  
-  // Displays a matrix with dimensions N * D.
-  func printMatrix(_ matrix: [Float]) {
-    for d in 0..<min(D, 5) {
-      for n in 0..<min(N, 10) {
-        let matrixAddress = n * D + d
-        let matrixValue = matrix[matrixAddress]
-        var repr = String(format: "%.3f", matrixValue)
-        while repr.count < 8 {
-          repr = " " + repr
-        }
-        print(repr, terminator: " ")
-      }
-      print()
-    }
-  }
-  
-  let O = network.inferenceAttention()
-  let LTerms = (0..<N).map(network.createLTerm(rowID:))
-  let DTerms = (0..<N).map(network.createDTerm(rowID:))
-  let dV = network.derivativeV()
-  let dK = network.derivativeK()
-  let dQ = network.derivativeQ()
   
   var attentionDesc = AttentionDescriptor()
   attentionDesc.matrixDimensions = (R: UInt32(N), C: UInt32(N), D: UInt16(D))
@@ -221,31 +230,41 @@ func profileProblemSize(N: Int, D: Int) {
         gridSize, threadsPerThreadgroup: groupSize)
     }
     
+    encoder.setBuffer(bufferQ, offset: 0, index: 0)
+    encoder.setBuffer(bufferK, offset: 0, index: 1)
+    encoder.setBuffer(bufferV, offset: 0, index: 2)
+    encoder.setBuffer(bufferO, offset: 0, index: 3)
+    encoder.setBuffer(bufferLTerms, offset: 0, index: 4)
+    
+    encoder.setBuffer(bufferDerivativeO, offset: 0, index: 5)
+    encoder.setBuffer(bufferDTerms, offset: 0, index: 6)
+    encoder.setBuffer(bufferDerivativeV, offset: 0, index: 7)
+    encoder.setBuffer(bufferDerivativeK, offset: 0, index: 8)
+    encoder.setBuffer(bufferDerivativeQ, offset: 0, index: 9)
+    
     for _ in 0..<dispatchCount {
-      encoder.setBuffer(bufferQ, offset: 0, index: 0)
-      encoder.setBuffer(bufferK, offset: 0, index: 1)
-      encoder.setBuffer(bufferV, offset: 0, index: 2)
-      encoder.setBuffer(bufferO, offset: 0, index: 3)
-      encoder.setBuffer(bufferLTerms, offset: 0, index: 4)
-      
-      encoder.setBuffer(bufferDerivativeO, offset: 0, index: 5)
-      encoder.setBuffer(bufferDTerms, offset: 0, index: 6)
-      encoder.setBuffer(bufferDerivativeV, offset: 0, index: 7)
-      encoder.setBuffer(bufferDerivativeK, offset: 0, index: 8)
-      encoder.setBuffer(bufferDerivativeQ, offset: 0, index: 9)
-      
-      dispatch(
-        kernel: kernelForward,
-        pipeline: pipelineForward,
-        along: kernelForward.blockDimensions.R)
-      dispatch(
-        kernel: kernelBackwardQuery,
-        pipeline: pipelineBackwardQuery,
-        along: kernelBackwardQuery.blockDimensions.R)
-      dispatch(
-        kernel: kernelBackwardKeyValue,
-        pipeline: pipelineBackwardKeyValue,
-        along: kernelBackwardKeyValue.blockDimensions.C)
+      if dispatchCount > 1 {
+        // Backward Key-Value
+        //
+        // WARNING: Change this code to match the kernel you're profiling.
+        dispatch(
+          kernel: kernelBackwardKeyValue,
+          pipeline: pipelineBackwardKeyValue,
+          along: kernelBackwardKeyValue.blockDimensions.C)
+      } else {
+        dispatch(
+          kernel: kernelForward,
+          pipeline: pipelineForward,
+          along: kernelForward.blockDimensions.R)
+        dispatch(
+          kernel: kernelBackwardQuery,
+          pipeline: pipelineBackwardQuery,
+          along: kernelBackwardQuery.blockDimensions.R)
+        dispatch(
+          kernel: kernelBackwardKeyValue,
+          pipeline: pipelineBackwardKeyValue,
+          along: kernelBackwardKeyValue.blockDimensions.C)
+      }
     }
     
     encoder.endEncoding()
@@ -256,10 +275,17 @@ func profileProblemSize(N: Int, D: Int) {
     let start = commandBuffer.gpuStartTime
     let end = commandBuffer.gpuEndTime
     let latency = end - start
-    print("latency:", Int(latency * 1e6))
     return latency
   }
   executeCommandBuffer(dispatchCount: 1)
+  
+  #if false
+  let O = network.inferenceAttention()
+  let LTerms = (0..<N).map(network.createLTerm(rowID:))
+  let DTerms = (0..<N).map(network.createDTerm(rowID:))
+  let dV = network.derivativeV()
+  let dK = network.derivativeK()
+  let dQ = network.derivativeQ()
   
   // Copy the results.
   MTLContext.copy(bufferO, into: &resultO)
@@ -276,6 +302,35 @@ func profileProblemSize(N: Int, D: Int) {
   MTLContext.copy(bufferDerivativeQ, into: &resultDerivativeQ)
   
   #if false
+  // Displays a matrix with dimensions N * 1.
+  func printVector(_ matrix: [Float]) {
+    for n in 0..<min(N, 10) {
+      let matrixValue = matrix[n]
+      var repr = String(format: "%.3f", matrixValue)
+      while repr.count < 8 {
+        repr = " " + repr
+      }
+      print(repr, terminator: " ")
+    }
+    print()
+  }
+  
+  // Displays a matrix with dimensions N * D.
+  func printMatrix(_ matrix: [Float]) {
+    for d in 0..<min(D, 5) {
+      for n in 0..<min(N, 10) {
+        let matrixAddress = n * D + d
+        let matrixValue = matrix[matrixAddress]
+        var repr = String(format: "%.3f", matrixValue)
+        while repr.count < 8 {
+          repr = " " + repr
+        }
+        print(repr, terminator: " ")
+      }
+      print()
+    }
+  }
+  
   print()
   print("Q:")
   printMatrix(network.Q)
@@ -365,4 +420,25 @@ func profileProblemSize(N: Int, D: Int) {
   check(expected: dV, actual: resultDerivativeV)
   check(expected: dK, actual: resultDerivativeK)
   check(expected: dQ, actual: resultDerivativeQ)
+  #endif
+  
+  // Benchmark performance.
+  var maxGINSTRS: Int = .zero
+  for _ in 0..<5 {
+    let dispatchCount: Int = 5
+    let latencySeconds = executeCommandBuffer(dispatchCount: dispatchCount)
+    
+    // Determine the amount of work done.
+    var operations: Int = .zero
+    operations += (4 * D + 5) * (N * N) // backward dK/dV
+    operations *= dispatchCount
+    
+    // Divide the work by the latency, resulting in throughput.
+    let instrs = Double(operations) / Double(latencySeconds)
+    let ginstrs = Int(instrs / 1e9)
+    
+    // Accumulate the sample from this trial.
+    maxGINSTRS = max(maxGINSTRS, ginstrs)
+  }
+  return maxGINSTRS
 }
