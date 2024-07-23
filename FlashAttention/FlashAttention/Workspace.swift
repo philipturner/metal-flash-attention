@@ -15,32 +15,34 @@ import QuartzCore
 
 func executeScript() {
   // Automate the execution of the test suite.
-//  profileProblemSize(N: 10, D: 3)
-//  profileProblemSize(N: 10, D: 80)
-//  profileProblemSize(N: 8, D: 2)
-//  profileProblemSize(N: 9, D: 2)
-//  profileProblemSize(N: 24, D: 2)
-//  profileProblemSize(N: 192, D: 77)
-//  profileProblemSize(N: 192, D: 80)
-//  profileProblemSize(N: 93, D: 32)
-//  profileProblemSize(N: 99, D: 35)
-//  profileProblemSize(N: 64, D: 32)
-//  profileProblemSize(N: 32, D: 64)
-//  profileProblemSize(N: 4, D: 1)
-//  profileProblemSize(N: 4, D: 2)
-//  profileProblemSize(N: 384, D: 95)
-//  profileProblemSize(N: 777, D: 199)
+  profileProblemSize(N: 10, D: 3)
+  profileProblemSize(N: 10, D: 80)
+  profileProblemSize(N: 8, D: 2)
+  profileProblemSize(N: 9, D: 2)
+  profileProblemSize(N: 23, D: 2)
+  profileProblemSize(N: 24, D: 2)
+  profileProblemSize(N: 25, D: 2)
+  profileProblemSize(N: 192, D: 77)
+  profileProblemSize(N: 192, D: 80)
+  profileProblemSize(N: 93, D: 32)
+  profileProblemSize(N: 99, D: 35)
+  profileProblemSize(N: 64, D: 32)
+  profileProblemSize(N: 32, D: 64)
+  profileProblemSize(N: 4, D: 1)
+  profileProblemSize(N: 4, D: 2)
+  profileProblemSize(N: 384, D: 95)
+  profileProblemSize(N: 777, D: 199)
   
-  let N_array = [128, 256]
-  let D_array = [32, 64, 128, 192]
-  for N in N_array {
-    print("N =", N, terminator: ", ")
-    for D in D_array {
-      let ginstrs = profileProblemSize(N: N, D: D)
-      print(ginstrs, terminator: ", ")
-    }
-    print()
-  }
+//  let N_array = [128, 256]
+//  let D_array = [32, 64, 128, 192]
+//  for N in N_array {
+//    print("N =", N, terminator: ", ")
+//    for D in D_array {
+//      let ginstrs = profileProblemSize(N: N, D: D)
+//      print(ginstrs, terminator: ", ")
+//    }
+//    print()
+//  }
   
   /*
    Mac
@@ -61,22 +63,6 @@ func executeScript() {
    latency: 1308
    latency: 3922
    
-   GINSTRS: 0
-   GINSTRS: 0
-   GINSTRS: 0
-   GINSTRS: 0
-   GINSTRS: 0
-   GINSTRS: 34
-   GINSTRS: 48
-   GINSTRS: 26
-   GINSTRS: 22
-   GINSTRS: 17
-   GINSTRS: 7
-   GINSTRS: 0
-   GINSTRS: 0
-   GINSTRS: 134
-   GINSTRS: 440
-   
    iPad
    
    latency: 57
@@ -95,21 +81,6 @@ func executeScript() {
    latency: 2827
    latency: 9638
    
-   GINSTRS: 0
-   GINSTRS: 0
-   GINSTRS: 0
-   GINSTRS: 0
-   GINSTRS: 0
-   GINSTRS: 53
-   GINSTRS: 64
-   GINSTRS: 26
-   GINSTRS: 20
-   GINSTRS: 16
-   GINSTRS: 7
-   GINSTRS: 0
-   GINSTRS: 0
-   GINSTRS: 140
-   GINSTRS: 236
    */
 }
 
@@ -118,7 +89,8 @@ func executeScript() {
 func profileProblemSize(N: Int, D: Int) -> Int {
   // Remaining optimizations for online attention:
   // - Check whether you can fill the edge along R/C with garbage, for certain
-  //   operations.
+  //   operations. TODO: Implement this optimization after investigating
+  //   robustness of heuristic for operand caching.
   // - Cache more data in registers for small head dimensions. Add a new
   //   version of outer-product where one operand is in registers, the other is
   //   paged in chunks of 64.
@@ -127,8 +99,6 @@ func profileProblemSize(N: Int, D: Int) -> Int {
   //
   // Other kernel variants:
   // - Fix the issues with BF16 encoding/decoding performance.
-  // - Add in-place accumulation to the GEMM kernel and attention kernels, so
-  //   dST can have constant-scaling RAM consumption.
   // - Benchmark naive attention with fused softmax/dsoftmax.
   //
   // 4096x4096   |   32 MB | 4 groups/core
@@ -288,11 +258,12 @@ func profileProblemSize(N: Int, D: Int) -> Int {
     let start = commandBuffer.gpuStartTime
     let end = commandBuffer.gpuEndTime
     let latency = end - start
+    print("latency:", Int(latency * 1e6))
     return latency
   }
   executeCommandBuffer(dispatchCount: 1)
   
-  #if false
+  #if true
   let O = network.inferenceAttention()
   let LTerms = (0..<N).map(network.createLTerm(rowID:))
   let DTerms = (0..<N).map(network.createDTerm(rowID:))
@@ -456,4 +427,6 @@ func profileProblemSize(N: Int, D: Int) -> Int {
   }
   return maxGINSTRS
   #endif
+  
+  return 0
 }

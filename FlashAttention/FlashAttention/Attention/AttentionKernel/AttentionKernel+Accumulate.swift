@@ -62,6 +62,24 @@ simdgroup_matrix_storage<float> \(B);
 
 """
     
+    let innerLoopAB = """
+
+// Iterate over the head dimension.
+ushort d_outer = d;
+if (D - d_outer >= 64) {
+#pragma clang loop unroll(full)
+  for (ushort d = 0; d < 64; d += 8) {
+    \(loopBodyAB)
+  }
+} else {
+#pragma clang loop unroll(full)
+  for (ushort d = 0; d < D % 64; d += 8) {
+    \(loopBodyAB)
+  }
+}
+
+"""
+    
     return """
     {
       // Find where the \(B) data will be read from.
@@ -75,6 +93,11 @@ simdgroup_matrix_storage<float> \(B);
 #pragma clang loop unroll(full)
       for (ushort d = 0; d < D; d += 64) {
         threadgroup_barrier(mem_flags::mem_threadgroup);
+
+        // Specify the remainder of the row/column dimension.
+        ushort K_remainder = (\(matrixDimensionK) % 32 == 0)
+          ? 32 : \(matrixDimensionK) % 32;
+        ushort K_remainder_padded = (K_remainder + 7) / 8 * 8;
         
         if (sidx == 0) {
           uint2 B_offset(d, \(matrixOffsetK));
@@ -84,10 +107,11 @@ simdgroup_matrix_storage<float> \(B);
           
           ushort RC_src_dimension = min(
             uint(32), \(matrixDimensionK) - \(matrixOffsetK));
+          ushort RC_dst_dimension = max(
+            K_remainder_padded, RC_src_dimension);
           ushort D_src_dimension = min(ushort(64), ushort(D - d));
-          ushort D_dst_dimension = min(ushort(64), ushort(\(paddedD) - d));
           ushort2 tile_src(D_src_dimension, RC_src_dimension);
-          ushort2 tile_dst(D_dst_dimension, 32); // excessive padding
+          ushort2 tile_dst(D_src_dimension, RC_dst_dimension);
           
           simdgroup_event event;
           event.async_copy(
@@ -98,20 +122,15 @@ simdgroup_matrix_storage<float> \(B);
         threadgroup_barrier(mem_flags::mem_threadgroup);
         
         // Iterate over the row/column dimension.
-#pragma clang loop unroll(full)
-        for (ushort k = 0; k < 32; k += 8) {
-          // Iterate over the head dimension.
-          ushort d_outer = d;
-          if (\(paddedD) - d_outer >= 64) {
-#pragma clang loop unroll(full)
-            for (ushort d = 0; d < 64; d += 8) {
-              \(loopBodyAB)
-            }
-          } else {
-#pragma clang loop unroll(full)
-            for (ushort d = 0; d < \(paddedD) % 64; d += 8) {
-              \(loopBodyAB)
-            }
+  #pragma clang loop unroll(full)
+        for (ushort k = 0; k < K_remainder_padded; k += 8) {
+          \(innerLoopAB)
+        }
+        if ((K_remainder_padded == 32) ||
+            (\(matrixOffsetK) + 32 <= \(matrixDimensionK))) {
+  #pragma clang loop unroll(full)
+          for (ushort k = K_remainder_padded; k < 32; k += 8) {
+            \(innerLoopAB)
           }
         }
       }
@@ -207,14 +226,14 @@ ushort d_outer = d;
 #pragma clang loop unroll(full)
 for (ushort r = 0; r < 32; r += 8) {
   // Inner loop over the head dimension.
-  if (\(paddedD) - d_outer >= 32) {
+  if (D - d_outer >= 32) {
   #pragma clang loop unroll(full)
     for (ushort d = 0; d < 32; d += 8) {
       \(innerLoopDerivativeV)
     }
   } else {
   #pragma clang loop unroll(full)
-    for (ushort d = 0; d < \(paddedD) % 32; d += 8) {
+    for (ushort d = 0; d < D % 32; d += 8) {
       \(innerLoopDerivativeV)
     }
   }
@@ -223,14 +242,14 @@ for (ushort r = 0; r < 32; r += 8) {
 // Second multiplication: dP = V * dO^T
 //
 // Inner loop over the head dimension.
-if (\(paddedD) - d_outer >= 32) {
+if (D - d_outer >= 32) {
 #pragma clang loop unroll(full)
   for (ushort d = 0; d < 32; d += 8) {
     \(innerLoopDerivativeP)
   }
 } else {
 #pragma clang loop unroll(full)
-  for (ushort d = 0; d < \(paddedD) % 32; d += 8) {
+  for (ushort d = 0; d < D % 32; d += 8) {
     \(innerLoopDerivativeP)
   }
 }

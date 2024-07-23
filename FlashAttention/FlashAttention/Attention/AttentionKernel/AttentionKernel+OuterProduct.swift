@@ -83,7 +83,7 @@ extension AttentionKernel {
             auto dst = (threadgroup float*)(threadgroup_block);
             
             ushort2 tile_src(D_src_dimension, M_src_dimension);
-            ushort2 tile_dst(D_dst_dimension, 32); // excessive padding
+            ushort2 tile_dst(D_dst_dimension, M_src_dimension);
             events[0].async_copy(
               dst, 32, tile_dst,
               src, \(leadingDimensionA), tile_src, \(transposeA));
@@ -185,7 +185,8 @@ extension AttentionKernel {
 
 """
     
-    let loopBodyAB = """
+    func loopBodyAB(startN: String, endN: String) -> String {
+      return """
 
 // Load the LHS from threadgroup memory.
 ushort2 origin(d, 0);
@@ -194,7 +195,7 @@ simdgroup_matrix_storage<float> \(A);
 
 // Inner loop over N.
 #pragma clang loop unroll(full)
-for (ushort n = 0; n < 32; n += 8) {
+for (ushort n = \(startN); n < \(endN); n += 8) {
   // Load the RHS from threadgroup memory.
   ushort2 origin(n, d);
   simdgroup_matrix_storage<float> \(B)T;
@@ -206,24 +207,30 @@ for (ushort n = 0; n < 32; n += 8) {
 }
 
 """
+    }
     
-    accessDesc.innerLoop = """
+    func innerLoopAB(startN: String, endN: String) -> String {
+      return """
 
 // Inner loop over D.
 ushort d_outer = d;
-if (\(paddedD) - d_outer >= 32) {
+if (D - d_outer >= 32) {
 #pragma clang loop unroll(full)
   for (ushort d = 0; d < 32; d += 8) {
-    \(loopBodyAB)
+    \(loopBodyAB(startN: startN, endN: endN))
   }
 } else {
 #pragma clang loop unroll(full)
-  for (ushort d = 0; d < \(paddedD) % 32; d += 8) {
-    \(loopBodyAB)
+  for (ushort d = 0; d < D % 32; d += 8) {
+    \(loopBodyAB(startN: startN, endN: endN))
   }
 }
 
 """
+    }
+    
+    accessDesc.innerLoop = innerLoopAB(startN: "0", endN: "32")
+    
     return accessDesc
   }
 }

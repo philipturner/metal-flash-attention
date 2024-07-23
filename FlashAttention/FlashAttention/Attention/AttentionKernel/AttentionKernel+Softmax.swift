@@ -66,26 +66,24 @@ D_term_accumulator += dO_value * O_value;
 
 // Inner loop over D.
 ushort d_outer = d;
-if (\(paddedD) - d_outer >= 32) {
+if (D - d_outer >= 32) {
 #pragma clang loop unroll(full)
   for (ushort d = 0; d < 32; d += 8) {
     \(loopBodyDerivativeOO)
   }
 } else {
 #pragma clang loop unroll(full)
-  for (ushort d = 0; d < \(paddedD) % 32; d += 8) {
+  for (ushort d = 0; d < D % 32; d += 8) {
     \(loopBodyDerivativeOO)
   }
 }
 
 """
     
-    let dOO = twoOperandAccess(descriptor: accessDesc)
-    
     return """
 
   float2 D_term_accumulator(0);
-  \(dOO)
+  \(twoOperandAccess(descriptor: accessDesc))
   
   float D_term = D_term_accumulator[0] + D_term_accumulator[1];
   D_term += simd_shuffle_xor(D_term, 1);
