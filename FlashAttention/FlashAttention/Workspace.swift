@@ -131,26 +131,17 @@ func profileProblemSize(N: Int, D: Int) -> Int {
   // - Cache more data in registers for small head dimensions. Add a new
   //   version of outer-product where one operand is in registers, the other is
   //   paged in chunks of 64.
+  // - Make the D block size variable.
+  // - Generate a new set of benchmarks (expect much faster on M1; no
+  //   change or small speedup on M3).
+  //
+  // Optimizations specifically for M3:
   // - Elide async copies on M3, when possible.
-  // - Elide async copies for L[i]/D[i], if/when it improves performance.
-  //
-  // Other kernel variants:
   // - Fix the issues with BF16 encoding/decoding performance.
-  // - Benchmark naive attention with fused softmax/dsoftmax.
-  //
-  // 4096x4096   |   32 MB | 4 groups/core
-  // 8192x8192   |  128 MB | 8 groups/core
-  // 16834x16384 |  512 MB | 16 groups/core
-  // 32768x32768 | 2048 MB | 32 groups/core
-  //
-  // 4096x3072   |   24 MB | 3 groups/core
-  // 8192x1536   |   24 MB | 1.5 groups/core
-  // 16384x768   |   24 MB | 0.75 groups/core
-  // 32768x384   |   24 MB | 0.38 groups/core
-  //
-  // 2048x2048   |    8 MB | 2 groups/core
-  // 2048x4096   |   16 MB | 4 groups/core
-  // 1024x8192   |   16 MB | 8 groups/core
+  //   - Most likely slowing down M3.
+  //   - Is it slowing down M1 as well?
+  // - Generate a new set of benchmarks (expect no regression on M1; much
+  //   faster on M3).
   
   var networkDesc = NetworkDescriptor()
   networkDesc.N = N
