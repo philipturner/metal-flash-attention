@@ -31,9 +31,6 @@ struct AttentionTwoOperandAccessDescriptor {
   
   /// Required. Code for the inner loop, scoped over D.
   var innerLoop: String?
-  
-  /// A temporary feature, until edge elision is fully implemented.
-  var elideEdgeAccesses: Bool = false
 }
 
 extension AttentionKernel {
@@ -53,31 +50,14 @@ extension AttentionKernel {
       fatalError("Descriptor was incomplete.")
     }
     
-    var declareEdgeRemainder: String
-    
-    if descriptor.elideEdgeAccesses {
-      declareEdgeRemainder = """
-      
-// Declare the remainder of the row/column dimension.
-ushort N_remainder = (\(matrixDimensions.N) % 32 == 0)
-  ? 32 : \(matrixDimensions.N) % 32;
-ushort N_remainder_padded = (N_remainder + 7) / 8 * 8;
-
-"""
-      
-    } else {
-      declareEdgeRemainder = """
-
-ushort N_remainder_padded = 32;
-
-"""
-    }
-    
     let firstIterationLoading = descriptor.firstIterationLoading ?? ""
     
     return """
     {
-      \(declareEdgeRemainder)
+      // Declare the remainder of the row/column dimension.
+      ushort N_remainder = (\(matrixDimensions.N) % 32 == 0)
+        ? 32 : \(matrixDimensions.N) % 32;
+      ushort N_remainder_padded = (N_remainder + 7) / 8 * 8;
       
       uint M_offset = \(matrixOffset.M);
       uint N_offset = \(matrixOffset.N);
@@ -124,7 +104,7 @@ ushort N_remainder_padded = 32;
             auto dst = (threadgroup float*)(threadgroup_block) + \(32 * 32);
             
             ushort2 tile_src(D_src_dimension, N_src_dimension);
-            ushort2 tile_dst(D_dst_dimension, N_dst_dimension); // excessive padding
+            ushort2 tile_dst(D_dst_dimension, N_dst_dimension);
             events[1].async_copy(
               dst, 32, tile_dst,
               src, \(leadingDimensionB), tile_src, \(transposeB));
@@ -253,13 +233,11 @@ if (D - d_outer >= 32) {
 """
     }
     
-    accessDesc.elideEdgeAccesses = true
     accessDesc.innerLoop = """
 
 // Iterate over the row/column dimension.
 \(innerLoopAB(startN: "0", endN: "N_remainder_padded"))
-if ((N_remainder_padded == 32) ||
-    (\(matrixOffset.N) + 32 <= \(matrixDimensions.N))) {
+if (\(matrixOffset.N) + 32 < \(matrixDimensions.N)) {
   \(innerLoopAB(startN: "N_remainder_padded", endN: "32"))
 }
 

@@ -45,7 +45,7 @@ func executeScript() {
 //  }
   
   /*
-   Mac
+   Mac - Before
    
    latency: 77
    latency: 143
@@ -63,7 +63,27 @@ func executeScript() {
    latency: 1308
    latency: 3922
    
-   iPad
+   Mac - After
+   
+   latency: 52
+   latency: 116
+   latency: 46
+   latency: 51
+   latency: 63
+   latency: 59
+   latency: 60
+   latency: 599
+   latency: 632
+   latency: 143
+   latency: 238
+   latency: 110
+   latency: 116
+   latency: 44
+   latency: 51
+   latency: 1027
+   latency: 4931
+   
+   iPad - Before
    
    latency: 57
    latency: 252
@@ -81,6 +101,26 @@ func executeScript() {
    latency: 2827
    latency: 9638
    
+   iPad - After
+   
+   latency: 46
+   latency: 145
+   latency: 43
+   latency: 45
+   latency: 76
+   latency: 80
+   latency: 83
+   latency: 1212
+   latency: 1102
+   latency: 258
+   latency: 431
+   latency: 195
+   latency: 223
+   latency: 39
+   latency: 38
+   latency: 1469
+   latency: 6105
+   
    */
 }
 
@@ -88,9 +128,6 @@ func executeScript() {
 @discardableResult
 func profileProblemSize(N: Int, D: Int) -> Int {
   // Remaining optimizations for online attention:
-  // - Check whether you can fill the edge along R/C with garbage, for certain
-  //   operations. TODO: Implement this optimization after investigating
-  //   robustness of heuristic for operand caching.
   // - Cache more data in registers for small head dimensions. Add a new
   //   version of outer-product where one operand is in registers, the other is
   //   paged in chunks of 64.

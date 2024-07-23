@@ -48,9 +48,8 @@ extension AttentionKernel {
     
     let loopBodyAB = """
 
-ushort2 origin(d, k);
-
 // Load the RHS from threadgroup memory.
+ushort2 origin(d, k);
 simdgroup_matrix_storage<float> \(B);
 \(B).load(
   \(B)_block, \(leadingBlockDimensionB), origin, \(transposeB));
@@ -124,8 +123,7 @@ if (D - d_outer >= 64) {
         for (ushort k = 0; k < K_remainder_padded; k += 8) {
           \(innerLoopAB)
         }
-        if ((K_remainder_padded == 32) ||
-            (\(matrixOffsetK) + 32 <= \(matrixDimensionK))) {
+        if (\(matrixOffsetK) + 32 < \(matrixDimensionK)) {
   #pragma clang loop unroll(full)
           for (ushort k = K_remainder_padded; k < 32; k += 8) {
             \(innerLoopAB)
@@ -178,7 +176,8 @@ extension AttentionKernel {
     
 """
     
-    let innerLoopDerivativeV = """
+    // First multiplication: dV += P^T * dO
+    let loopBodyDerivativeV = """
 
 // Load the RHS from threadgroup memory.
 ushort2 origin(d, r);
@@ -192,6 +191,24 @@ dV_sram[(d_outer + d) / 8].multiply(
 
 """
     
+    let innerLoopDerivativeV = """
+
+// Inner loop over the head dimension.
+if (D - d_outer >= 32) {
+#pragma clang loop unroll(full)
+  for (ushort d = 0; d < 32; d += 8) {
+    \(loopBodyDerivativeV)
+  }
+} else {
+#pragma clang loop unroll(full)
+  for (ushort d = 0; d < D % 32; d += 8) {
+    \(loopBodyDerivativeV)
+  }
+}
+
+"""
+    
+    // Second multiplication: dP = V * dO^T
     func innerLoopDerivativeP(startN: String, endN: String) -> String {
       let loopBody = """
 
@@ -202,7 +219,7 @@ V.load(V_block, 32, origin, \(transposeState.V));
 
 // Inner loop over the row dimension.
 #pragma clang loop unroll(full)
-for (ushort r = 0; r < 32; r += 8) {
+for (ushort r = \(startN); r < \(endN); r += 8) {
   // Load the RHS from threadgroup memory.
   ushort2 origin(r, d);
   simdgroup_matrix_storage<float> dOT;
@@ -217,6 +234,7 @@ for (ushort r = 0; r < 32; r += 8) {
       
       return """
 
+// Inner loop over the head dimension.
 if (D - d_outer >= 32) {
 #pragma clang loop unroll(full)
   for (ushort d = 0; d < 32; d += 8) {
@@ -234,29 +252,23 @@ if (D - d_outer >= 32) {
     
     accessDesc.innerLoop = """
 
-// First multiplication: dV += P^T * dO
-//
 // Inner loop over the row dimension.
 #pragma clang loop unroll(full)
-for (ushort r = 0; r < 32; r += 8) {
-  // Inner loop over the head dimension.
-  if (D - d_outer >= 32) {
-  #pragma clang loop unroll(full)
-    for (ushort d = 0; d < 32; d += 8) {
-      \(innerLoopDerivativeV)
-    }
-  } else {
-  #pragma clang loop unroll(full)
-    for (ushort d = 0; d < D % 32; d += 8) {
-      \(innerLoopDerivativeV)
-    }
+for (ushort r = 0; r < N_remainder_padded; r += 8) {
+  \(innerLoopDerivativeV)
+}
+if (r + 32 < R) {
+#pragma clang loop unroll(full)
+  for (ushort r = N_remainder_padded; r < 32; r += 8) {
+    \(innerLoopDerivativeV)
   }
 }
 
-// Second multiplication: dP = V * dO^T
-//
-// Inner loop over the head dimension.
+// We don't need to guard against garbage entries in dO here. They will be
+// elided in the GEMM that accumulates dK. Or, they will be skipped when
+// storing the chunk of dS^T to RAM.
 \(innerLoopDerivativeP(startN: "0", endN: "32"))
+
 """
     
     return twoOperandAccess(descriptor: accessDesc)

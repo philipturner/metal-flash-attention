@@ -284,12 +284,13 @@ extension AttentionKernel {
       // Locate the L[i] in device and threadgroup memory.
       auto L_terms_src = L_terms + r;
       auto L_terms_dst = \(blockLTerms());
-
+      
       // Locate the D[i] in device and threadgroup memory.
       auto D_terms_src = D_terms + r;
       auto D_terms_dst = \(blockDTerms());
       
-      // Zero-padding for safety, which should harm performance.
+      // Excessive padding because the softmax loops aren't scoped over
+      // edges of the row dimension.
       ushort R_src_dimension = min(uint(32), R - r);
       ushort R_dst_dimension = 32;
       
