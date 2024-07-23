@@ -46,7 +46,7 @@ extension AttentionKernel {
 
 """
     
-    let loopBodyDerivativeOO = """
+    let loopBody = """
 
 // Load the LHS and RHS from threadgroup memory.
 ushort2 origin(d, 0);
@@ -65,16 +65,15 @@ D_term_accumulator += dO_value * O_value;
     accessDesc.innerLoop = """
 
 // Inner loop over D.
-ushort d_outer = d;
 if (D - d_outer >= 32) {
 #pragma clang loop unroll(full)
   for (ushort d = 0; d < 32; d += 8) {
-    \(loopBodyDerivativeOO)
+    \(loopBody)
   }
 } else {
 #pragma clang loop unroll(full)
   for (ushort d = 0; d < D % 32; d += 8) {
-    \(loopBodyDerivativeOO)
+    \(loopBody)
   }
 }
 

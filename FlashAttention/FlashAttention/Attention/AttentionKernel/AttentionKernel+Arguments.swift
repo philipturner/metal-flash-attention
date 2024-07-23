@@ -88,11 +88,10 @@ ushort2 origin(d, 0);
   
   // Outer loop over D.
 #pragma clang loop unroll(full)
-  for (ushort d = 0; d < D; d += 64) {
+  for (ushort d_outer = 0; d_outer < D; d_outer += 64) {
     threadgroup_barrier(mem_flags::mem_threadgroup);
     
     // Iterate over the head dimension.
-    ushort d_outer = d;
     if (\(paddedD) - d_outer >= 64) {
 #pragma clang loop unroll(full)
       for (ushort d = 0; d < 64; d += 8) {
@@ -107,12 +106,12 @@ ushort2 origin(d, 0);
     threadgroup_barrier(mem_flags::mem_threadgroup);
     
     if (sidx == 0) {
-      uint2 \(O)_offset(d, \(matrixOffset));
+      uint2 \(O)_offset(d_outer, \(matrixOffset));
       auto src = (threadgroup float*)(threadgroup_block);
       auto dst = simdgroup_matrix_storage<float>::apply_offset(
         \(O), \(leadingDimensionO), \(O)_offset, \(transposeO));
      
-      ushort D_dimension = min(ushort(64), ushort(D - d));
+      ushort D_dimension = min(ushort(64), ushort(D - d_outer));
       ushort RC_dimension = min(
         uint(32), \(matrixDimension) - \(matrixOffset));
       ushort2 tile_src(D_dimension, RC_dimension);

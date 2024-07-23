@@ -65,7 +65,6 @@ simdgroup_matrix_storage<float> \(B);
     let innerLoopAB = """
 
 // Iterate over the head dimension.
-ushort d_outer = d;
 if (D - d_outer >= 64) {
 #pragma clang loop unroll(full)
   for (ushort d = 0; d < 64; d += 8) {
@@ -91,27 +90,26 @@ if (D - d_outer >= 64) {
       
       // Outer loop over D.
 #pragma clang loop unroll(full)
-      for (ushort d = 0; d < D; d += 64) {
+      for (ushort d_outer = 0; d_outer < D; d_outer += 64) {
         threadgroup_barrier(mem_flags::mem_threadgroup);
 
-        // Specify the remainder of the row/column dimension.
+        // Declare the remainder of the row/column dimension.
         ushort K_remainder = (\(matrixDimensionK) % 32 == 0)
           ? 32 : \(matrixDimensionK) % 32;
         ushort K_remainder_padded = (K_remainder + 7) / 8 * 8;
         
         if (sidx == 0) {
-          uint2 B_offset(d, \(matrixOffsetK));
+          uint2 B_offset(d_outer, \(matrixOffsetK));
           auto src = simdgroup_matrix_storage<float>::apply_offset(
             \(B), \(leadingDimensionB), B_offset, \(transposeB));
           auto dst = (threadgroup float*)(threadgroup_block);
           
-          ushort RC_src_dimension = min(
+          ushort K_src_dimension = min(
             uint(32), \(matrixDimensionK) - \(matrixOffsetK));
-          ushort RC_dst_dimension = max(
-            K_remainder_padded, RC_src_dimension);
-          ushort D_src_dimension = min(ushort(64), ushort(D - d));
-          ushort2 tile_src(D_src_dimension, RC_src_dimension);
-          ushort2 tile_dst(D_src_dimension, RC_dst_dimension);
+          ushort K_dst_dimension = max(K_remainder_padded, K_src_dimension);
+          ushort D_src_dimension = min(ushort(64), ushort(D - d_outer));
+          ushort2 tile_src(D_src_dimension, K_src_dimension);
+          ushort2 tile_dst(D_src_dimension, K_dst_dimension);
           
           simdgroup_event event;
           event.async_copy(
@@ -194,35 +192,51 @@ dV_sram[(d_outer + d) / 8].multiply(
 
 """
     
-    let innerLoopDerivativeP = """
+    func innerLoopDerivativeP(startN: String, endN: String) -> String {
+      let loopBody = """
 
 // Load the LHS from threadgroup memory.
 ushort2 origin(d, 0);
 simdgroup_matrix_storage<float> V;
 V.load(V_block, 32, origin, \(transposeState.V));
 
-// Inner loop over the column dimension.
+// Inner loop over the row dimension.
 #pragma clang loop unroll(full)
-for (ushort c = 0; c < 32; c += 8) {
+for (ushort r = 0; r < 32; r += 8) {
   // Load the RHS from threadgroup memory.
-  ushort2 origin(c, d);
+  ushort2 origin(r, d);
   simdgroup_matrix_storage<float> dOT;
   dOT.load(dOT_block, 32, origin, \(!transposeState.O));
 
   // Mask out the first accumulate at compile-time.
   bool accumulate = (d_outer > 0) || (d > 0);
-  dPT_sram[c / 8].multiply(V, dOT, accumulate);
+  dPT_sram[r / 8].multiply(V, dOT, accumulate);
 }
 
 """
+      
+      return """
+
+if (D - d_outer >= 32) {
+#pragma clang loop unroll(full)
+  for (ushort d = 0; d < 32; d += 8) {
+    \(loopBody)
+  }
+} else {
+#pragma clang loop unroll(full)
+  for (ushort d = 0; d < D % 32; d += 8) {
+    \(loopBody)
+  }
+}
+
+"""
+    }
     
     accessDesc.innerLoop = """
 
-ushort d_outer = d;
-
 // First multiplication: dV += P^T * dO
 //
-// Inner loop over the column dimension.
+// Inner loop over the row dimension.
 #pragma clang loop unroll(full)
 for (ushort r = 0; r < 32; r += 8) {
   // Inner loop over the head dimension.
@@ -242,18 +256,7 @@ for (ushort r = 0; r < 32; r += 8) {
 // Second multiplication: dP = V * dO^T
 //
 // Inner loop over the head dimension.
-if (D - d_outer >= 32) {
-#pragma clang loop unroll(full)
-  for (ushort d = 0; d < 32; d += 8) {
-    \(innerLoopDerivativeP)
-  }
-} else {
-#pragma clang loop unroll(full)
-  for (ushort d = 0; d < D % 32; d += 8) {
-    \(innerLoopDerivativeP)
-  }
-}
-
+\(innerLoopDerivativeP(startN: "0", endN: "32"))
 """
     
     return twoOperandAccess(descriptor: accessDesc)

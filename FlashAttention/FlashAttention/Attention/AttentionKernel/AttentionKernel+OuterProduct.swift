@@ -31,6 +31,9 @@ struct AttentionTwoOperandAccessDescriptor {
   
   /// Required. Code for the inner loop, scoped over D.
   var innerLoop: String?
+  
+  /// A temporary feature, until edge elision is fully implemented.
+  var elideEdgeAccesses: Bool = false
 }
 
 extension AttentionKernel {
@@ -50,34 +53,58 @@ extension AttentionKernel {
       fatalError("Descriptor was incomplete.")
     }
     
+    var declareEdgeRemainder: String
+    
+    if descriptor.elideEdgeAccesses {
+      declareEdgeRemainder = """
+      
+// Declare the remainder of the row/column dimension.
+ushort N_remainder = (\(matrixDimensions.N) % 32 == 0)
+  ? 32 : \(matrixDimensions.N) % 32;
+ushort N_remainder_padded = (N_remainder + 7) / 8 * 8;
+
+"""
+      
+    } else {
+      declareEdgeRemainder = """
+
+ushort N_remainder_padded = 32;
+
+"""
+    }
+    
     let firstIterationLoading = descriptor.firstIterationLoading ?? ""
     
     return """
     {
+      \(declareEdgeRemainder)
+      
       uint M_offset = \(matrixOffset.M);
       uint N_offset = \(matrixOffset.N);
       ushort M_src_dimension = min(uint(32), \(matrixDimensions.M) - M_offset);
       ushort N_src_dimension = min(uint(32), \(matrixDimensions.N) - N_offset);
+      ushort N_dst_dimension = max(N_remainder_padded, N_src_dimension);
       
       \(reservePointers)
       
       // Outer loop over D.
 #pragma clang loop unroll(full)
-      for (ushort d = 0; d < D; d += 32) {
+      for (ushort d_outer = 0; d_outer < D; d_outer += 32) {
         threadgroup_barrier(mem_flags::mem_threadgroup);
         
-        if (d == 0) {
+        if (d_outer == 0) {
           \(firstIterationLoading)
         }
         
         if (sidx == 0) {
-          ushort D_src_dimension = min(ushort(32), ushort(D - d));
-          ushort D_dst_dimension = min(ushort(32), ushort(\(paddedD) - d));
+          ushort D_src_dimension = min(ushort(32), ushort(D - d_outer));
+          ushort D_dst_dimension = min(
+            ushort(32), ushort(\(paddedD) - d_outer));
           
           // load \(A)[m]
           simdgroup_event events[2];
           {
-            uint2 \(A)_offset(d, M_offset);
+            uint2 \(A)_offset(d_outer, M_offset);
             auto src = simdgroup_matrix_storage<float>::apply_offset(
               \(A), \(leadingDimensionA), \(A)_offset, \(transposeA));
             auto dst = (threadgroup float*)(threadgroup_block);
@@ -91,13 +118,13 @@ extension AttentionKernel {
           
           // load \(B)[n]
           {
-            uint2 \(B)_offset(d, N_offset);
+            uint2 \(B)_offset(d_outer, N_offset);
             auto src = simdgroup_matrix_storage<float>::apply_offset(
               \(B), \(leadingDimensionB), \(B)_offset, \(transposeB));
             auto dst = (threadgroup float*)(threadgroup_block) + \(32 * 32);
             
             ushort2 tile_src(D_src_dimension, N_src_dimension);
-            ushort2 tile_dst(D_dst_dimension, 32); // excessive padding
+            ushort2 tile_dst(D_dst_dimension, N_dst_dimension); // excessive padding
             events[1].async_copy(
               dst, 32, tile_dst,
               src, \(leadingDimensionB), tile_src, \(transposeB));
@@ -185,8 +212,8 @@ extension AttentionKernel {
 
 """
     
-    func loopBodyAB(startN: String, endN: String) -> String {
-      return """
+    func innerLoopAB(startN: String, endN: String) -> String {
+      let loopBody = """
 
 // Load the LHS from threadgroup memory.
 ushort2 origin(d, 0);
@@ -207,29 +234,36 @@ for (ushort n = \(startN); n < \(endN); n += 8) {
 }
 
 """
-    }
-    
-    func innerLoopAB(startN: String, endN: String) -> String {
+      
       return """
 
 // Inner loop over D.
-ushort d_outer = d;
 if (D - d_outer >= 32) {
 #pragma clang loop unroll(full)
   for (ushort d = 0; d < 32; d += 8) {
-    \(loopBodyAB(startN: startN, endN: endN))
+    \(loopBody)
   }
 } else {
 #pragma clang loop unroll(full)
   for (ushort d = 0; d < D % 32; d += 8) {
-    \(loopBodyAB(startN: startN, endN: endN))
+    \(loopBody)
   }
 }
 
 """
     }
     
-    accessDesc.innerLoop = innerLoopAB(startN: "0", endN: "32")
+    accessDesc.elideEdgeAccesses = true
+    accessDesc.innerLoop = """
+
+// Iterate over the row/column dimension.
+\(innerLoopAB(startN: "0", endN: "N_remainder_padded"))
+if ((N_remainder_padded == 32) ||
+    (\(matrixOffset.N) + 32 <= \(matrixDimensions.N))) {
+  \(innerLoopAB(startN: "N_remainder_padded", endN: "32"))
+}
+
+"""
     
     return accessDesc
   }
