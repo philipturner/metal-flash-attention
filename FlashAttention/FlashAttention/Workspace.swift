@@ -127,21 +127,18 @@ func executeScript() {
 // Returns: Throughput in GINSTRS.
 @discardableResult
 func profileProblemSize(N: Int, D: Int) -> Int {
-  // Remaining optimizations for online attention:
-  // - Cache more data in registers for small head dimensions. Add a new
-  //   version of outer-product where one operand is in registers, the other is
-  //   paged in chunks of 64.
-  // - Make the D block size variable.
-  // - Generate a new set of benchmarks (expect much faster on M1; no
-  //   change or small speedup on M3).
+  // Remaining optimizations for M1:
+  // - Gather benchmarks of 100% caching, 50% caching, and 0% caching across
+  //   D = {32, 48, 64, 80, 96, 128, 160, 192} on M1. Only benchmark on a
+  //   per-kernel level. Record the throughput and occupancy of the kernels.
+  // - Make the D block size variable. Allow the threadgroup memory allocation
+  //   to shrink for smaller D dimensions.
+  // - Gather the same benchmarks again.
   //
-  // Optimizations specifically for M3:
+  // Remaining optimizations for M3:
   // - Elide async copies on M3, when possible.
-  // - Fix the issues with BF16 encoding/decoding performance.
-  //   - Most likely slowing down M3.
-  //   - Is it slowing down M1 as well?
-  // - Generate a new set of benchmarks (expect no regression on M1; much
-  //   faster on M3).
+  // - Gather benchmarks for online attention on M3.
+  // - Fix BF16 conversion performance for the store dS^T variant.
   
   var networkDesc = NetworkDescriptor()
   networkDesc.N = N
@@ -149,6 +146,7 @@ func profileProblemSize(N: Int, D: Int) -> Int {
   let network = Network(descriptor: networkDesc)
   
   var attentionDesc = AttentionDescriptor()
+  attentionDesc.cachedInputs = (Q: true, K: true, V: true, O: true)
   attentionDesc.matrixDimensions = (R: UInt32(N), C: UInt32(N), D: UInt16(D))
   attentionDesc.memoryPrecisions = (Q: .full, K: .full, V: .full, O: .full)
   attentionDesc.transposeState = (Q: false, K: false, V: false, O: false)

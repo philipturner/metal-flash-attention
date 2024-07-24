@@ -22,6 +22,8 @@ struct AttentionKernel {
   var source: String = ""
   
   var blockDimensions: (R: UInt16, C: UInt16)
+  var cachedInputs: (
+    Q: Bool, K: Bool, V: Bool, O: Bool)
   var leadingDimensions: (
     Q: String, K: String, V: String, O: String)
   var matrixDimensionD: UInt16
@@ -67,6 +69,7 @@ using namespace metal;
     paddedD = (matrixDimensions.D + 8 - 1) / 8 * 8
     
     blockDimensions = (R: 32, C: 32)
+    cachedInputs = descriptor.cachedInputs
     leadingDimensions = ("D", "D", "D", "D")
     leadingDimensionDerivativeST = matrixDimensions.C + 32 - 1
     leadingDimensionDerivativeST = leadingDimensionDerivativeST / 32 * 32

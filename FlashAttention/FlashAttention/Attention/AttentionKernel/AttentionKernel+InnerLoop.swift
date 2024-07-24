@@ -161,6 +161,7 @@ extension AttentionKernel {
   func createInnerLoopForward() -> String {
     var outerProductDesc = AttentionOuterProductDescriptor()
     outerProductDesc.A = "Q"
+    outerProductDesc.cacheA = cachedInputs.Q
     outerProductDesc.B = "K"
     outerProductDesc.C = "S"
     outerProductDesc.transposeA = transposeState.Q
@@ -209,6 +210,7 @@ extension AttentionKernel {
   func createInnerLoopBackwardQuery() -> String {
     var outerProductDesc = AttentionOuterProductDescriptor()
     outerProductDesc.A = "Q"
+    outerProductDesc.cacheA = cachedInputs.Q
     outerProductDesc.B = "K"
     outerProductDesc.C = "S"
     outerProductDesc.transposeA = transposeState.Q
@@ -221,6 +223,7 @@ extension AttentionKernel {
     
     outerProductDesc = AttentionOuterProductDescriptor()
     outerProductDesc.A = "dO"
+    outerProductDesc.cacheA = cachedInputs.O
     outerProductDesc.B = "V"
     outerProductDesc.C = "dP"
     outerProductDesc.transposeA = transposeState.O
@@ -268,6 +271,7 @@ extension AttentionKernel {
   func createInnerLoopKeyValue(computeDerivativeK: Bool) -> String {
     var outerProductDesc = AttentionOuterProductDescriptor()
     outerProductDesc.A = "K"
+    outerProductDesc.cacheA = cachedInputs.K
     outerProductDesc.B = "Q"
     outerProductDesc.C = "ST"
     outerProductDesc.transposeA = transposeState.K

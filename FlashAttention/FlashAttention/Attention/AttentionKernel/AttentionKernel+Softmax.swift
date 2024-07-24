@@ -22,6 +22,7 @@ extension AttentionKernel {
   func computeDTerm() -> String {
     var accessDesc = AttentionTwoOperandAccessDescriptor()
     accessDesc.A = "dO"
+    accessDesc.cacheA = cachedInputs.O
     accessDesc.B = "O"
     accessDesc.transposeA = transposeState.O
     accessDesc.transposeB = transposeState.O
@@ -30,23 +31,53 @@ extension AttentionKernel {
     accessDesc.matrixDimensions = (M: "R", N: "R")
     accessDesc.matrixOffset = (M: "gid * 32", N: "gid * 32")
     
-    accessDesc.reservePointers = """
+    if cachedInputs.O {
+      accessDesc.reservePointers = """
 
-      // Find where the dO data will be read from.
-      ushort2 A_block_offset(morton_offset.x, morton_offset.y + sidx * 8);
-      auto dO_block = (threadgroup float*)(threadgroup_block);
-      dO_block = simdgroup_matrix_storage<float>::apply_offset(
-        dO_block, 32, A_block_offset, \(transposeState.O));
-      
-      // Find where the O data will be read from.
-      ushort2 B_block_offset(morton_offset.x, morton_offset.y + sidx * 8);
-      auto O_block = (threadgroup float*)(threadgroup_block) + \(32 * 32);
-      O_block = simdgroup_matrix_storage<float>::apply_offset(
-        O_block, 32, B_block_offset, \(transposeState.O));
+// Find where the O data will be read from.
+ushort2 B_block_offset(morton_offset.x, morton_offset.y + sidx * 8);
+auto O_block = (threadgroup float*)(threadgroup_block);
+O_block = simdgroup_matrix_storage<float>::apply_offset(
+  O_block, O_leading_block_dimension, B_block_offset, \(transposeState.O));
 
 """
+    } else {
+      accessDesc.reservePointers = """
+
+// Find where the dO data will be read from.
+ushort2 A_block_offset(morton_offset.x, morton_offset.y + sidx * 8);
+auto dO_block = (threadgroup float*)(threadgroup_block);
+dO_block = simdgroup_matrix_storage<float>::apply_offset(
+  dO_block, 32, A_block_offset, \(transposeState.O));
+
+// Find where the O data will be read from.
+ushort2 B_block_offset(morton_offset.x, morton_offset.y + sidx * 8);
+auto O_block = (threadgroup float*)(threadgroup_block) + \(32 * 32);
+O_block = simdgroup_matrix_storage<float>::apply_offset(
+  O_block, 32, B_block_offset, \(transposeState.O));
+
+"""
+    }
     
-    let loopBody = """
+    var loopBody: String
+    if cachedInputs.O {
+      loopBody = """
+
+// Load the RHS from threadgroup memory.
+ushort2 origin(d, 0);
+simdgroup_matrix_storage<float> dO;
+simdgroup_matrix_storage<float> O;
+dO = dO_sram[(d_outer + d) / 8];
+O.load(O_block, O_leading_block_dimension, origin, \(transposeState.O));
+
+// Perform the pointwise multiplication.
+float2 dO_value = *(dO.thread_elements());
+float2 O_value = *(O.thread_elements());
+D_term_accumulator += dO_value * O_value;
+
+"""
+    } else {
+      loopBody = """
 
 // Load the LHS and RHS from threadgroup memory.
 ushort2 origin(d, 0);
@@ -61,18 +92,19 @@ float2 O_value = *(O.thread_elements());
 D_term_accumulator += dO_value * O_value;
 
 """
+    }
     
     accessDesc.innerLoop = """
 
 // Inner loop over D.
-if (D - d_outer >= 32) {
+if (D - d_outer >= D_block_dimension) {
 #pragma clang loop unroll(full)
-  for (ushort d = 0; d < 32; d += 8) {
+  for (ushort d = 0; d < D_block_dimension; d += 8) {
     \(loopBody)
   }
 } else {
 #pragma clang loop unroll(full)
-  for (ushort d = 0; d < D % 32; d += 8) {
+  for (ushort d = 0; d < D % D_block_dimension; d += 8) {
     \(loopBody)
   }
 }

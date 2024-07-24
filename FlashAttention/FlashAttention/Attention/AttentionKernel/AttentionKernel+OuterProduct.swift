@@ -12,6 +12,7 @@
 struct AttentionTwoOperandAccessDescriptor {
   /// Name of left-hand side, source of a 32 x D block.
   var A: String?
+  var cacheA: Bool = false
   
   /// Name of right-hand side, source of a 32 x D block.
   var B: String?
@@ -50,74 +51,141 @@ extension AttentionKernel {
       fatalError("Descriptor was incomplete.")
     }
     
-    let firstIterationLoading = descriptor.firstIterationLoading ?? ""
+    var output: String = """
+
+{
+  // Declare the remainder of the row/column dimension.
+  ushort N_remainder = (\(matrixDimensions.N) % 32 == 0)
+    ? 32 : \(matrixDimensions.N) % 32;
+  ushort N_remainder_padded = (N_remainder + 7) / 8 * 8;
+
+"""
     
-    return """
-    {
-      // Declare the remainder of the row/column dimension.
-      ushort N_remainder = (\(matrixDimensions.N) % 32 == 0)
-        ? 32 : \(matrixDimensions.N) % 32;
-      ushort N_remainder_padded = (N_remainder + 7) / 8 * 8;
-      
-      uint M_offset = \(matrixOffset.M);
-      uint N_offset = \(matrixOffset.N);
-      ushort M_src_dimension = min(uint(32), \(matrixDimensions.M) - M_offset);
-      ushort N_src_dimension = min(uint(32), \(matrixDimensions.N) - N_offset);
-      ushort N_dst_dimension = max(N_remainder_padded, N_src_dimension);
-      
-      \(reservePointers)
-      
-      // Outer loop over D.
-#pragma clang loop unroll(full)
-      for (ushort d_outer = 0; d_outer < D; d_outer += 32) {
-        threadgroup_barrier(mem_flags::mem_threadgroup);
-        
-        if (d_outer == 0) {
-          \(firstIterationLoading)
-        }
-        
-        if (sidx == 0) {
-          ushort D_src_dimension = min(ushort(32), ushort(D - d_outer));
-          ushort D_dst_dimension = min(
-            ushort(32), ushort(\(paddedD) - d_outer));
-          
-          // load \(A)[m]
-          simdgroup_event events[2];
-          {
-            uint2 \(A)_offset(d_outer, M_offset);
-            auto src = simdgroup_matrix_storage<float>::apply_offset(
-              \(A), \(leadingDimensionA), \(A)_offset, \(transposeA));
-            auto dst = (threadgroup float*)(threadgroup_block);
-            
-            ushort2 tile_src(D_src_dimension, M_src_dimension);
-            ushort2 tile_dst(D_dst_dimension, M_src_dimension);
-            events[0].async_copy(
-              dst, 32, tile_dst,
-              src, \(leadingDimensionA), tile_src, \(transposeA));
-          }
-          
-          // load \(B)[n]
-          {
-            uint2 \(B)_offset(d_outer, N_offset);
-            auto src = simdgroup_matrix_storage<float>::apply_offset(
-              \(B), \(leadingDimensionB), \(B)_offset, \(transposeB));
-            auto dst = (threadgroup float*)(threadgroup_block) + \(32 * 32);
-            
-            ushort2 tile_src(D_src_dimension, N_src_dimension);
-            ushort2 tile_dst(D_dst_dimension, N_dst_dimension);
-            events[1].async_copy(
-              dst, 32, tile_dst,
-              src, \(leadingDimensionB), tile_src, \(transposeB));
-          }
-          simdgroup_event::wait(2, events);
-        }
-        threadgroup_barrier(mem_flags::mem_threadgroup);
-        
-        \(innerLoop)
+    do {
+      var leadingBlockDimensionB: UInt16
+      var blockDimensionD: UInt16
+      if descriptor.cacheA {
+        // 32 x 64 allocation in threadgroup memory
+        // leading dimension = transposeB ? 32 : 64
+        leadingBlockDimensionB = transposeB ? UInt16(32) : UInt16(64)
+        blockDimensionD = 64
+      } else {
+        leadingBlockDimensionB = 32
+        blockDimensionD = 32
       }
+      
+      output += """
+
+const ushort \(B)_leading_block_dimension = \(leadingBlockDimensionB);
+const ushort D_block_dimension = \(blockDimensionD);
+
+"""
+    }
+    
+    output += reservePointers
+    
+    // Outer loop over D.
+    output += """
+  
+#pragma clang loop unroll(full)
+  for (ushort d_outer = 0; d_outer < D; d_outer += D_block_dimension) {
+    threadgroup_barrier(mem_flags::mem_threadgroup);
+
+"""
+    
+    if let firstIterationLoading = descriptor.firstIterationLoading {
+      output += """
+
+    if (d_outer == 0) {
+      \(firstIterationLoading)
     }
 
 """
+    }
+    
+    output += """
+    
+    if (sidx == 0) {
+      ushort D_src_dimension = min(D_block_dimension, ushort(D - d_outer));
+      ushort D_dst_dimension = min(
+        D_block_dimension, ushort(\(paddedD) - d_outer));
+
+"""
+    
+    if descriptor.cacheA {
+      output += """
+
+      uint2 \(B)_offset(d_outer, \(matrixOffset.N));
+      auto src = simdgroup_matrix_storage<float>::apply_offset(
+        \(B), \(leadingDimensionB), \(B)_offset, \(transposeB));
+      auto dst = (threadgroup float*)(threadgroup_block);
+      
+      ushort N_src_dimension = min(
+        uint(32), \(matrixDimensions.N) - \(matrixOffset.N));
+      ushort N_dst_dimension = max(N_remainder_padded, N_src_dimension);
+      ushort2 tile_src(D_src_dimension, N_src_dimension);
+      ushort2 tile_dst(D_dst_dimension, N_dst_dimension);
+
+      simdgroup_event event;
+      event.async_copy(
+        dst, \(B)_leading_block_dimension, tile_dst,
+        src, \(leadingDimensionB), tile_src, \(transposeB));
+      simdgroup_event::wait(1, &event);
+
+"""
+    } else {
+      output += """
+      
+      // load \(A)[m]
+      simdgroup_event events[2];
+      {
+        uint2 \(A)_offset(d_outer, \(matrixOffset.M));
+        auto src = simdgroup_matrix_storage<float>::apply_offset(
+          \(A), \(leadingDimensionA), \(A)_offset, \(transposeA));
+        auto dst = (threadgroup float*)(threadgroup_block);
+        
+        ushort M_src_dimension = min(
+          uint(32), \(matrixDimensions.M) - \(matrixOffset.M));
+        ushort2 tile_src(D_src_dimension, M_src_dimension);
+        ushort2 tile_dst(D_dst_dimension, M_src_dimension);
+        events[0].async_copy(
+          dst, 32, tile_dst,
+          src, \(leadingDimensionA), tile_src, \(transposeA));
+      }
+      
+      // load \(B)[n]
+      {
+        uint2 \(B)_offset(d_outer, \(matrixOffset.N));
+        auto src = simdgroup_matrix_storage<float>::apply_offset(
+          \(B), \(leadingDimensionB), \(B)_offset, \(transposeB));
+        auto dst = (threadgroup float*)(threadgroup_block) + \(32 * 32);
+        
+        ushort N_src_dimension = min(
+          uint(32), \(matrixDimensions.N) - \(matrixOffset.N));
+        ushort N_dst_dimension = max(N_remainder_padded, N_src_dimension);
+        ushort2 tile_src(D_src_dimension, N_src_dimension);
+        ushort2 tile_dst(D_dst_dimension, N_dst_dimension);
+        events[1].async_copy(
+          dst, \(B)_leading_block_dimension, tile_dst,
+          src, \(leadingDimensionB), tile_src, \(transposeB));
+      }
+      simdgroup_event::wait(2, events);
+    
+"""
+    }
+    
+    output += """
+
+    }
+    threadgroup_barrier(mem_flags::mem_threadgroup);
+    
+    \(innerLoop)
+  }
+}
+
+"""
+    
+    return output
   }
 }
 
@@ -126,6 +194,7 @@ extension AttentionKernel {
 struct AttentionOuterProductDescriptor {
   /// Name of left-hand side, source of a 32 x D block.
   var A: String?
+  var cacheA: Bool = false
   
   /// Name of right-hand side, source of a 32 x D block.
   var B: String?
@@ -168,6 +237,7 @@ extension AttentionKernel {
     
     var accessDesc = AttentionTwoOperandAccessDescriptor()
     accessDesc.A = A
+    accessDesc.cacheA = descriptor.cacheA
     accessDesc.B = B
     accessDesc.transposeA = transposeA
     accessDesc.transposeB = transposeB
@@ -176,7 +246,19 @@ extension AttentionKernel {
     accessDesc.matrixDimensions = matrixDimensions
     accessDesc.matrixOffset = matrixOffset
     
-    accessDesc.reservePointers = """
+    if descriptor.cacheA {
+      accessDesc.reservePointers = """
+      
+      // Find where the \(B) data will be read from.
+      ushort2 \(B)_block_offset(morton_offset.x, morton_offset.y);
+      auto \(B)T_block = (threadgroup float*)(threadgroup_block);
+      \(B)T_block = simdgroup_matrix_storage<float>::apply_offset(
+        \(B)T_block, \(B)_leading_block_dimension,
+        \(B)_block_offset, \(!transposeB));
+
+"""
+    } else {
+      accessDesc.reservePointers = """
 
       // Find where the \(A) data will be read from.
       ushort2 \(A)_block_offset(morton_offset.x, morton_offset.y + sidx * 8);
@@ -191,9 +273,31 @@ extension AttentionKernel {
         \(B)T_block, 32, \(B)_block_offset, \(!transposeB));
 
 """
+    }
     
     func innerLoopAB(startN: String, endN: String) -> String {
-      let loopBody = """
+      var loopBody: String
+      if descriptor.cacheA {
+        loopBody = """
+
+// Inner loop over N.
+#pragma clang loop unroll(full)
+for (ushort n = \(startN); n < \(endN); n += 8) {
+  // Load the RHS from threadgroup memory.
+  ushort2 origin(n, d);
+  simdgroup_matrix_storage<float> \(B)T;
+  \(B)T.load(
+    \(B)T_block, \(B)_leading_block_dimension, origin, \(!transposeB));
+  
+  // Mask out the first accumulate at compile-time.
+  bool accumulate = (d_outer > 0) || (d > 0);
+  \(C)_sram[n / 8].multiply(
+    \(A)_sram[(d_outer + d) / 8], \(B)T, accumulate);
+}
+
+"""
+      } else {
+        loopBody = """
 
 // Load the LHS from threadgroup memory.
 ushort2 origin(d, 0);
@@ -214,18 +318,19 @@ for (ushort n = \(startN); n < \(endN); n += 8) {
 }
 
 """
+      }
       
       return """
 
 // Inner loop over D.
-if (D - d_outer >= 32) {
+if (D - d_outer >= D_block_dimension) {
 #pragma clang loop unroll(full)
-  for (ushort d = 0; d < 32; d += 8) {
+  for (ushort d = 0; d < D_block_dimension; d += 8) {
     \(loopBody)
   }
 } else {
 #pragma clang loop unroll(full)
-  for (ushort d = 0; d < D % 32; d += 8) {
+  for (ushort d = 0; d < D % D_block_dimension; d += 8) {
     \(loopBody)
   }
 }

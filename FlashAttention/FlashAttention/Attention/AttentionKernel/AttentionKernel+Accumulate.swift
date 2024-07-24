@@ -5,8 +5,7 @@
 //  Created by Philip Turner on 7/19/24.
 //
 
-// Operations where one argument is the attention matrix, the other argument is
-// read from RAM.
+// Operations where the LHS is the attention matrix.
 
 // MARK: - Accumulate
 
@@ -138,14 +137,14 @@ if (D - d_outer >= 64) {
 
 // MARK: - Attention Matrix Derivative
 
-// A hybrid between 'accumulate' and 'outerProduct'. To more uniformly
-// distribute code between 'Accumulate' and 'OuterProduct', the function
-// is placed here.
+// Both an accumulation and an outer product. Located in the file for
+// accumulation, to better organize the code.
 
 extension AttentionKernel {
   func computeDerivativeVDerivativePT() -> String {
     var accessDesc = AttentionTwoOperandAccessDescriptor()
     accessDesc.A = "V"
+    accessDesc.cacheA = cachedInputs.V
     accessDesc.B = "dO"
     accessDesc.transposeA = transposeState.V
     accessDesc.transposeB = transposeState.O
@@ -154,27 +153,47 @@ extension AttentionKernel {
     accessDesc.matrixDimensions = (M: "C", N: "R")
     accessDesc.matrixOffset = (M: "gid * 32", N: "r")
     
-    accessDesc.reservePointers = """
+    if cachedInputs.V {
+      accessDesc.reservePointers = """
 
-      // Find where the V data will be read from.
-      ushort2 V_block_offset(morton_offset.x, morton_offset.y + sidx * 8);
-      auto V_block = (threadgroup float*)(threadgroup_block);
-      V_block = simdgroup_matrix_storage<float>::apply_offset(
-        V_block, 32, V_block_offset, \(transposeState.V));
-      
-      // Find where the dO data will be read from.
-      ushort2 dO_block_offset(morton_offset.x, morton_offset.y);
-      auto dO_block = (threadgroup float*)(threadgroup_block) + \(32 * 32);
-      dO_block = simdgroup_matrix_storage<float>::apply_offset(
-        dO_block, 32, dO_block_offset, \(transposeState.O));
-      
-      // Find where the dO^T data will be read from.
-      ushort2 dOT_block_offset(morton_offset.x, morton_offset.y);
-      auto dOT_block = (threadgroup float*)(threadgroup_block) + \(32 * 32);
-      dOT_block = simdgroup_matrix_storage<float>::apply_offset(
-        dOT_block, 32, dOT_block_offset, \(!transposeState.O));
+// Find where the dO data will be read from.
+ushort2 dO_block_offset(morton_offset.x, morton_offset.y);
+auto dO_block = (threadgroup float*)(threadgroup_block);
+dO_block = simdgroup_matrix_storage<float>::apply_offset(
+  dO_block, dO_leading_block_dimension, 
+  dO_block_offset, \(transposeState.O));
+
+// Find where the dO^T data will be read from.
+ushort2 dOT_block_offset(morton_offset.x, morton_offset.y);
+auto dOT_block = (threadgroup float*)(threadgroup_block);
+dOT_block = simdgroup_matrix_storage<float>::apply_offset(
+  dOT_block, dO_leading_block_dimension, 
+  dOT_block_offset, \(!transposeState.O));
+
+"""
+    } else {
+      accessDesc.reservePointers = """
+
+// Find where the V data will be read from.
+ushort2 V_block_offset(morton_offset.x, morton_offset.y + sidx * 8);
+auto V_block = (threadgroup float*)(threadgroup_block);
+V_block = simdgroup_matrix_storage<float>::apply_offset(
+  V_block, 32, V_block_offset, \(transposeState.V));
+
+// Find where the dO data will be read from.
+ushort2 dO_block_offset(morton_offset.x, morton_offset.y);
+auto dO_block = (threadgroup float*)(threadgroup_block) + \(32 * 32);
+dO_block = simdgroup_matrix_storage<float>::apply_offset(
+  dO_block, 32, dO_block_offset, \(transposeState.O));
+
+// Find where the dO^T data will be read from.
+ushort2 dOT_block_offset(morton_offset.x, morton_offset.y);
+auto dOT_block = (threadgroup float*)(threadgroup_block) + \(32 * 32);
+dOT_block = simdgroup_matrix_storage<float>::apply_offset(
+  dOT_block, 32, dOT_block_offset, \(!transposeState.O));
     
 """
+    }
     
     // First multiplication: dV += P^T * dO
     let loopBodyDerivativeV = """
@@ -182,7 +201,8 @@ extension AttentionKernel {
 // Load the RHS from threadgroup memory.
 ushort2 origin(d, r);
 simdgroup_matrix_storage<float> dO;
-dO.load(dO_block, 32, origin, \(transposeState.O));
+dO.load(
+  dO_block, dO_leading_block_dimension, origin, \(transposeState.O));
 
 // Add the contributions from the r-th element of the attention
 // matrix column.
@@ -194,14 +214,14 @@ dV_sram[(d_outer + d) / 8].multiply(
     let innerLoopDerivativeV = """
 
 // Inner loop over the head dimension.
-if (D - d_outer >= 32) {
+if (D - d_outer >= D_block_dimension) {
 #pragma clang loop unroll(full)
-  for (ushort d = 0; d < 32; d += 8) {
+  for (ushort d = 0; d < D_block_dimension; d += 8) {
     \(loopBodyDerivativeV)
   }
 } else {
 #pragma clang loop unroll(full)
-  for (ushort d = 0; d < D % 32; d += 8) {
+  for (ushort d = 0; d < D % D_block_dimension; d += 8) {
     \(loopBodyDerivativeV)
   }
 }
@@ -210,7 +230,28 @@ if (D - d_outer >= 32) {
     
     // Second multiplication: dP = V * dO^T
     func innerLoopDerivativeP(startN: String, endN: String) -> String {
-      let loopBody = """
+      var loopBody: String
+      if cachedInputs.V {
+        loopBody = """
+
+// Inner loop over the row dimension.
+#pragma clang loop unroll(full)
+for (ushort r = \(startN); r < \(endN); r += 8) {
+  // Load the RHS from threadgroup memory.
+  ushort2 origin(r, d);
+  simdgroup_matrix_storage<float> dOT;
+  dOT.load(
+    dOT_block, dO_leading_block_dimension, origin, \(!transposeState.O));
+
+  // Mask out the first accumulate at compile-time.
+  bool accumulate = (d_outer > 0) || (d > 0);
+  dPT_sram[r / 8].multiply(
+    V_sram[(d_outer + d) / 8], dOT, accumulate);
+}
+
+"""
+      } else {
+        loopBody = """
 
 // Load the LHS from threadgroup memory.
 ushort2 origin(d, 0);
@@ -223,7 +264,8 @@ for (ushort r = \(startN); r < \(endN); r += 8) {
   // Load the RHS from threadgroup memory.
   ushort2 origin(r, d);
   simdgroup_matrix_storage<float> dOT;
-  dOT.load(dOT_block, 32, origin, \(!transposeState.O));
+  dOT.load(
+    dOT_block, dO_leading_block_dimension, origin, \(!transposeState.O));
 
   // Mask out the first accumulate at compile-time.
   bool accumulate = (d_outer > 0) || (d > 0);
@@ -231,18 +273,19 @@ for (ushort r = \(startN); r < \(endN); r += 8) {
 }
 
 """
+      }
       
       return """
 
 // Inner loop over the head dimension.
-if (D - d_outer >= 32) {
+if (D - d_outer >= D_block_dimension) {
 #pragma clang loop unroll(full)
-  for (ushort d = 0; d < 32; d += 8) {
+  for (ushort d = 0; d < D_block_dimension; d += 8) {
     \(loopBody)
   }
 } else {
 #pragma clang loop unroll(full)
-  for (ushort d = 0; d < D % 32; d += 8) {
+  for (ushort d = 0; d < D % D_block_dimension; d += 8) {
     \(loopBody)
   }
 }
