@@ -33,16 +33,22 @@ func executeScript() {
   profileProblemSize(N: 384, D: 95)
   profileProblemSize(N: 777, D: 199)
   
-//  let N_array = [128, 256]
-//  let D_array = [32, 64, 128, 192]
+//  let N_array = [128, 256, 512, 1024, 2048, 4096, 8192, 16384]
+//  let D_array = [32, 48, 64, 80, 96, 128, 160, 192, 256]
+//  var outputString: String = ""
 //  for N in N_array {
 //    print("N =", N, terminator: ", ")
+//    outputString += "N = \(N), "
 //    for D in D_array {
 //      let ginstrs = profileProblemSize(N: N, D: D)
 //      print(ginstrs, terminator: ", ")
+//      outputString += "\(ginstrs), "
 //    }
 //    print()
+//    outputString += "\n"
 //  }
+//  print()
+//  print(outputString)
   
   /*
    Mac - Before
@@ -128,12 +134,22 @@ func executeScript() {
 @discardableResult
 func profileProblemSize(N: Int, D: Int) -> Int {
   // Remaining optimizations for M1:
-  // - Gather benchmarks of 100% caching, 50% caching, and 0% caching across
-  //   D = {32, 48, 64, 80, 96, 128, 160, 192} on M1. Only benchmark on a
-  //   per-kernel level. Record the throughput and occupancy of the kernels.
-  // - Make the D block size variable. Allow the threadgroup memory allocation
-  //   to shrink for smaller D dimensions.
-  // - Gather the same benchmarks again.
+  // - TODO: Review the new FlashAttention 3 paper.
+  // - Try an explicit register spilling mode, where async copies are used to
+  //   minimize the overhead of paging. Use the output buffers as the scratch
+  //   space.
+  // - Predict the performance of explicit register spilling, focusing on L3
+  //   bandwidth and L3 thrashing. Only some GEMMs require accumulators to
+  //   be spilled.
+  // - Would larger R/C block dimensions alleviate the bottleneck?
+  //   - My first intuition, is to minimize the D block dimension and maximize
+  //     the sequence length dimension.
+  //   - MNK = (32, 32, 32) -> (48, 48, 24)
+  //   - RCD = (32, 32, 32/64) -> (32, 64, 16)
+  // - Start with 32x32x32, breaking the accumulate loops into two parts.
+  // - Then, explore 32x64x16 and 32x96x16.
+  // - Insight: Register spilling is closely related to "store dS^T" with a set
+  //   of accumulators and temporary materialization of an attention submatrix.
   //
   // Remaining optimizations for M3:
   // - Elide async copies on M3, when possible.
@@ -146,7 +162,7 @@ func profileProblemSize(N: Int, D: Int) -> Int {
   let network = Network(descriptor: networkDesc)
   
   var attentionDesc = AttentionDescriptor()
-  attentionDesc.cachedInputs = (Q: true, K: true, V: true, O: true)
+  attentionDesc.cachedInputs = (Q: false, K: false, V: false, O: false)
   attentionDesc.matrixDimensions = (R: UInt32(N), C: UInt32(N), D: UInt16(D))
   attentionDesc.memoryPrecisions = (Q: .full, K: .full, V: .full, O: .full)
   attentionDesc.transposeState = (Q: false, K: false, V: false, O: false)
@@ -253,8 +269,6 @@ func profileProblemSize(N: Int, D: Int) -> Int {
     
     for _ in 0..<dispatchCount {
       if dispatchCount > 1 {
-        // Backward Key-Value
-        //
         // WARNING: Change this code to match the kernel you're profiling.
         dispatch(
           kernel: kernelBackwardKeyValue,
@@ -284,7 +298,7 @@ func profileProblemSize(N: Int, D: Int) -> Int {
     let start = commandBuffer.gpuStartTime
     let end = commandBuffer.gpuEndTime
     let latency = end - start
-    print("latency:", Int(latency * 1e6))
+    print("latency:", latency)
     return latency
   }
   executeCommandBuffer(dispatchCount: 1)
@@ -440,8 +454,10 @@ func profileProblemSize(N: Int, D: Int) -> Int {
     let latencySeconds = executeCommandBuffer(dispatchCount: dispatchCount)
     
     // Determine the amount of work done.
+    //
+    // WARNING: Change this code to match the kernel you're profiling.
     var operations: Int = .zero
-    operations += (4 * D + 5) * (N * N) // backward dK/dV
+    operations += (4 * D + 5) * (N * N)
     operations *= dispatchCount
     
     // Divide the work by the latency, resulting in throughput.
