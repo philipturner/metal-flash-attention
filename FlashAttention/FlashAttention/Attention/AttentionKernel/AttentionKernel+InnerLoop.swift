@@ -154,7 +154,6 @@
 //   store dK
 //   store dV
 
-
 // MARK: - Implementation
 
 extension AttentionKernel {
@@ -223,7 +222,7 @@ extension AttentionKernel {
     
     outerProductDesc = AttentionOuterProductDescriptor()
     outerProductDesc.A = "dO"
-    outerProductDesc.cacheA = cachedInputs.O
+    outerProductDesc.cacheA = cachedInputs.dO
     outerProductDesc.B = "V"
     outerProductDesc.C = "dP"
     outerProductDesc.transposeA = transposeState.O

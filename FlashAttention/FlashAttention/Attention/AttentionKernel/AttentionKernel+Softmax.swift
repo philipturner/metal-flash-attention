@@ -22,7 +22,7 @@ extension AttentionKernel {
   func computeDTerm() -> String {
     var accessDesc = AttentionTwoOperandAccessDescriptor()
     accessDesc.A = "dO"
-    accessDesc.cacheA = cachedInputs.O
+    accessDesc.cacheA = cachedInputs.dO
     accessDesc.B = "O"
     accessDesc.transposeA = transposeState.O
     accessDesc.transposeB = transposeState.O
@@ -31,7 +31,7 @@ extension AttentionKernel {
     accessDesc.matrixDimensions = (M: "R", N: "R")
     accessDesc.matrixOffset = (M: "gid * 32", N: "gid * 32")
     
-    if cachedInputs.O {
+    if cachedInputs.dO {
       accessDesc.reservePointers = """
 
 // Find where the O data will be read from.
@@ -60,7 +60,7 @@ O_block = simdgroup_matrix_storage<float>::apply_offset(
     }
     
     var loopBody: String
-    if cachedInputs.O {
+    if cachedInputs.dO {
       loopBody = """
 
 // Load the RHS from threadgroup memory.

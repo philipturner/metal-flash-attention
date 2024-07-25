@@ -133,28 +133,14 @@ func executeScript() {
 // Returns: Throughput in GINSTRS.
 @discardableResult
 func profileProblemSize(N: Int, D: Int) -> Int {
-  // Remaining optimizations for M1:
-  // - TODO: Review the new FlashAttention 3 paper.
+  // Remaining optimizations:
   // - Try an explicit register spilling mode, where async copies are used to
   //   minimize the overhead of paging. Use the output buffers as the scratch
   //   space.
-  // - Predict the performance of explicit register spilling, focusing on L3
-  //   bandwidth and L3 thrashing. Only some GEMMs require accumulators to
-  //   be spilled.
-  // - Would larger R/C block dimensions alleviate the bottleneck?
-  //   - My first intuition, is to minimize the D block dimension and maximize
-  //     the sequence length dimension.
-  //   - MNK = (32, 32, 32) -> (48, 48, 24)
-  //   - RCD = (32, 32, 32/64) -> (32, 64, 16)
-  // - Start with 32x32x32, breaking the accumulate loops into two parts.
-  // - Then, explore 32x64x16 and 32x96x16.
   // - Insight: Register spilling is closely related to "store dS^T" with a set
   //   of accumulators and temporary materialization of an attention submatrix.
-  //
-  // Remaining optimizations for M3:
-  // - Elide async copies on M3, when possible.
-  // - Gather benchmarks for online attention on M3.
-  // - Fix BF16 conversion performance for the store dS^T variant.
+  // - Elide async copies on M3. Can the R edge (FWD, BWD dQ) and C edge
+  //   (BWD dK/dV) be masked out through alternative means?
   
   var networkDesc = NetworkDescriptor()
   networkDesc.N = N
@@ -162,9 +148,9 @@ func profileProblemSize(N: Int, D: Int) -> Int {
   let network = Network(descriptor: networkDesc)
   
   var attentionDesc = AttentionDescriptor()
-  attentionDesc.cachedInputs = (Q: false, K: false, V: false, O: false)
+  attentionDesc.cachedInputs = (Q: true, K: true, V: true, dO: true)
+  attentionDesc.cachedOutputs = (dQ: true, dK: true, dV: true, O: true)
   attentionDesc.matrixDimensions = (R: UInt32(N), C: UInt32(N), D: UInt16(D))
-  attentionDesc.memoryPrecisions = (Q: .full, K: .full, V: .full, O: .full)
   attentionDesc.transposeState = (Q: false, K: false, V: false, O: false)
   
   attentionDesc.type = .forward(true)
@@ -271,9 +257,9 @@ func profileProblemSize(N: Int, D: Int) -> Int {
       if dispatchCount > 1 {
         // WARNING: Change this code to match the kernel you're profiling.
         dispatch(
-          kernel: kernelBackwardKeyValue,
-          pipeline: pipelineBackwardKeyValue,
-          along: kernelBackwardKeyValue.blockDimensions.C)
+          kernel: kernelForward,
+          pipeline: pipelineForward,
+          along: kernelForward.blockDimensions.R)
       } else {
         dispatch(
           kernel: kernelForward,
@@ -298,7 +284,7 @@ func profileProblemSize(N: Int, D: Int) -> Int {
     let start = commandBuffer.gpuStartTime
     let end = commandBuffer.gpuEndTime
     let latency = end - start
-    print("latency:", latency)
+    print("latency:", Int(latency * 1e6))
     return latency
   }
   executeCommandBuffer(dispatchCount: 1)
@@ -457,7 +443,7 @@ func profileProblemSize(N: Int, D: Int) -> Int {
     //
     // WARNING: Change this code to match the kernel you're profiling.
     var operations: Int = .zero
-    operations += (4 * D + 5) * (N * N)
+    operations += (2 * D + 5) * (N * N)
     operations *= dispatchCount
     
     // Divide the work by the latency, resulting in throughput.

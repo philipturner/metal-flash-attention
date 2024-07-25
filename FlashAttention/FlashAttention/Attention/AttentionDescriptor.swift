@@ -34,21 +34,16 @@ enum AttentionKernelType {
 
 struct AttentionDescriptor {
   /// Which inputs to cache in registers.
-  var cachedInputs: (Q: Bool, K: Bool, V: Bool, O: Bool) = (
-    false, false, false, false)
+  var cachedInputs: (Q: Bool, K: Bool, V: Bool, dO: Bool)?
+  
+  /// Which outputs to cache in registers.
+  var cachedOutputs: (dQ: Bool, dK: Bool, dV: Bool, O: Bool)?
   
   /// The dimensions of the input and output matrices.
   /// - Parameters R: Number of rows in the attention matrix.
   /// - Parameters C: Number of columns in the attention matrix.
   /// - Parameters D: Size of the head.
   var matrixDimensions: (R: UInt32, C: UInt32, D: UInt16)?
-  
-  /// Currently ignored.
-  var memoryPrecisions: (
-    Q: AttentionOperandPrecision,
-    K: AttentionOperandPrecision,
-    V: AttentionOperandPrecision,
-    O: AttentionOperandPrecision)?
   
   /// Whether each operand is transposed in RAM.
   ///

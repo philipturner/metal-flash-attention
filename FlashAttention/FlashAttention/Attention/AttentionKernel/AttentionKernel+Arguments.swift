@@ -223,23 +223,23 @@ extension AttentionKernel {
     // Index the operands available during the forward pass.
     var operandsMap: [String: AttentionOperand] = [:]
     operandsMap["Q"] = AttentionOperand(
-      precision: memoryPrecisions.Q.forwardPrecision, bufferBinding: 0)
+      precision: .FP32, bufferBinding: 0)
     operandsMap["K"] = AttentionOperand(
-      precision: memoryPrecisions.K.forwardPrecision, bufferBinding: 1)
+      precision: .FP32, bufferBinding: 1)
     operandsMap["V"] = AttentionOperand(
-      precision: memoryPrecisions.V.forwardPrecision, bufferBinding: 2)
+      precision: .FP32, bufferBinding: 2)
     operandsMap["O"] = AttentionOperand(
-      precision: memoryPrecisions.O.forwardPrecision, bufferBinding: 3)
+      precision: .FP32, bufferBinding: 3)
     operandsMap["L_terms"] = AttentionOperand(
-      precision: memoryPrecisions.O.forwardPrecision, bufferBinding: 4)
+      precision: .FP32, bufferBinding: 4)
     
     // Index the operands available during the backward pass.
     operandsMap["dO"] = AttentionOperand(
-      precision: memoryPrecisions.O.backwardPrecision, bufferBinding: 5)
+      precision: .FP32, bufferBinding: 5)
     operandsMap["D_terms"] = AttentionOperand(
-      precision: memoryPrecisions.O.backwardPrecision, bufferBinding: 6)
+      precision: .FP32, bufferBinding: 6)
     operandsMap["dV"] = AttentionOperand(
-      precision: memoryPrecisions.V.backwardPrecision, bufferBinding: 7)
+      precision: .FP32, bufferBinding: 7)
     operandsMap["dST"] = AttentionOperand(
       // The default kernel doesn't support writing the attention matrix to
       // memory. The purpose of dS is to increase performance when possible. If
@@ -258,12 +258,11 @@ extension AttentionKernel {
       // GEMM kernel to support custom leading dimensions. This can be
       // something modified explicitly by the user - an option to override the
       // default leading dimension.
-      precision: AttentionOperandPrecision.mixed.backwardPrecision,
-      bufferBinding: 8)
+      precision: .BF16, bufferBinding: 8)
     operandsMap["dK"] = AttentionOperand(
-      precision: memoryPrecisions.K.backwardPrecision, bufferBinding: 8)
+      precision: .FP32, bufferBinding: 8)
     operandsMap["dQ"] = AttentionOperand(
-      precision: memoryPrecisions.Q.backwardPrecision, bufferBinding: 9)
+      precision: .FP32, bufferBinding: 9)
     
     // Select the operands used by this variant.
     var operandKeys: [String]
@@ -391,7 +390,7 @@ extension AttentionKernel {
         output += load(descriptor: accessDesc)
       }
       
-      if cachedInputs.O {
+      if cachedInputs.dO {
         var accessDesc = AttentionHBMAccessDescriptor()
         accessDesc.name = "dO"
         accessDesc.transposeState = transposeState.O
