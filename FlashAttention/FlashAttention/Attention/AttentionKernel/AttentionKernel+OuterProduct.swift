@@ -12,7 +12,7 @@
 struct AttentionTwoOperandAccessDescriptor {
   /// Name of left-hand side, source of a 32 x D block.
   var A: String?
-  var cacheA: Bool = false
+  var cacheA: Bool?
   
   /// Name of right-hand side, source of a 32 x D block.
   var B: String?
@@ -39,6 +39,7 @@ extension AttentionKernel {
     descriptor: AttentionTwoOperandAccessDescriptor
   ) -> String {
     guard let A = descriptor.A,
+          let cacheA = descriptor.cacheA,
           let B = descriptor.B,
           let transposeA = descriptor.transposeA,
           let transposeB = descriptor.transposeB,
@@ -64,7 +65,7 @@ extension AttentionKernel {
     do {
       var leadingBlockDimensionB: UInt16
       var blockDimensionD: UInt16
-      if descriptor.cacheA {
+      if cacheA {
         // 32 x 64 allocation in threadgroup memory
         // leading dimension = transposeB ? 32 : 64
         leadingBlockDimensionB = transposeB ? UInt16(32) : UInt16(64)
@@ -102,7 +103,7 @@ const ushort D_block_dimension = \(blockDimensionD);
 
 """
     
-    if descriptor.cacheA {
+    if cacheA {
       output += """
 
       uint2 \(B)_offset(d_outer, \(matrixOffset.N));
