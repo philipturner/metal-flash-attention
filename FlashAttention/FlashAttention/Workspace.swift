@@ -188,6 +188,7 @@ func profileProblemSize(N: Int, D: Int) -> Int {
   let bufferDerivativeO = MTLContext.global.createBuffer(network.C, .FP32)
   
   var resultO = [Float](repeating: .zero, count: N * D)
+  resultO[0] = .nan
   var resultLTerms = [Float](repeating: .zero, count: N)
   var resultDTerms = [Float](repeating: .zero, count: N)
   var resultDerivativeV = [Float](repeating: .zero, count: N * D)

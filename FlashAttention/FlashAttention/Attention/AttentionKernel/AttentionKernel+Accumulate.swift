@@ -46,15 +46,11 @@ extension AttentionKernel {
       fatalError("Descriptor was incomplete.")
     }
     
-    // Temporary workaround to allow the code to be debugged, while it is not
-    // yet finished.
-//    if !cacheC {
-//      fatalError("Hit!")
-//    }
-    
     var output: String = """
 
 {
+  const ushort D_block_dimension = 64;
+  
   // Declare the remainder of the row/column dimension.
   ushort K_remainder = (\(matrixDimensions.K) % 32 == 0)
     ? 32 : \(matrixDimensions.K) % 32;
@@ -76,6 +72,9 @@ auto \(C)_block = (threadgroup float*)(threadgroup_block);
 \(C)_block = simdgroup_matrix_storage<float>::apply_offset(
   \(C)_block, \(C)_leading_block_dimension,
   \(C)_block_offset, \(transposeState.C));
+
+// Where the \(C) data will be written to.
+simdgroup_matrix_storage<float> \(C)_sram[D_block_dimension / 8];
 
 """
     }
@@ -100,12 +99,18 @@ auto \(B)_block = (threadgroup float*)(threadgroup_block);
     
     output += """
 
-const ushort D_block_dimension = 64;
-
 // Outer loop over D.
 #pragma clang loop unroll(full)
 for (ushort d_outer = 0; d_outer < D; d_outer += D_block_dimension) {
   ushort D_src_dimension = min(D_block_dimension, ushort(D - d_outer));
+  ushort d_register_start = \(cacheC ? "d_outer" : "0");
+  
+  if (\(matrixOffset.K) == 0) {
+  #pragma clang loop unroll(full)
+    for (ushort d = 0; d < D_block_dimension; d += 8) {
+      \(C)_sram[(d_register_start + d) / 8] = simdgroup_matrix_storage<float>(0);
+    }
+  } else {
 
 """
     
@@ -113,55 +118,57 @@ for (ushort d_outer = 0; d_outer < D; d_outer += D_block_dimension) {
       let loopBody = """
 
 ushort2 origin(d, 0);
-\(C)_sram[(d_outer + d) / 8].load(
+\(C)_sram[(d_register_start + d) / 8].load(
   \(C)_block, \(C)_leading_block_dimension, origin, \(transposeState.C));
 
 """
       
-    output += """
+      output += """
 
-threadgroup_barrier(mem_flags::mem_threadgroup);
-if (sidx == 0) {
-  uint2 C_offset(d_outer, \(matrixOffset.M));
-  auto src = simdgroup_matrix_storage<float>::apply_offset(
-    \(C), \(leadingDimensions.C), C_offset, \(transposeState.C));
-  auto dst = (threadgroup float*)(threadgroup_block);
-  
-  // It doesn't matter if the rows below the matrix edge are garbage.
-  ushort M_src_dimension = min(
-    uint(32), \(matrixDimensions.M) - \(matrixOffset.M));
-  ushort2 tile_src(D_src_dimension, M_src_dimension);
-  ushort2 tile_dst(D_src_dimension, M_src_dimension);
-  
-  simdgroup_event event;
-  event.async_copy(
-    dst, \(C)_leading_block_dimension, tile_dst,
-    src, \(leadingDimensions.C), tile_src, \(transposeState.C));
-  simdgroup_event::wait(1, &event);
-}
-
-threadgroup_barrier(mem_flags::mem_threadgroup);
-simdgroup_matrix_storage<float> \(C)_sram[\(paddedD / 8)];
-
-// Iterate over the head dimension.
-if (D - d_outer >= D_block_dimension) {
-#pragma clang loop unroll(full)
-  for (ushort d = 0; d < D_block_dimension; d += 8) {
-    \(loopBody)
+  threadgroup_barrier(mem_flags::mem_threadgroup);
+  if (sidx == 0) {
+    uint2 C_offset(d_outer, \(matrixOffset.M));
+    auto src = simdgroup_matrix_storage<float>::apply_offset(
+      \(C), \(leadingDimensions.C), C_offset, \(transposeState.C));
+    auto dst = (threadgroup float*)(threadgroup_block);
+    
+    // It doesn't matter if the rows below the matrix edge are garbage.
+    ushort M_src_dimension = min(
+      uint(32), \(matrixDimensions.M) - \(matrixOffset.M));
+    ushort2 tile_src(D_src_dimension, M_src_dimension);
+    ushort2 tile_dst(D_src_dimension, M_src_dimension);
+    
+    simdgroup_event event;
+    event.async_copy(
+      dst, \(C)_leading_block_dimension, tile_dst,
+      src, \(leadingDimensions.C), tile_src, \(transposeState.C));
+    simdgroup_event::wait(1, &event);
   }
-} else {
-#pragma clang loop unroll(full)
-  for (ushort d = 0; d < D % D_block_dimension; d += 8) {
-    \(loopBody)
-  }
-}
 
+  threadgroup_barrier(mem_flags::mem_threadgroup);
+
+  // Iterate over the head dimension.
+  if (D - d_outer >= D_block_dimension) {
+  #pragma clang loop unroll(full)
+    for (ushort d = 0; d < D_block_dimension; d += 8) {
+      \(loopBody)
+    }
+  } else {
+  #pragma clang loop unroll(full)
+    for (ushort d = 0; d < D % D_block_dimension; d += 8) {
+      \(loopBody)
+    }
+  }
+  
 """
     }
     
-    if let everyIterationLoading = descriptor.everyIterationLoading {
-      output += everyIterationLoading
-    }
+    output += """
+  
+  \(descriptor.everyIterationLoading ?? "")
+}
+
+"""
     
     output += """
 
@@ -197,7 +204,7 @@ simdgroup_matrix_storage<float> \(B);
 
 // Add the contributions from the c-th/r-th element of the
 // attention matrix row/column.
-\(C)_sram[(d_outer + d) / 8].multiply(
+\(C)_sram[(d_register_start + d) / 8].multiply(
   \(A)_sram[k / 8], \(B), /*accumulate=*/true);
 
 """
@@ -242,7 +249,7 @@ if (\(matrixOffset.K) + 32 < \(matrixDimensions.K)) {
       let loopBody = """
 
 ushort2 origin(d, 0);
-\(C)_sram[(d_outer + d) / 8].store(
+\(C)_sram[(d_register_start + d) / 8].store(
   \(C)_block, \(C)_leading_block_dimension, origin, \(transposeState.C));
 
 """
@@ -323,14 +330,14 @@ extension AttentionKernel {
 ushort2 dO_block_offset(morton_offset.x, morton_offset.y);
 auto dO_block = (threadgroup float*)(threadgroup_block);
 dO_block = simdgroup_matrix_storage<float>::apply_offset(
-  dO_block, dO_leading_block_dimension, 
+  dO_block, dO_leading_block_dimension,
   dO_block_offset, \(transposeState.O));
 
 // Find where the dO^T data will be read from.
 ushort2 dOT_block_offset(morton_offset.x, morton_offset.y);
 auto dOT_block = (threadgroup float*)(threadgroup_block);
 dOT_block = simdgroup_matrix_storage<float>::apply_offset(
-  dOT_block, dO_leading_block_dimension, 
+  dOT_block, dO_leading_block_dimension,
   dOT_block_offset, \(!transposeState.O));
 
 """

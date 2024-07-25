@@ -189,7 +189,7 @@ extension AttentionKernel {
 if (correction != 1) {
 #pragma clang loop unroll(full)
   for (ushort d = 0; d < D_block_dimension; d += 8) {
-    *(O_sram[(d_outer + d) / 8].thread_elements()) *= correction;
+    *(O_sram[(d_register_start + d) / 8].thread_elements()) *= correction;
   }
 }
 
@@ -203,12 +203,12 @@ float l_reciprocal = 1 / l;
 if (D - d_outer >= D_block_dimension) {
 #pragma clang loop unroll(full)
   for (ushort d = 0; d < D_block_dimension; d += 8) {
-    *(O_sram[(d_outer + d) / 8].thread_elements()) *= l_reciprocal;
+    *(O_sram[(d_register_start + d) / 8].thread_elements()) *= l_reciprocal;
   }
 } else {
 #pragma clang loop unroll(full)
   for (ushort d = 0; d < D % D_block_dimension; d += 8) {
-    *(O_sram[(d_outer + d) / 8].thread_elements()) *= l_reciprocal;
+    *(O_sram[(d_register_start + d) / 8].thread_elements()) *= l_reciprocal;
   }
 }
 
