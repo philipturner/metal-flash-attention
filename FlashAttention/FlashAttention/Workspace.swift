@@ -33,7 +33,7 @@ func executeScript() {
   profileProblemSize(N: 384, D: 95)
   profileProblemSize(N: 777, D: 199)
   
-//  let N_array = [128, 256, 512, 1024, 2048, 4096, 8192, 16384]
+//  let N_array = [128]
 //  let D_array = [32, 48, 64, 80, 96, 128, 160, 192, 256]
 //  var outputString: String = ""
 //  for N in N_array {
@@ -44,6 +44,7 @@ func executeScript() {
 //      print(ginstrs, terminator: ", ")
 //      outputString += "\(ginstrs), "
 //    }
+//    outputString.removeLast(2)
 //    print()
 //    outputString += "\n"
 //  }
@@ -137,6 +138,13 @@ func profileProblemSize(N: Int, D: Int) -> Int {
   // - Try an explicit register spilling mode, where async copies are used to
   //   minimize the overhead of paging. Use the output buffers as the scratch
   //   space.
+  //   - Postponing the application of this optimization to dV. I didn't see a
+  //     major speedup for the other accumulators yet. I need to understand why
+  //     performance did not improve.
+  //   - TODO: Do not unroll outer-product loops when the respective LHS is
+  //     intentionally spilled.
+  //   - TODO: Do not unroll accumulate loops when the respective output is
+  //     intentionally spilled.
   // - Insight: Register spilling is closely related to "store dS^T" with a set
   //   of accumulators and temporary materialization of an attention submatrix.
   // - Elide async copies on M3. Can the R edge (FWD, BWD dQ) and C edge
@@ -149,7 +157,7 @@ func profileProblemSize(N: Int, D: Int) -> Int {
   
   var attentionDesc = AttentionDescriptor()
   attentionDesc.cachedInputs = (Q: true, K: true, V: true, dO: true)
-  attentionDesc.cachedOutputs = (dQ: true, dK: true, dV: true, O: false)
+  attentionDesc.cachedOutputs = (dQ: true, dK: true, dV: true, O: true)
   attentionDesc.matrixDimensions = (R: UInt32(N), C: UInt32(N), D: UInt16(D))
   attentionDesc.transposeState = (Q: false, K: false, V: false, O: false)
   
@@ -457,5 +465,7 @@ func profileProblemSize(N: Int, D: Int) -> Int {
   return maxGINSTRS
   #endif
   
+  // WARNING: Change this to match the kernel being profiled.
+  // return pipelineBackwardKeyValue.maxTotalThreadsPerThreadgroup
   return 0
 }

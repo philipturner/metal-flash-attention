@@ -344,6 +344,15 @@ extension AttentionKernel {
 extension AttentionKernel {
   func createSetup(type: AttentionKernelType) -> String {
     // Code that prepares an accumulator variable.
+    func declareAccumulator(name: String) -> String {
+      return """
+  
+  simdgroup_matrix_storage<float> \(name)_sram[\(paddedD / 8)];
+
+"""
+    }
+    
+    // Code that prepares an accumulator variable.
     func zeroInitializeAccumulator(name: String) -> String {
       return """
   
@@ -372,11 +381,7 @@ extension AttentionKernel {
       }
       
       if cachedOutputs.O {
-        output += """
-
-simdgroup_matrix_storage<float> O_sram[\(paddedD / 8)];
-
-"""
+        output += declareAccumulator(name: "O")
       }
       
       output += """
@@ -408,7 +413,10 @@ simdgroup_matrix_storage<float> O_sram[\(paddedD / 8)];
       }
       
       if computeDerivativeQ {
-        output += zeroInitializeAccumulator(name: "dQ")
+        if cachedOutputs.dQ {
+          output += declareAccumulator(name: "dQ")
+        }
+        
         output += """
 
   float L_term = L_terms[linear_array_slot];
@@ -439,8 +447,8 @@ simdgroup_matrix_storage<float> O_sram[\(paddedD / 8)];
         output += load(descriptor: accessDesc)
       }
       
-      if computeDerivativeK {
-        output += zeroInitializeAccumulator(name: "dK")
+      if computeDerivativeK, cachedOutputs.dK {
+        output += declareAccumulator(name: "dK")
       }
       
       output += zeroInitializeAccumulator(name: "dV")
@@ -491,7 +499,7 @@ extension AttentionKernel {
     
     case .backwardQuery(let computeDerivativeQ):
       // dQ
-      if computeDerivativeQ {
+      if computeDerivativeQ, cachedOutputs.dQ {
         var accessDesc = AttentionHBMAccessDescriptor()
         accessDesc.name = "dQ"
         accessDesc.transposeState = transposeState.Q
@@ -512,7 +520,7 @@ extension AttentionKernel {
       
     case .backwardKeyValue(let computeDerivativeK):
       // dK
-      if computeDerivativeK {
+      if computeDerivativeK, cachedOutputs.dK {
         var accessDesc = AttentionHBMAccessDescriptor()
         accessDesc.name = "dK"
         accessDesc.transposeState = transposeState.K
