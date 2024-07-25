@@ -176,23 +176,38 @@ extension AttentionKernel {
     accumulateDesc.B = "V"
     accumulateDesc.C = "O"
     accumulateDesc.cacheC = cachedOutputs.O
-    accumulateDesc.transposeB = transposeState.V
-    accumulateDesc.leadingDimensionB = leadingDimensions.V
-    accumulateDesc.matrixDimensionK = "C"
-    accumulateDesc.matrixOffsetK = "c"
+    accumulateDesc.transposeState = (
+      B: transposeState.V, C: transposeState.O)
+    accumulateDesc.leadingDimensions = (
+      B: leadingDimensions.V, C: leadingDimensions.O)
+    accumulateDesc.matrixDimensions = (M: "R", K: "C")
+    accumulateDesc.matrixOffset = (M: "gid * 32", K: "c")
+    
+    accumulateDesc.everyIterationLoading = """
+
+// update the previous value of 'O'
+if (correction != 1) {
+#pragma clang loop unroll(full)
+  for (ushort d = 0; d < D_block_dimension; d += 8) {
+    *(O_sram[(d_outer + d) / 8].thread_elements()) *= correction;
+  }
+}
+
+"""
+    
     accumulateDesc.lastIterationStoring = """
 
 float l_reciprocal = 1 / l;
 
 // Iterate over the head dimension.
-if (D - d_outer >= 64) {
+if (D - d_outer >= D_block_dimension) {
 #pragma clang loop unroll(full)
-  for (ushort d = 0; d < 64; d += 8) {
+  for (ushort d = 0; d < D_block_dimension; d += 8) {
     *(O_sram[(d_outer + d) / 8].thread_elements()) *= l_reciprocal;
   }
 } else {
 #pragma clang loop unroll(full)
-  for (ushort d = 0; d < D % 64; d += 8) {
+  for (ushort d = 0; d < D % D_block_dimension; d += 8) {
     *(O_sram[(d_outer + d) / 8].thread_elements()) *= l_reciprocal;
   }
 }
@@ -211,6 +226,7 @@ if (D - d_outer >= 64) {
     // (m, l, P) = softmax(m, l, S * scaleFactor)
     \(onlineSoftmax())
     
+    // O *= correction
     // O += P * V
     // O /= l
     \(accumulate(descriptor: accumulateDesc))
@@ -251,10 +267,12 @@ if (D - d_outer >= 64) {
     accumulateDesc.B = "K"
     accumulateDesc.C = "dQ"
     accumulateDesc.cacheC = cachedOutputs.dQ
-    accumulateDesc.transposeB = transposeState.K
-    accumulateDesc.leadingDimensionB = leadingDimensions.K
-    accumulateDesc.matrixDimensionK = "C"
-    accumulateDesc.matrixOffsetK = "c"
+    accumulateDesc.transposeState = (
+      B: transposeState.K, C: transposeState.Q)
+    accumulateDesc.leadingDimensions = (
+      B: leadingDimensions.K, C: leadingDimensions.Q)
+    accumulateDesc.matrixDimensions = (M: "R", K: "C")
+    accumulateDesc.matrixOffset = (M: "gid * 32", K: "c")
     
     return """
   
@@ -353,10 +371,12 @@ if (D - d_outer >= 64) {
       accumulateDesc.B = "Q"
       accumulateDesc.C = "dK"
       accumulateDesc.cacheC = cachedOutputs.dK
-      accumulateDesc.transposeB = transposeState.Q
-      accumulateDesc.leadingDimensionB = leadingDimensions.Q
-      accumulateDesc.matrixDimensionK = "R"
-      accumulateDesc.matrixOffsetK = "r"
+      accumulateDesc.transposeState = (
+        B: transposeState.Q, C: transposeState.K)
+      accumulateDesc.leadingDimensions = (
+        B: leadingDimensions.Q, C: leadingDimensions.K)
+      accumulateDesc.matrixDimensions = (M: "C", K: "R")
+      accumulateDesc.matrixOffset = (M: "gid * 32", K: "r")
       
       output += """
   

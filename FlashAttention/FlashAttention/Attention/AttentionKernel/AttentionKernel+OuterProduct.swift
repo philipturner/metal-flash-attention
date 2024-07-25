@@ -91,7 +91,7 @@ const ushort D_block_dimension = \(blockDimensionD);
 #pragma clang loop unroll(full)
   for (ushort d_outer = 0; d_outer < D; d_outer += D_block_dimension) {
     threadgroup_barrier(mem_flags::mem_threadgroup);
-
+    
     if (d_outer == 0) {
       \(descriptor.firstIterationLoading ?? "")
     }
@@ -100,12 +100,12 @@ const ushort D_block_dimension = \(blockDimensionD);
       ushort D_src_dimension = min(D_block_dimension, ushort(D - d_outer));
       ushort D_dst_dimension = min(
         D_block_dimension, ushort(\(paddedD) - d_outer));
-
+    
 """
     
     if cacheA {
       output += """
-
+      
       uint2 \(B)_offset(d_outer, \(matrixOffset.N));
       auto src = simdgroup_matrix_storage<float>::apply_offset(
         \(B), \(leadingDimensionB), \(B)_offset, \(transposeB));
@@ -116,13 +116,13 @@ const ushort D_block_dimension = \(blockDimensionD);
       ushort N_dst_dimension = max(N_remainder_padded, N_src_dimension);
       ushort2 tile_src(D_src_dimension, N_src_dimension);
       ushort2 tile_dst(D_dst_dimension, N_dst_dimension);
-
+      
       simdgroup_event event;
       event.async_copy(
         dst, \(B)_leading_block_dimension, tile_dst,
         src, \(leadingDimensionB), tile_src, \(transposeB));
       simdgroup_event::wait(1, &event);
-
+      
 """
     } else {
       output += """
@@ -185,7 +185,7 @@ const ushort D_block_dimension = \(blockDimensionD);
 struct AttentionOuterProductDescriptor {
   /// Name of left-hand side, source of a 32 x D block.
   var A: String?
-  var cacheA: Bool = false
+  var cacheA: Bool?
   
   /// Name of right-hand side, source of a 32 x D block.
   var B: String?
@@ -215,6 +215,7 @@ extension AttentionKernel {
     descriptor: AttentionOuterProductDescriptor
   ) -> AttentionTwoOperandAccessDescriptor {
     guard let A = descriptor.A,
+          let cacheA = descriptor.cacheA,
           let B = descriptor.B,
           let C = descriptor.C,
           let transposeA = descriptor.transposeA,
@@ -237,7 +238,7 @@ extension AttentionKernel {
     accessDesc.matrixDimensions = matrixDimensions
     accessDesc.matrixOffset = matrixOffset
     
-    if descriptor.cacheA {
+    if cacheA {
       accessDesc.reservePointers = """
       
       // Find where the \(B) data will be read from.
@@ -268,7 +269,7 @@ extension AttentionKernel {
     
     func innerLoopAB(startN: String, endN: String) -> String {
       var loopBody: String
-      if descriptor.cacheA {
+      if cacheA {
         loopBody = """
 
 // Inner loop over N.

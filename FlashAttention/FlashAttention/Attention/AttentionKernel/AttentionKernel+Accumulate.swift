@@ -20,17 +20,16 @@ struct AttentionAccumulateDescriptor {
   var C: String?
   var cacheC: Bool?
   
-  var transposeB: Bool?
-  var leadingDimensionB: String?
+  var transposeState: (B: Bool, C: Bool)?
+  var leadingDimensions: (B: String, C: String)?
+  var matrixDimensions: (M: String, K: String)?
+  var matrixOffset: (M: String, K: String)?
   
-  // M = 32 (assuming four SIMDs)
-  // N = D
-  // K = specified by caller
-  var matrixDimensionK: String?
-  var matrixOffsetK: String?
+  /// Optional. Code to execute every time the accumulator is loaded.
+  var everyIterationLoading: String?
   
-  /// Optional. Code to only execute before storing the output, on the last
-  /// iteration of the K dimension.
+  /// Optional. Code to only execute before storing the accumulator, on the
+  /// last iteration of the K dimension.
   var lastIterationStoring: String?
 }
 
@@ -39,79 +38,152 @@ extension AttentionKernel {
     guard let A = descriptor.A,
           let B = descriptor.B,
           let C = descriptor.C,
-          let cacheC = descriptor.cacheC,
-          let transposeB = descriptor.transposeB,
-          let leadingDimensionB = descriptor.leadingDimensionB,
-          let matrixDimensionK = descriptor.matrixDimensionK,
-          let matrixOffsetK = descriptor.matrixOffsetK else {
+          var cacheC = descriptor.cacheC,
+          let transposeState = descriptor.transposeState,
+          let leadingDimensions = descriptor.leadingDimensions,
+          let matrixDimensions = descriptor.matrixDimensions,
+          let matrixOffset = descriptor.matrixOffset else {
       fatalError("Descriptor was incomplete.")
     }
+    
+    // Temporary workaround to allow the code to be debugged, while it is not
+    // yet finished.
+//    if !cacheC {
+//      fatalError("Hit!")
+//    }
     
     var output: String = """
 
 {
   // Declare the remainder of the row/column dimension.
-  ushort K_remainder = (\(matrixDimensionK) % 32 == 0)
-    ? 32 : \(matrixDimensionK) % 32;
+  ushort K_remainder = (\(matrixDimensions.K) % 32 == 0)
+    ? 32 : \(matrixDimensions.K) % 32;
   ushort K_remainder_padded = (K_remainder + 7) / 8 * 8;
 
 """
     
-    do {
-      var leadingBlockDimensionB: UInt16
-      var blockDimensionD: UInt16
-      if cacheC {
-        // 32 x 64 allocation in threadgroup memory
-        // leading dimension = transposeB ? 32 : 64
-        leadingBlockDimensionB = transposeB ? UInt16(32) : UInt16(64)
-        blockDimensionD = 64
-      } else {
-        leadingBlockDimensionB = 32
-        blockDimensionD = 32
-      }
-      
+    if !cacheC {
+      // 32 x 64 allocation in threadgroup memory
+      // leading dimension = transposeC ? 32 : 64
+      let leadingBlockDimensionC = transposeState.C ? UInt16(32) : UInt16(64)
       output += """
 
-const ushort \(B)_leading_block_dimension = \(leadingBlockDimensionB);
-const ushort D_block_dimension = \(blockDimensionD);
+const ushort \(C)_leading_block_dimension = \(leadingBlockDimensionC);
+
+// Find where the \(C) data will be read from.
+ushort2 \(C)_block_offset(morton_offset.x, morton_offset.y + sidx * 8);
+auto \(C)_block = (threadgroup float*)(threadgroup_block);
+\(C)_block = simdgroup_matrix_storage<float>::apply_offset(
+  \(C)_block, \(C)_leading_block_dimension,
+  \(C)_block_offset, \(transposeState.C));
 
 """
     }
     
-    output += """
+    do {
+      // 32 x 64 allocation in threadgroup memory
+      // leading dimension = transposeB ? 32 : 64
+      let leadingBlockDimensionB = transposeState.B ? UInt16(32) : UInt16(64)
+      output += """
+
+const ushort \(B)_leading_block_dimension = \(leadingBlockDimensionB);
 
 // Find where the \(B) data will be read from.
 ushort2 \(B)_block_offset(morton_offset.x, morton_offset.y);
 auto \(B)_block = (threadgroup float*)(threadgroup_block);
 \(B)_block = simdgroup_matrix_storage<float>::apply_offset(
   \(B)_block, \(B)_leading_block_dimension,
-  \(B)_block_offset, \(transposeB));
+  \(B)_block_offset, \(transposeState.B));
+
+"""
+    }
+    
+    output += """
+
+const ushort D_block_dimension = 64;
 
 // Outer loop over D.
 #pragma clang loop unroll(full)
 for (ushort d_outer = 0; d_outer < D; d_outer += D_block_dimension) {
-  threadgroup_barrier(mem_flags::mem_threadgroup);
+  ushort D_src_dimension = min(D_block_dimension, ushort(D - d_outer));
 
-  if (sidx == 0) {
-    uint2 B_offset(d_outer, \(matrixOffsetK));
-    auto src = simdgroup_matrix_storage<float>::apply_offset(
-      \(B), \(leadingDimensionB), B_offset, \(transposeB));
-    auto dst = (threadgroup float*)(threadgroup_block);
+"""
     
-    ushort D_src_dimension = min(D_block_dimension, ushort(D - d_outer));
-    ushort K_src_dimension = min(
-      uint(32), \(matrixDimensionK) - \(matrixOffsetK));
-    ushort K_dst_dimension = max(K_remainder_padded, K_src_dimension);
-    ushort2 tile_src(D_src_dimension, K_src_dimension);
-    ushort2 tile_dst(D_src_dimension, K_dst_dimension);
-    
-    simdgroup_event event;
-    event.async_copy(
-      dst, \(B)_leading_block_dimension, tile_dst,
-      src, \(leadingDimensionB), tile_src, \(transposeB));
-    simdgroup_event::wait(1, &event);
+    if !cacheC {
+      let loopBody = """
+
+ushort2 origin(d, 0);
+\(C)_sram[(d_outer + d) / 8].load(
+  \(C)_block, \(C)_leading_block_dimension, origin, \(transposeState.C));
+
+"""
+      
+    output += """
+
+threadgroup_barrier(mem_flags::mem_threadgroup);
+if (sidx == 0) {
+  uint2 C_offset(d_outer, \(matrixOffset.M));
+  auto src = simdgroup_matrix_storage<float>::apply_offset(
+    \(C), \(leadingDimensions.C), C_offset, \(transposeState.C));
+  auto dst = (threadgroup float*)(threadgroup_block);
+  
+  // It doesn't matter if the rows below the matrix edge are garbage.
+  ushort M_src_dimension = min(
+    uint(32), \(matrixDimensions.M) - \(matrixOffset.M));
+  ushort2 tile_src(D_src_dimension, M_src_dimension);
+  ushort2 tile_dst(D_src_dimension, M_src_dimension);
+  
+  simdgroup_event event;
+  event.async_copy(
+    dst, \(C)_leading_block_dimension, tile_dst,
+    src, \(leadingDimensions.C), tile_src, \(transposeState.C));
+  simdgroup_event::wait(1, &event);
+}
+
+threadgroup_barrier(mem_flags::mem_threadgroup);
+simdgroup_matrix_storage<float> \(C)_sram[\(paddedD / 8)];
+
+// Iterate over the head dimension.
+if (D - d_outer >= D_block_dimension) {
+#pragma clang loop unroll(full)
+  for (ushort d = 0; d < D_block_dimension; d += 8) {
+    \(loopBody)
   }
-  threadgroup_barrier(mem_flags::mem_threadgroup);
+} else {
+#pragma clang loop unroll(full)
+  for (ushort d = 0; d < D % D_block_dimension; d += 8) {
+    \(loopBody)
+  }
+}
+
+"""
+    }
+    
+    if let everyIterationLoading = descriptor.everyIterationLoading {
+      output += everyIterationLoading
+    }
+    
+    output += """
+
+threadgroup_barrier(mem_flags::mem_threadgroup);
+if (sidx == 0) {
+  uint2 \(B)_offset(d_outer, \(matrixOffset.K));
+  auto src = simdgroup_matrix_storage<float>::apply_offset(
+    \(B), \(leadingDimensions.B), \(B)_offset, \(transposeState.B));
+  auto dst = (threadgroup float*)(threadgroup_block);
+  
+  ushort K_src_dimension = min(
+    uint(32), \(matrixDimensions.K) - \(matrixOffset.K));
+  ushort K_dst_dimension = max(K_remainder_padded, K_src_dimension);
+  ushort2 tile_src(D_src_dimension, K_src_dimension);
+  ushort2 tile_dst(D_src_dimension, K_dst_dimension);
+  
+  simdgroup_event event;
+  event.async_copy(
+    dst, \(B)_leading_block_dimension, tile_dst,
+    src, \(leadingDimensions.B), tile_src, \(transposeState.B));
+  simdgroup_event::wait(1, &event);
+}
 
 """
     
@@ -121,7 +193,7 @@ for (ushort d_outer = 0; d_outer < D; d_outer += D_block_dimension) {
 ushort2 origin(d, k);
 simdgroup_matrix_storage<float> \(B);
 \(B).load(
-  \(B)_block, \(B)_leading_block_dimension, origin, \(transposeB));
+  \(B)_block, \(B)_leading_block_dimension, origin, \(transposeState.B));
 
 // Add the contributions from the c-th/r-th element of the
 // attention matrix row/column.
@@ -148,20 +220,75 @@ if (D - d_outer >= D_block_dimension) {
 """
     
     output += """
+
+threadgroup_barrier(mem_flags::mem_threadgroup);
       
-    // Iterate over the row/column dimension.
+// Iterate over the row/column dimension.
 #pragma clang loop unroll(full)
-    for (ushort k = 0; k < K_remainder_padded; k += 8) {
-      \(innerLoopAB)
-    }
-    if (\(matrixOffsetK) + 32 < \(matrixDimensionK)) {
+for (ushort k = 0; k < K_remainder_padded; k += 8) {
+  \(innerLoopAB)
+}
+if (\(matrixOffset.K) + 32 < \(matrixDimensions.K)) {
 #pragma clang loop unroll(full)
-      for (ushort k = K_remainder_padded; k < 32; k += 8) {
-        \(innerLoopAB)
-      }
-    } else {
-      \(descriptor.lastIterationStoring ?? "")
+  for (ushort k = K_remainder_padded; k < 32; k += 8) {
+    \(innerLoopAB)
+  }
+} else {
+  \(descriptor.lastIterationStoring ?? "")
+}
+
+"""
+    if !cacheC {
+      let loopBody = """
+
+ushort2 origin(d, 0);
+\(C)_sram[(d_outer + d) / 8].store(
+  \(C)_block, \(C)_leading_block_dimension, origin, \(transposeState.C));
+
+"""
+      
+      output += """
+
+threadgroup_barrier(mem_flags::mem_threadgroup);
+
+// Iterate over the head dimension.
+if (D - d_outer >= D_block_dimension) {
+#pragma clang loop unroll(full)
+  for (ushort d = 0; d < D_block_dimension; d += 8) {
+    \(loopBody)
+  }
+} else {
+#pragma clang loop unroll(full)
+  for (ushort d = 0; d < D % D_block_dimension; d += 8) {
+    \(loopBody)
+  }
+}
+
+threadgroup_barrier(mem_flags::mem_threadgroup);
+if (sidx == 0) {
+  uint2 \(C)_offset(d_outer, \(matrixOffset.M));
+  auto src = (threadgroup float*)(threadgroup_block);
+  auto dst = simdgroup_matrix_storage<float>::apply_offset(
+    \(C), \(leadingDimensions.C), \(C)_offset, \(transposeState.C));
+  
+  ushort D_dimension = min(ushort(D_block_dimension), ushort(D - d_outer));
+  ushort M_src_dimension = min(
+    uint(32), \(matrixDimensions.M) - \(matrixOffset.M));
+  ushort2 tile_src(D_dimension, M_src_dimension);
+  ushort2 tile_dst(D_dimension, M_src_dimension);
+  
+  simdgroup_event event;
+  event.async_copy(
+    dst, \(leadingDimensions.C), tile_dst,
+    src, \(C)_leading_block_dimension, tile_src, \(transposeState.C));
+  simdgroup_event::wait(1, &event);
+}
+
+"""
     }
+    
+    output += """
+
   }
 }
 

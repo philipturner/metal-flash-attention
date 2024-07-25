@@ -194,15 +194,11 @@ extension AttentionKernel {
     m_new = max(m_new, simd_shuffle_xor(m_new, 1));
     m_new = max(m_new, simd_shuffle_xor(m_new, 8));
     m_new *= \(scaleFactor);
-
-    // update the previous value of 'O'
+    
+    // update 'm'
     float correction = 1;
     if (m_new > m) {
       correction = fast::exp2(m - m_new);
-#pragma clang loop unroll(full)
-      for (ushort d = 0; d < \(paddedD); d += 8) {
-        *(O_sram[d / 8].thread_elements()) *= correction;
-      }
       m = m_new;
     }
     
@@ -214,7 +210,7 @@ extension AttentionKernel {
       float2 P_elements = fast::exp2(S_elements * \(scaleFactor) - m);
       *(P_sram[c / 8].thread_elements()) = P_elements;
     }
-
+    
     // update 'l'
     float2 l_new_accumulator;
 #pragma clang loop unroll(full)

@@ -119,14 +119,14 @@ simdgroup_matrix_storage<float> \(name)_sram[\(paddedD / 8)];
     threadgroup_barrier(mem_flags::mem_threadgroup);
 
     // Iterate over the head dimension.
-    if (\(paddedD) - d_outer >= 64) {
+    if (D - d_outer >= 64) {
 #pragma clang loop unroll(full)
       for (ushort d = 0; d < 64; d += 8) {
         \(loopBody)
       }
     } else {
 #pragma clang loop unroll(full)
-      for (ushort d = 0; d < \(paddedD) % 64; d += 8) {
+      for (ushort d = 0; d < D % 64; d += 8) {
         \(loopBody)
       }
     }
@@ -173,14 +173,14 @@ ushort2 origin(d, 0);
     threadgroup_barrier(mem_flags::mem_threadgroup);
     
     // Iterate over the head dimension.
-    if (\(paddedD) - d_outer >= 64) {
+    if (D - d_outer >= 64) {
 #pragma clang loop unroll(full)
       for (ushort d = 0; d < 64; d += 8) {
         \(loopBody)
       }
     } else {
 #pragma clang loop unroll(full)
-      for (ushort d = 0; d < \(paddedD) % 64; d += 8) {
+      for (ushort d = 0; d < D % 64; d += 8) {
         \(loopBody)
       }
     }
@@ -250,14 +250,14 @@ ushort2 origin(d, 0);
     threadgroup_barrier(mem_flags::mem_threadgroup);
     
     // Iterate over the head dimension.
-    if (\(paddedD) - d_outer >= 64) {
+    if (D - d_outer >= 64) {
 #pragma clang loop unroll(full)
       for (ushort d = 0; d < 64; d += 8) {
         \(loopBody)
       }
     } else {
 #pragma clang loop unroll(full)
-      for (ushort d = 0; d < \(paddedD) % 64; d += 8) {
+      for (ushort d = 0; d < D % 64; d += 8) {
         \(loopBody)
       }
     }

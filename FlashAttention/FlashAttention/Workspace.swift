@@ -149,7 +149,7 @@ func profileProblemSize(N: Int, D: Int) -> Int {
   
   var attentionDesc = AttentionDescriptor()
   attentionDesc.cachedInputs = (Q: true, K: true, V: true, dO: true)
-  attentionDesc.cachedOutputs = (dQ: true, dK: true, dV: true, O: true)
+  attentionDesc.cachedOutputs = (dQ: true, dK: true, dV: true, O: false)
   attentionDesc.matrixDimensions = (R: UInt32(N), C: UInt32(N), D: UInt16(D))
   attentionDesc.transposeState = (Q: false, K: false, V: false, O: false)
   
