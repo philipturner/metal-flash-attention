@@ -18,6 +18,7 @@ struct AttentionAccumulateDescriptor {
   
   /// Name of product register allocation (32 x D).
   var C: String?
+  var cacheC: String?
   
   var transposeB: Bool?
   var leadingDimensionB: String?
@@ -27,6 +28,10 @@ struct AttentionAccumulateDescriptor {
   // K = specified by caller
   var matrixDimensionK: String?
   var matrixOffsetK: String?
+  
+  /// Optional. Code to only execute before storing the output, on the last
+  /// iteration of the K dimension.
+  var lastIterationStoring: String?
 }
 
 extension AttentionKernel {
@@ -127,6 +132,8 @@ if (D - d_outer >= 64) {
           for (ushort k = K_remainder_padded; k < 32; k += 8) {
             \(innerLoopAB)
           }
+        } else {
+          \(descriptor.lastIterationStoring ?? "")
         }
       }
     }

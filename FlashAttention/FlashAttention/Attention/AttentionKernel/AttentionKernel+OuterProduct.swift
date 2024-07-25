@@ -91,19 +91,9 @@ const ushort D_block_dimension = \(blockDimensionD);
   for (ushort d_outer = 0; d_outer < D; d_outer += D_block_dimension) {
     threadgroup_barrier(mem_flags::mem_threadgroup);
 
-"""
-    
-    if let firstIterationLoading = descriptor.firstIterationLoading {
-      output += """
-
     if (d_outer == 0) {
-      \(firstIterationLoading)
+      \(descriptor.firstIterationLoading ?? "")
     }
-
-"""
-    }
-    
-    output += """
     
     if (sidx == 0) {
       ushort D_src_dimension = min(D_block_dimension, ushort(D - d_outer));

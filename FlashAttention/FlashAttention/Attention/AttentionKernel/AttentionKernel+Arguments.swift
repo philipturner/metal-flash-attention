@@ -209,6 +209,83 @@ ushort2 origin(d, 0);
 
 """
   }
+  
+  func zeroInitialize(descriptor: AttentionHBMAccessDescriptor) -> String {
+    guard let name = descriptor.name,
+          let transposeState = descriptor.transposeState,
+          let leadingDimension = descriptor.leadingDimension,
+          let matrixDimension = descriptor.matrixDimension,
+          let matrixOffset = descriptor.matrixOffset else {
+      fatalError("Descriptor was incomplete.")
+    }
+    
+    // 32 x 64 allocation in threadgroup memory
+    // leading dimension = transposeState ? 32 : 64
+    let leadingBlockDimension = transposeState ? UInt16(32) : UInt16(64)
+    
+    let loopBody = """
+
+simdgroup_matrix_storage<float> \(name);
+\(name) = simdgroup_matrix_storage<float>(0);
+
+ushort2 origin(d, 0);
+\(name).store(
+  \(name)_block, \(leadingBlockDimension), origin, \(transposeState));
+
+"""
+    
+    return """
+
+{
+  // Find where the \(name) data will be written to.
+  ushort2 \(name)_block_offset(morton_offset.x, morton_offset.y + sidx * 8);
+  auto \(name)_block = (threadgroup float*)(threadgroup_block);
+  \(name)_block = simdgroup_matrix_storage<float>::apply_offset(
+    \(name)_block, \(leadingBlockDimension),
+    \(name)_block_offset, \(transposeState));
+  
+  // Outer loop over D.
+#pragma clang loop unroll(full)
+  for (ushort d_outer = 0; d_outer < D; d_outer += 64) {
+    threadgroup_barrier(mem_flags::mem_threadgroup);
+    
+    // Iterate over the head dimension.
+    if (\(paddedD) - d_outer >= 64) {
+#pragma clang loop unroll(full)
+      for (ushort d = 0; d < 64; d += 8) {
+        \(loopBody)
+      }
+    } else {
+#pragma clang loop unroll(full)
+      for (ushort d = 0; d < \(paddedD) % 64; d += 8) {
+        \(loopBody)
+      }
+    }
+    threadgroup_barrier(mem_flags::mem_threadgroup);
+    
+    if (sidx == 0) {
+      uint2 \(name)_offset(d_outer, \(matrixOffset));
+      auto src = (threadgroup float*)(threadgroup_block);
+      auto dst = simdgroup_matrix_storage<float>::apply_offset(
+        \(name), \(leadingDimension), \(name)_offset, \(transposeState));
+     
+      ushort D_dimension = min(ushort(64), ushort(D - d_outer));
+      ushort RC_dimension = min(
+        uint(32), \(matrixDimension) - \(matrixOffset));
+      ushort2 tile_src(D_dimension, RC_dimension);
+      ushort2 tile_dst(D_dimension, RC_dimension);
+      
+      simdgroup_event event;
+      event.async_copy(
+        dst, \(leadingDimension), tile_dst,
+        src, \(leadingBlockDimension), tile_src, \(transposeState));
+      simdgroup_event::wait(1, &event);
+    }
+  }
+}
+
+"""
+  }
 }
 
 // MARK: - Arguments
@@ -371,7 +448,18 @@ extension AttentionKernel {
         output += load(descriptor: accessDesc)
       }
       
-      output += zeroInitializeAccumulator(name: "O")
+      if cachedOutputs.O {
+        output += zeroInitializeAccumulator(name: "O")
+      } else {
+        var accessDesc = AttentionHBMAccessDescriptor()
+        accessDesc.name = "O"
+        accessDesc.transposeState = transposeState.O
+        accessDesc.leadingDimension = leadingDimensions.O
+        accessDesc.matrixDimension = "R"
+        accessDesc.matrixOffset = "gid * 32"
+        output += zeroInitialize(descriptor: accessDesc)
+      }
+      
       output += """
 
   float m = -numeric_limits<float>::max();
@@ -408,6 +496,7 @@ extension AttentionKernel {
 
 """
       }
+      
       output += computeDTerm()
       
     case .backwardKeyValue(let computeDerivativeK):
@@ -434,6 +523,7 @@ extension AttentionKernel {
       if computeDerivativeK {
         output += zeroInitializeAccumulator(name: "dK")
       }
+      
       output += zeroInitializeAccumulator(name: "dV")
     }
     
@@ -458,13 +548,15 @@ extension AttentionKernel {
     switch type {
     case .forward(let computeL):
       // O
-      var accessDesc = AttentionHBMAccessDescriptor()
-      accessDesc.name = "O"
-      accessDesc.transposeState = transposeState.O
-      accessDesc.leadingDimension = leadingDimensions.O
-      accessDesc.matrixDimension = "R"
-      accessDesc.matrixOffset = "gid * 32"
-      output += store(descriptor: accessDesc)
+      if cachedOutputs.O {
+        var accessDesc = AttentionHBMAccessDescriptor()
+        accessDesc.name = "O"
+        accessDesc.transposeState = transposeState.O
+        accessDesc.leadingDimension = leadingDimensions.O
+        accessDesc.matrixDimension = "R"
+        accessDesc.matrixOffset = "gid * 32"
+        output += store(descriptor: accessDesc)
+      }
       
       // L[i]
       if computeL {

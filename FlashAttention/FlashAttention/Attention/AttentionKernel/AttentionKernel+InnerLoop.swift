@@ -179,6 +179,24 @@ extension AttentionKernel {
     accumulateDesc.leadingDimensionB = leadingDimensions.V
     accumulateDesc.matrixDimensionK = "C"
     accumulateDesc.matrixOffsetK = "c"
+    accumulateDesc.lastIterationStoring = """
+
+float l_reciprocal = 1 / l;
+
+// Iterate over the head dimension.
+if (D - d_outer >= 64) {
+#pragma clang loop unroll(full)
+  for (ushort d = 0; d < 64; d += 8) {
+    *(O_sram[(d_outer + d) / 8].thread_elements()) *= l_reciprocal;
+  }
+} else {
+#pragma clang loop unroll(full)
+  for (ushort d = 0; d < D % 64; d += 8) {
+    *(O_sram[(d_outer + d) / 8].thread_elements()) *= l_reciprocal;
+  }
+}
+
+"""
     
     return """
   
@@ -193,16 +211,10 @@ extension AttentionKernel {
     \(onlineSoftmax())
     
     // O += P * V
+    // O /= l
     \(accumulate(descriptor: accumulateDesc))
   }
   
-  // O /= l
-  float l_reciprocal = 1 / l;
-#pragma clang loop unroll(full)
-  for (ushort d = 0; d < \(paddedD); d += 8) {
-   *(O_sram[d / 8].thread_elements()) *= l_reciprocal;
-  }
-
 """
   }
   
