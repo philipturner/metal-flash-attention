@@ -38,7 +38,7 @@ extension AttentionKernel {
     guard let A = descriptor.A,
           let B = descriptor.B,
           let C = descriptor.C,
-          var cacheC = descriptor.cacheC,
+          let cacheC = descriptor.cacheC,
           let transposeState = descriptor.transposeState,
           let leadingDimensions = descriptor.leadingDimensions,
           let matrixDimensions = descriptor.matrixDimensions,
@@ -100,7 +100,7 @@ auto \(B)_block = (threadgroup float*)(threadgroup_block);
     output += """
 
 // Outer loop over D.
-#pragma clang loop unroll(full)
+#pragma clang loop unroll(\(cacheC ? "full" : "full"))
 for (ushort d_outer = 0; d_outer < D; d_outer += D_block_dimension) {
   ushort D_src_dimension = min(D_block_dimension, ushort(D - d_outer));
   ushort d_register_start = \(cacheC ? "d_outer" : "0");
@@ -108,7 +108,8 @@ for (ushort d_outer = 0; d_outer < D; d_outer += D_block_dimension) {
   if (\(matrixOffset.K) == 0) {
   #pragma clang loop unroll(full)
     for (ushort d = 0; d < D_block_dimension; d += 8) {
-      \(C)_sram[(d_register_start + d) / 8] = simdgroup_matrix_storage<float>(0);
+      \(C)_sram[(d_register_start + d) / 8] = 
+      simdgroup_matrix_storage<float>(0);
     }
   } else {
 

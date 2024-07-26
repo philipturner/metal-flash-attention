@@ -52,81 +52,85 @@ func executeScript() {
 //  print(outputString)
   
   /*
-   Mac - Before
+   Before - all applicable variables cached
    
-   latency: 77
-   latency: 143
-   latency: 74
-   latency: 78
-   latency: 52
-   latency: 602
-   latency: 575
-   latency: 85
-   latency: 265
-   latency: 126
-   latency: 112
-   latency: 66
-   latency: 75
-   latency: 1308
-   latency: 3922
-   
-   Mac - After
-   
-   latency: 52
-   latency: 116
-   latency: 46
-   latency: 51
-   latency: 63
-   latency: 59
-   latency: 60
-   latency: 599
-   latency: 632
-   latency: 143
-   latency: 238
-   latency: 110
-   latency: 116
-   latency: 44
-   latency: 51
-   latency: 1027
-   latency: 4931
-   
-   iPad - Before
-   
-   latency: 57
-   latency: 252
-   latency: 52
-   latency: 53
-   latency: 72
-   latency: 1086
-   latency: 667
-   latency: 114
-   latency: 168
-   latency: 82
-   latency: 110
-   latency: 25
-   latency: 22
-   latency: 2827
-   latency: 9638
-   
-   iPad - After
-   
-   latency: 46
+   latency: 61
+   latency: 135
+   latency: 62
+   latency: 64
+   latency: 64
+   latency: 61
+   latency: 64
+   latency: 522
+   latency: 561
    latency: 145
-   latency: 43
+   latency: 217
+   latency: 115
+   latency: 113
+   latency: 51
+   latency: 49
+   latency: 1150
+   latency: 6763
+   
+   Before - all applicable variables paged
+   
+   latency: 61
+   latency: 137
+   latency: 58
+   latency: 67
+   latency: 62
+   latency: 63
+   latency: 65
+   latency: 698
+   latency: 701
+   latency: 164
+   latency: 261
+   latency: 119
+   latency: 119
+   latency: 48
+   latency: 47
+   latency: 1477
+   latency: 7272
+   
+   Original kernel - V full, others disable
+   
+   latency: 56
+   latency: 121
+   latency: 51
+   latency: 52
+   latency: 62
+   latency: 60
+   latency: 61
+   latency: 713
+   latency: 751
+   latency: 161
+   latency: 323
+   latency: 119
+   latency: 114
+   latency: 47
+   latency: 51
+   latency: 1507
+   latency: 7150
+   
+   Original kernel - V disable, others disable
+   
+   latency: 54
+   latency: 160
+   latency: 51
+   latency: 53
+   latency: 63
+   latency: 60
+   latency: 64
+   latency: 872
+   latency: 840
+   latency: 158
+   latency: 380
+   latency: 129
+   latency: 153
    latency: 45
-   latency: 76
-   latency: 80
-   latency: 83
-   latency: 1212
-   latency: 1102
-   latency: 258
-   latency: 431
-   latency: 195
-   latency: 223
-   latency: 39
-   latency: 38
-   latency: 1469
-   latency: 6105
+   latency: 51
+   latency: 1869
+   latency: 8206
    
    */
 }
@@ -156,8 +160,8 @@ func profileProblemSize(N: Int, D: Int) -> Int {
   let network = Network(descriptor: networkDesc)
   
   var attentionDesc = AttentionDescriptor()
-  attentionDesc.cachedInputs = (Q: true, K: true, V: true, dO: true)
-  attentionDesc.cachedOutputs = (dQ: true, dK: true, dV: true, O: true)
+  attentionDesc.cachedInputs = (Q: false, K: false, V: false, dO: false)
+  attentionDesc.cachedOutputs = (dQ: false, dK: false, dV: true, O: false)
   attentionDesc.matrixDimensions = (R: UInt32(N), C: UInt32(N), D: UInt16(D))
   attentionDesc.transposeState = (Q: false, K: false, V: false, O: false)
   
@@ -466,6 +470,5 @@ func profileProblemSize(N: Int, D: Int) -> Int {
   #endif
   
   // WARNING: Change this to match the kernel being profiled.
-  // return pipelineBackwardKeyValue.maxTotalThreadsPerThreadgroup
-  return 0
+  return pipelineBackwardKeyValue.maxTotalThreadsPerThreadgroup
 }
