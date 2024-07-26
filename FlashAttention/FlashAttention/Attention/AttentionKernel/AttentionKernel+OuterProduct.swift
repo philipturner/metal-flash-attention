@@ -88,7 +88,7 @@ const ushort D_block_dimension = \(blockDimensionD);
     // Outer loop over D.
     output += """
   
-#pragma clang loop unroll(\(cacheA ? "full" : A == "V" ? "disable" : "disable"))
+#pragma clang loop unroll(\(cacheA ? "full" : "disable"))
   for (ushort d_outer = 0; d_outer < D; d_outer += D_block_dimension) {
     threadgroup_barrier(mem_flags::mem_threadgroup);
     

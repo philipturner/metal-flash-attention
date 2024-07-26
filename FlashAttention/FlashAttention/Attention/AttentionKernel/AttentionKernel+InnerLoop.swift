@@ -342,6 +342,31 @@ if (D - d_outer >= D_block_dimension) {
     
 """
     
+    var accumulateDesc = AttentionAccumulateDescriptor()
+    accumulateDesc.A = "PT"
+    accumulateDesc.B = "dO"
+    accumulateDesc.C = "dV"
+    accumulateDesc.cacheC = cachedOutputs.dV
+    accumulateDesc.transposeState = (
+      B: transposeState.O, C: transposeState.V)
+    accumulateDesc.leadingDimensions = (
+      B: leadingDimensions.O, C: leadingDimensions.V)
+    accumulateDesc.matrixDimensions = (M: "C", K: "R")
+    accumulateDesc.matrixOffset = (M: "gid * 32", K: "r")
+    
+    outerProductDesc = AttentionOuterProductDescriptor()
+    outerProductDesc.A = "V"
+    outerProductDesc.cacheA = cachedInputs.V
+    outerProductDesc.B = "dO"
+    outerProductDesc.C = "dPT"
+    outerProductDesc.transposeA = transposeState.V
+    outerProductDesc.transposeB = transposeState.O
+    outerProductDesc.leadingDimensionA = leadingDimensions.V
+    outerProductDesc.leadingDimensionB = leadingDimensions.O
+    outerProductDesc.matrixDimensions = (M: "C", N: "R")
+    outerProductDesc.matrixOffset = (M: "gid * 32", N: "r")
+    let VdOT_descriptor = outerProduct(descriptor: outerProductDesc)
+    
     var output = """
 
   // Iterate over the rows.
@@ -358,7 +383,14 @@ if (D - d_outer >= D_block_dimension) {
     // dV += P^T * dO
     // dP^T = V * dO^T
     simdgroup_matrix_storage<float> dPT_sram[32 / 8];
-    \(computeDerivativeVDerivativePT())
+    //
+    // computeDerivativeSoftmaxT()
+    
+    // We're using separate function calls to simplify the code, for the time
+    // being. Once we see a considerable speedup from the other optimizations,
+    // consider fusing the reading of dO again.
+    \(accumulate(descriptor: accumulateDesc))
+    \(twoOperandAccess(descriptor: VdOT_descriptor))
     
     // dS^T = P^T * (dP^T - D) * scaleFactor
     \(computeDerivativeSoftmaxT())

@@ -451,7 +451,9 @@ extension AttentionKernel {
         output += declareAccumulator(name: "dK")
       }
       
-      output += zeroInitializeAccumulator(name: "dV")
+      if cachedOutputs.dV {
+        output += declareAccumulator(name: "dV")
+      }
     }
     
     return output
@@ -531,7 +533,7 @@ extension AttentionKernel {
       }
       
       // dV
-      do {
+      if cachedOutputs.dV {
         var accessDesc = AttentionHBMAccessDescriptor()
         accessDesc.name = "dV"
         accessDesc.transposeState = transposeState.V

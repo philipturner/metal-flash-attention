@@ -15,124 +15,41 @@ import QuartzCore
 
 func executeScript() {
   // Automate the execution of the test suite.
-  profileProblemSize(N: 10, D: 3)
-  profileProblemSize(N: 10, D: 80)
-  profileProblemSize(N: 8, D: 2)
-  profileProblemSize(N: 9, D: 2)
-  profileProblemSize(N: 23, D: 2)
-  profileProblemSize(N: 24, D: 2)
-  profileProblemSize(N: 25, D: 2)
-  profileProblemSize(N: 192, D: 77)
-  profileProblemSize(N: 192, D: 80)
-  profileProblemSize(N: 93, D: 32)
-  profileProblemSize(N: 99, D: 35)
-  profileProblemSize(N: 64, D: 32)
-  profileProblemSize(N: 32, D: 64)
-  profileProblemSize(N: 4, D: 1)
-  profileProblemSize(N: 4, D: 2)
-  profileProblemSize(N: 384, D: 95)
-  profileProblemSize(N: 777, D: 199)
+//  profileProblemSize(N: 10, D: 3)
+//  profileProblemSize(N: 10, D: 80)
+//  profileProblemSize(N: 8, D: 2)
+//  profileProblemSize(N: 9, D: 2)
+//  profileProblemSize(N: 23, D: 2)
+//  profileProblemSize(N: 24, D: 2)
+//  profileProblemSize(N: 25, D: 2)
+//  profileProblemSize(N: 192, D: 77)
+//  profileProblemSize(N: 192, D: 80)
+//  profileProblemSize(N: 93, D: 32)
+//  profileProblemSize(N: 99, D: 35)
+//  profileProblemSize(N: 64, D: 32)
+//  profileProblemSize(N: 32, D: 64)
+//  profileProblemSize(N: 4, D: 1)
+//  profileProblemSize(N: 4, D: 2)
+//  profileProblemSize(N: 384, D: 95)
+//  profileProblemSize(N: 777, D: 199)
   
-//  let N_array = [128]
-//  let D_array = [32, 48, 64, 80, 96, 128, 160, 192, 256]
-//  var outputString: String = ""
-//  for N in N_array {
-//    print("N =", N, terminator: ", ")
-//    outputString += "N = \(N), "
-//    for D in D_array {
-//      let ginstrs = profileProblemSize(N: N, D: D)
-//      print(ginstrs, terminator: ", ")
-//      outputString += "\(ginstrs), "
-//    }
-//    outputString.removeLast(2)
-//    print()
-//    outputString += "\n"
-//  }
-//  print()
-//  print(outputString)
-  
-  /*
-   Before - all applicable variables cached
-   
-   latency: 61
-   latency: 135
-   latency: 62
-   latency: 64
-   latency: 64
-   latency: 61
-   latency: 64
-   latency: 522
-   latency: 561
-   latency: 145
-   latency: 217
-   latency: 115
-   latency: 113
-   latency: 51
-   latency: 49
-   latency: 1150
-   latency: 6763
-   
-   Before - all applicable variables paged
-   
-   latency: 61
-   latency: 137
-   latency: 58
-   latency: 67
-   latency: 62
-   latency: 63
-   latency: 65
-   latency: 698
-   latency: 701
-   latency: 164
-   latency: 261
-   latency: 119
-   latency: 119
-   latency: 48
-   latency: 47
-   latency: 1477
-   latency: 7272
-   
-   Original kernel - V full, others disable
-   
-   latency: 56
-   latency: 121
-   latency: 51
-   latency: 52
-   latency: 62
-   latency: 60
-   latency: 61
-   latency: 713
-   latency: 751
-   latency: 161
-   latency: 323
-   latency: 119
-   latency: 114
-   latency: 47
-   latency: 51
-   latency: 1507
-   latency: 7150
-   
-   Original kernel - V disable, others disable
-   
-   latency: 54
-   latency: 160
-   latency: 51
-   latency: 53
-   latency: 63
-   latency: 60
-   latency: 64
-   latency: 872
-   latency: 840
-   latency: 158
-   latency: 380
-   latency: 129
-   latency: 153
-   latency: 45
-   latency: 51
-   latency: 1869
-   latency: 8206
-   
-   */
+  let N_array = [128, 256, 512, 1024, 2048, 4096, 8192, 16384]
+  let D_array = [32, 48, 64, 80, 96, 128, 160, 192, 256]
+  var outputString: String = ""
+  for N in N_array {
+    print("N =", N, terminator: ", ")
+    outputString += "\(N), "
+    for D in D_array {
+      let ginstrs = profileProblemSize(N: N, D: D)
+      print(ginstrs, terminator: ", ")
+      outputString += "\(ginstrs), "
+    }
+    outputString.removeLast(2)
+    print()
+    outputString += "\n"
+  }
+  print()
+  print(outputString)
 }
 
 // Returns: Throughput in GINSTRS.
@@ -142,15 +59,10 @@ func profileProblemSize(N: Int, D: Int) -> Int {
   // - Try an explicit register spilling mode, where async copies are used to
   //   minimize the overhead of paging. Use the output buffers as the scratch
   //   space.
-  //   - Postponing the application of this optimization to dV. I didn't see a
-  //     major speedup for the other accumulators yet. I need to understand why
-  //     performance did not improve.
-  //   - TODO: Do not unroll outer-product loops when the respective LHS is
-  //     intentionally spilled.
-  //   - TODO: Do not unroll accumulate loops when the respective output is
-  //     intentionally spilled.
-  // - Insight: Register spilling is closely related to "store dS^T" with a set
-  //   of accumulators and temporary materialization of an attention submatrix.
+  //     TODO: Delete the code that fused/obfuscated dV with dP^T.
+  //   - TODO: Next, change how codegen works over loops. Separate the
+  //     first/last iteration over D from the other ones. Make sure this
+  //     change doesn't increase the register pressure.
   // - Elide async copies on M3. Can the R edge (FWD, BWD dQ) and C edge
   //   (BWD dK/dV) be masked out through alternative means?
   
@@ -161,7 +73,7 @@ func profileProblemSize(N: Int, D: Int) -> Int {
   
   var attentionDesc = AttentionDescriptor()
   attentionDesc.cachedInputs = (Q: false, K: false, V: false, dO: false)
-  attentionDesc.cachedOutputs = (dQ: false, dK: false, dV: true, O: false)
+  attentionDesc.cachedOutputs = (dQ: false, dK: false, dV: false, O: false)
   attentionDesc.matrixDimensions = (R: UInt32(N), C: UInt32(N), D: UInt16(D))
   attentionDesc.transposeState = (Q: false, K: false, V: false, O: false)
   
@@ -270,9 +182,9 @@ func profileProblemSize(N: Int, D: Int) -> Int {
       if dispatchCount > 1 {
         // WARNING: Change this code to match the kernel you're profiling.
         dispatch(
-          kernel: kernelForward,
-          pipeline: pipelineForward,
-          along: kernelForward.blockDimensions.R)
+          kernel: kernelBackwardKeyValue,
+          pipeline: pipelineBackwardKeyValue,
+          along: kernelBackwardKeyValue.blockDimensions.C)
       } else {
         dispatch(
           kernel: kernelForward,
@@ -297,12 +209,12 @@ func profileProblemSize(N: Int, D: Int) -> Int {
     let start = commandBuffer.gpuStartTime
     let end = commandBuffer.gpuEndTime
     let latency = end - start
-    print("latency:", Int(latency * 1e6))
+    // print("latency:", Int(latency * 1e6))
     return latency
   }
   executeCommandBuffer(dispatchCount: 1)
   
-  #if true
+  #if false
   let O = network.inferenceAttention()
   let LTerms = (0..<N).map(network.createLTerm(rowID:))
   let DTerms = (0..<N).map(network.createDTerm(rowID:))
@@ -445,7 +357,7 @@ func profileProblemSize(N: Int, D: Int) -> Int {
   check(expected: dQ, actual: resultDerivativeQ)
   #endif
   
-  #if false
+  #if true
   // Benchmark performance.
   var maxGINSTRS: Int = .zero
   for _ in 0..<5 {
@@ -456,7 +368,7 @@ func profileProblemSize(N: Int, D: Int) -> Int {
     //
     // WARNING: Change this code to match the kernel you're profiling.
     var operations: Int = .zero
-    operations += (2 * D + 5) * (N * N)
+    operations += (4 * D + 5) * (N * N)
     operations *= dispatchCount
     
     // Divide the work by the latency, resulting in throughput.
@@ -470,5 +382,11 @@ func profileProblemSize(N: Int, D: Int) -> Int {
   #endif
   
   // WARNING: Change this to match the kernel being profiled.
-  return pipelineBackwardKeyValue.maxTotalThreadsPerThreadgroup
+//  if N == 128 {
+//    return pipelineForward.maxTotalThreadsPerThreadgroup
+//  } else if N == 160 {
+//    return pipelineBackwardQuery.maxTotalThreadsPerThreadgroup
+//  } else {
+//    return pipelineBackwardKeyValue.maxTotalThreadsPerThreadgroup
+//  }
 }
