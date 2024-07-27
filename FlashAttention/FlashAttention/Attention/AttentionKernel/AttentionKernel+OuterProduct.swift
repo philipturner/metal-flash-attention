@@ -69,7 +69,7 @@ extension AttentionKernel {
         blockDimensionD = 64
       } else {
         leadingBlockDimensionB = 32
-        blockDimensionD = 32
+        blockDimensionD = 16
       }
       
       output += """

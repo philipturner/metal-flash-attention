@@ -33,23 +33,23 @@ func executeScript() {
   profileProblemSize(N: 384, D: 95)
   profileProblemSize(N: 777, D: 199)
   
-//  let N_array = [128, 160, 192]
-//  let D_array = [32, 48, 64, 80, 96, 128, 160, 192, 256]
-//  var outputString: String = ""
-//  for N in N_array {
-//    print("N =", N, terminator: ", ")
-//    outputString += "\(N), "
-//    for D in D_array {
-//      let ginstrs = profileProblemSize(N: N, D: D)
-//      print(ginstrs, terminator: ", ")
-//      outputString += "\(ginstrs), "
-//    }
-//    outputString.removeLast(2)
-//    print()
-//    outputString += "\n"
-//  }
-//  print()
-//  print(outputString)
+  let N_array = [128, 160, 192]
+  let D_array = [32, 48, 64, 80, 96, 128, 160, 192, 256]
+  var outputString: String = ""
+  for N in N_array {
+    print("N =", N, terminator: ", ")
+    outputString += "\(N), "
+    for D in D_array {
+      let ginstrs = profileProblemSize(N: N, D: D)
+      print(ginstrs, terminator: ", ")
+      outputString += "\(ginstrs), "
+    }
+    outputString.removeLast(2)
+    print()
+    outputString += "\n"
+  }
+  print()
+  print(outputString)
   
   // Before: 100% Caching
   //
@@ -99,10 +99,11 @@ func profileProblemSize(N: Int, D: Int) -> Int {
   // - Try an explicit register spilling mode, where async copies are used to
   //   minimize the overhead of paging. Use the output buffers as the scratch
   //   space.
-  //   - TODO: Try shrinking D_block. Does this reduce the register pressure?
-  //   - TODO: Next, change how codegen works over loops. Separate the
-  //     first/last iteration over D from the other ones. Make sure this
-  //     change doesn't increase the register pressure.
+  //   - TODO: Check the efficacy of the optimization that reduces register
+  //     pressure during the accumulate loop.
+  //   - TODO: Restructure the outer-product loop to be similar to the
+  //     accumulate loop.
+  //   - Then, investigate the remaining register pressure bottlenecks.
   // - Elide async copies on M3. Can the R edge (FWD, BWD dQ) and C edge
   //   (BWD dK/dV) be masked out through alternative means?
   
