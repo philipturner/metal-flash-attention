@@ -182,32 +182,8 @@ extension AttentionKernel {
       B: leadingDimensions.V, C: leadingDimensions.O)
     accumulateDesc.matrixDimensions = (M: "R", K: "C")
     accumulateDesc.matrixOffset = (M: "gid * 32", K: "c")
-    
-    accumulateDesc.everyIterationLoading = """
-
-// update the previous value of 'O'
-//
-// TODO: When the D block dimension is very small, elide this conditional.
-if (correction != 1) {
-#pragma clang loop unroll(full)
-  for (ushort d = 0; d < D_block_dimension; d += 8) {
-    *(O_sram[(d_register_start + d) / 8].thread_elements()) *= correction;
-  }
-}
-
-"""
-    
-    accumulateDesc.lastIterationStoring = """
-
-float l_reciprocal = 1 / l;
-
-// Iterate over the head dimension.
-#pragma clang loop unroll(full)
-for (ushort d = 0; d < D_block_dimension; d += 8) {
-  *(O_sram[(d_register_start + d) / 8].thread_elements()) *= l_reciprocal;
-}
-
-"""
+    accumulateDesc.everyIterationFactor = "correction"
+    accumulateDesc.lastIterationFactor = "1 / l"
     
     return """
   
@@ -216,9 +192,9 @@ for (ushort d = 0; d < D_block_dimension; d += 8) {
     // S = Q * K^T
     simdgroup_matrix_storage<float> S_sram[32 / 8];
     \(twoOperandAccess(descriptor: QKT_Descriptor))
-    \(maskAlongColumns(sram: "S_sram"))
     
     // (m, l, P) = softmax(m, l, S * scaleFactor)
+    \(maskAlongColumns(sram: "S_sram"))
     \(onlineSoftmax())
     
     // O *= correction

@@ -25,12 +25,11 @@ struct AttentionAccumulateDescriptor {
   var matrixDimensions: (M: String, K: String)?
   var matrixOffset: (M: String, K: String)?
   
-  /// Optional. Code to execute every time the accumulator is loaded.
-  var everyIterationLoading: String?
+  /// Optional. Factor to multiply every time the accumulator is loaded.
+  var everyIterationFactor: String?
   
-  /// Optional. Code to only execute before storing the accumulator, on the
-  /// last iteration of the K dimension.
-  var lastIterationStoring: String?
+  /// Optional. Factor to multiply, on the last iteration of the K dimension.
+  var lastIterationFactor: String?
 }
 
 extension AttentionKernel {
@@ -50,6 +49,22 @@ extension AttentionKernel {
     let blockDimensionD: UInt16 = 64
     let leadingBlockDimensionB = transposeState.B ? 32 : blockDimensionD
     let leadingBlockDimensionC = transposeState.C ? 32 : blockDimensionD
+    
+    // Utility function that scales the accumulator.
+    func multiplyAccumulator(factor: String?) -> String {
+      guard let factor else {
+        return ""
+      }
+      return """
+
+// Iterate over the head dimension.
+#pragma clang loop unroll(full)
+for (ushort d = 0; d < D_block_dimension; d += 8) {
+  *(O_sram[(d_register_start + d) / 8].thread_elements()) *= \(factor);
+}
+
+"""
+    }
     
     var output: String = """
 
@@ -136,9 +151,9 @@ if (\(matrixOffset.K) == 0) {
 """
     }
     
-    output += """
+  output += """
 
-  \(descriptor.everyIterationLoading ?? "")
+  \(multiplyAccumulator(factor: descriptor.everyIterationFactor))
 }
 
 threadgroup_barrier(mem_flags::mem_threadgroup);
@@ -203,7 +218,7 @@ if (\(matrixOffset.K) + 32 < \(matrixDimensions.K)) {
     \(innerLoopAB)
   }
 } else {
-  \(descriptor.lastIterationStoring ?? "")
+  \(multiplyAccumulator(factor: descriptor.lastIterationFactor))
 }
 
 """
