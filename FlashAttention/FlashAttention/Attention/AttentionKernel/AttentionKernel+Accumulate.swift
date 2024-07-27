@@ -47,7 +47,9 @@ extension AttentionKernel {
     }
     
     // Declare the block size along the D dimension.
-    let blockDimensionD = 64
+    let blockDimensionD: UInt16 = 64
+    let leadingBlockDimensionB = transposeState.B ? 32 : blockDimensionD
+    let leadingBlockDimensionC = transposeState.C ? 32 : blockDimensionD
     
     var output: String = """
 
@@ -61,46 +63,6 @@ extension AttentionKernel {
 
 """
     
-    if !cacheC {
-      // 32 x 64 allocation in threadgroup memory
-      // leading dimension = transposeC ? 32 : 64
-      let leadingBlockDimensionC = transposeState.C 
-      ? UInt16(32) : UInt16(blockDimensionD)
-      
-      output += """
-
-const ushort \(C)_leading_block_dimension = \(leadingBlockDimensionC);
-
-// Find where the \(C) data will be read from.
-ushort2 \(C)_block_offset(morton_offset.x, morton_offset.y + sidx * 8);
-auto \(C)_block = (threadgroup float*)(threadgroup_block);
-\(C)_block = simdgroup_matrix_storage<float>::apply_offset(
-  \(C)_block, \(C)_leading_block_dimension,
-  \(C)_block_offset, \(transposeState.C));
-
-"""
-    }
-    
-    do {
-      // 32 x 64 allocation in threadgroup memory
-      // leading dimension = transposeB ? 32 : 64
-      let leadingBlockDimensionB = transposeState.B 
-      ? UInt16(32) : UInt16(blockDimensionD)
-      
-      output += """
-
-const ushort \(B)_leading_block_dimension = \(leadingBlockDimensionB);
-
-// Find where the \(B) data will be read from.
-ushort2 \(B)_block_offset(morton_offset.x, morton_offset.y);
-auto \(B)_block = (threadgroup float*)(threadgroup_block);
-\(B)_block = simdgroup_matrix_storage<float>::apply_offset(
-  \(B)_block, \(B)_leading_block_dimension,
-  \(B)_block_offset, \(transposeState.B));
-
-"""
-    }
-    
     output += """
 
 // Outer loop over D.
@@ -113,6 +75,13 @@ for (ushort d_outer = 0; d_outer < D; d_outer += D_block_dimension) {
 
     if !cacheC {
       output += """
+
+// Where the \(C) data will be read from.
+ushort2 \(C)_block_offset(morton_offset.x, morton_offset.y + sidx * 8);
+auto \(C)_block = (threadgroup float*)(threadgroup_block);
+\(C)_block = simdgroup_matrix_storage<float>::apply_offset(
+  \(C)_block, \(leadingBlockDimensionC),
+  \(C)_block_offset, \(transposeState.C));
 
 // Where the \(C) data will be written to.
 simdgroup_matrix_storage<float> \(C)_sram[D_block_dimension / 8];
@@ -133,16 +102,8 @@ if (\(matrixOffset.K) == 0) {
 """
     
     if !cacheC {
-      let loopBody = """
-
-ushort2 origin(d, 0);
-\(C)_sram[(d_register_start + d) / 8].load(
-  \(C)_block, \(C)_leading_block_dimension, origin, \(transposeState.C));
-
-"""
-      
       output += """
-
+  
   threadgroup_barrier(mem_flags::mem_threadgroup);
   if (sidx == 0) {
     uint2 C_offset(d_outer, \(matrixOffset.M));
@@ -158,37 +119,27 @@ ushort2 origin(d, 0);
     
     simdgroup_event event;
     event.async_copy(
-      dst, \(C)_leading_block_dimension, tile_dst,
+      dst, \(leadingBlockDimensionC), tile_dst,
       src, \(leadingDimensions.C), tile_src, \(transposeState.C));
     simdgroup_event::wait(1, &event);
   }
-
   threadgroup_barrier(mem_flags::mem_threadgroup);
-
+  
   // Iterate over the head dimension.
-  if (D - d_outer >= D_block_dimension) {
   #pragma clang loop unroll(full)
-    for (ushort d = 0; d < D_block_dimension; d += 8) {
-      \(loopBody)
-    }
-  } else {
-    #pragma clang loop unroll(full)
-    for (ushort d = 0; d < D % D_block_dimension; d += 8) {
-      \(loopBody)
-    }
+  for (ushort d = 0; d < D_block_dimension; d += 8) {
+    ushort2 origin(d, 0);
+    \(C)_sram[(d_register_start + d) / 8].load(
+      \(C)_block, \(leadingBlockDimensionC), origin, \(transposeState.C));
   }
   
 """
     }
     
     output += """
-  
+
   \(descriptor.everyIterationLoading ?? "")
 }
-
-"""
-    
-    output += """
 
 threadgroup_barrier(mem_flags::mem_threadgroup);
 if (sidx == 0) {
@@ -205,48 +156,41 @@ if (sidx == 0) {
   
   simdgroup_event event;
   event.async_copy(
-    dst, \(B)_leading_block_dimension, tile_dst,
+    dst, \(leadingBlockDimensionB), tile_dst,
     src, \(leadingDimensions.B), tile_src, \(transposeState.B));
   simdgroup_event::wait(1, &event);
 }
+threadgroup_barrier(mem_flags::mem_threadgroup);
 
-"""
-    
-    let loopBodyAB = """
-
-// Load the RHS from threadgroup memory.
-ushort2 origin(d, k);
-simdgroup_matrix_storage<float> \(B);
-\(B).load(
-  \(B)_block, \(B)_leading_block_dimension, origin, \(transposeState.B));
-
-// Add the contributions from the c-th/r-th element of the
-// attention matrix row/column.
-\(C)_sram[(d_register_start + d) / 8].multiply(
-  \(A)_sram[k / 8], \(B), /*accumulate=*/true);
+// Find where the \(B) data will be read from.
+ushort2 \(B)_block_offset(morton_offset.x, morton_offset.y);
+auto \(B)_block = (threadgroup float*)(threadgroup_block);
+\(B)_block = simdgroup_matrix_storage<float>::apply_offset(
+  \(B)_block, \(leadingBlockDimensionB),
+  \(B)_block_offset, \(transposeState.B));
 
 """
     
     let innerLoopAB = """
 
 // Iterate over the head dimension.
-if (D - d_outer >= D_block_dimension) {
 #pragma clang loop unroll(full)
-  for (ushort d = 0; d < D_block_dimension; d += 8) {
-    \(loopBodyAB)
-  }
-} else {
-#pragma clang loop unroll(full)
-  for (ushort d = 0; d < D % D_block_dimension; d += 8) {
-    \(loopBodyAB)
-  }
+for (ushort d = 0; d < D_block_dimension; d += 8) {
+  // Load the RHS from threadgroup memory.
+  ushort2 origin(d, k);
+  simdgroup_matrix_storage<float> \(B);
+  \(B).load(
+    \(B)_block, \(leadingBlockDimensionB), origin, \(transposeState.B));
+  
+  // Add the contributions from the c-th/r-th element of the
+  // attention matrix row/column.
+  \(C)_sram[(d_register_start + d) / 8].multiply(
+    \(A)_sram[k / 8], \(B), /*accumulate=*/true);
 }
 
 """
     
     output += """
-
-threadgroup_barrier(mem_flags::mem_threadgroup);
 
 // Iterate over the row/column dimension.
 #pragma clang loop unroll(full)
@@ -263,30 +207,18 @@ if (\(matrixOffset.K) + 32 < \(matrixDimensions.K)) {
 }
 
 """
+    
     if !cacheC {
-      let loopBody = """
-
-ushort2 origin(d, 0);
-\(C)_sram[(d_register_start + d) / 8].store(
-  \(C)_block, \(C)_leading_block_dimension, origin, \(transposeState.C));
-
-"""
-      
       output += """
 
 threadgroup_barrier(mem_flags::mem_threadgroup);
 
 // Iterate over the head dimension.
-if (D - d_outer >= D_block_dimension) {
 #pragma clang loop unroll(full)
-  for (ushort d = 0; d < D_block_dimension; d += 8) {
-    \(loopBody)
-  }
-} else {
-#pragma clang loop unroll(full)
-  for (ushort d = 0; d < D % D_block_dimension; d += 8) {
-    \(loopBody)
-  }
+for (ushort d = 0; d < D_block_dimension; d += 8) {
+  ushort2 origin(d, 0);
+  \(C)_sram[(d_register_start + d) / 8].store(
+    \(C)_block, \(leadingBlockDimensionC), origin, \(transposeState.C));
 }
 
 threadgroup_barrier(mem_flags::mem_threadgroup);
@@ -305,7 +237,7 @@ if (sidx == 0) {
   simdgroup_event event;
   event.async_copy(
     dst, \(leadingDimensions.C), tile_dst,
-    src, \(C)_leading_block_dimension, tile_src, \(transposeState.C));
+    src, \(leadingBlockDimensionC), tile_src, \(transposeState.C));
   simdgroup_event::wait(1, &event);
 }
 

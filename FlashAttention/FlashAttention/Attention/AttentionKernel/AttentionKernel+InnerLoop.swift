@@ -186,6 +186,8 @@ extension AttentionKernel {
     accumulateDesc.everyIterationLoading = """
 
 // update the previous value of 'O'
+//
+// TODO: When the D block dimension is very small, elide this conditional.
 if (correction != 1) {
 #pragma clang loop unroll(full)
   for (ushort d = 0; d < D_block_dimension; d += 8) {
@@ -200,16 +202,9 @@ if (correction != 1) {
 float l_reciprocal = 1 / l;
 
 // Iterate over the head dimension.
-if (D - d_outer >= D_block_dimension) {
 #pragma clang loop unroll(full)
-  for (ushort d = 0; d < D_block_dimension; d += 8) {
-    *(O_sram[(d_register_start + d) / 8].thread_elements()) *= l_reciprocal;
-  }
-} else {
-#pragma clang loop unroll(full)
-  for (ushort d = 0; d < D % D_block_dimension; d += 8) {
-    *(O_sram[(d_register_start + d) / 8].thread_elements()) *= l_reciprocal;
-  }
+for (ushort d = 0; d < D_block_dimension; d += 8) {
+  *(O_sram[(d_register_start + d) / 8].thread_elements()) *= l_reciprocal;
 }
 
 """
@@ -311,8 +306,8 @@ if (D - d_outer >= D_block_dimension) {
     outerProductDesc.leadingDimensionB = leadingDimensions.Q
     outerProductDesc.matrixDimensions = (M: "C", N: "R")
     outerProductDesc.matrixOffset = (M: "gid * 32", N: "r")
+    let KQT_Descriptor = outerProduct(descriptor: outerProductDesc)
     
-    var KQT_Descriptor = outerProduct(descriptor: outerProductDesc)
     let loadLD = """
     
     threadgroup_barrier(mem_flags::mem_threadgroup);
@@ -436,6 +431,7 @@ if (D - d_outer >= D_block_dimension) {
 """
     }
     
+    // Add the final closing brace.
     output += """
 
 }
