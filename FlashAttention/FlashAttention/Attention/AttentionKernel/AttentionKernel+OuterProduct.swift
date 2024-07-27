@@ -60,17 +60,15 @@ extension AttentionKernel {
 """
     
     do {
-      var leadingBlockDimensionB: UInt16
-      var blockDimensionD: UInt16
-      if cacheA {
-        // 32 x 64 allocation in threadgroup memory
-        // leading dimension = transposeB ? 32 : 64
-        leadingBlockDimensionB = transposeB ? UInt16(32) : UInt16(64)
-        blockDimensionD = 64
-      } else {
-        leadingBlockDimensionB = 32
-        blockDimensionD = 16
+      var blockDimensionD = self.blockDimensionD
+      if !cacheA {
+        guard blockDimensionD % 16 == 0 else {
+          fatalError("Invalid block dimension.")
+        }
+        blockDimensionD /= 2
       }
+      
+      let leadingBlockDimensionB = transposeB ? UInt16(32) : blockDimensionD
       
       output += """
 
@@ -142,7 +140,7 @@ const ushort D_block_dimension = \(blockDimensionD);
         uint2 \(B)_offset(d_outer, \(matrixOffset.N));
         auto src = simdgroup_matrix_storage<float>::apply_offset(
           \(B), \(leadingDimensionB), \(B)_offset, \(transposeB));
-        auto dst = (threadgroup float*)(threadgroup_block) + \(32 * 32);
+        auto dst = (threadgroup float*)(threadgroup_block) + \(32 * self.blockDimensionD / 2);
         
         ushort N_src_dimension = min(
           uint(32), \(matrixDimensions.N) - \(matrixOffset.N));
@@ -253,7 +251,7 @@ extension AttentionKernel {
       
       // Find where the \(B) data will be read from.
       ushort2 \(B)_block_offset(morton_offset.x, morton_offset.y);
-      auto \(B)T_block = (threadgroup float*)(threadgroup_block) + \(32 * 32);
+      auto \(B)T_block = (threadgroup float*)(threadgroup_block) + \(32 * self.blockDimensionD / 2);
       \(B)T_block = simdgroup_matrix_storage<float>::apply_offset(
         \(B)T_block, 32, \(B)_block_offset, \(!transposeB));
 

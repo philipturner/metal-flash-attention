@@ -48,13 +48,13 @@ O_block = simdgroup_matrix_storage<float>::apply_offset(
 ushort2 A_block_offset(morton_offset.x, morton_offset.y + sidx * 8);
 auto dO_block = (threadgroup float*)(threadgroup_block);
 dO_block = simdgroup_matrix_storage<float>::apply_offset(
-  dO_block, 32, A_block_offset, \(transposeState.O));
+  dO_block, O_leading_block_dimension, A_block_offset, \(transposeState.O));
 
 // Find where the O data will be read from.
 ushort2 B_block_offset(morton_offset.x, morton_offset.y + sidx * 8);
-auto O_block = (threadgroup float*)(threadgroup_block) + \(32 * 32);
+auto O_block = (threadgroup float*)(threadgroup_block) + \(32 * self.blockDimensionD / 2);
 O_block = simdgroup_matrix_storage<float>::apply_offset(
-  O_block, 32, B_block_offset, \(transposeState.O));
+  O_block, O_leading_block_dimension, B_block_offset, \(transposeState.O));
 
 """
     }
@@ -83,8 +83,8 @@ D_term_accumulator += dO_value * O_value;
 ushort2 origin(d, 0);
 simdgroup_matrix_storage<float> dO;
 simdgroup_matrix_storage<float> O;
-dO.load(dO_block, 32, origin, \(transposeState.O));
-O.load(O_block, 32, origin, \(transposeState.O));
+dO.load(dO_block, O_leading_block_dimension, origin, \(transposeState.O));
+O.load(O_block, O_leading_block_dimension, origin, \(transposeState.O));
 
 // Perform the pointwise multiplication.
 float2 dO_value = *(dO.thread_elements());

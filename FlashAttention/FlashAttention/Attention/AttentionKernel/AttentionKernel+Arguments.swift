@@ -67,9 +67,7 @@ extension AttentionKernel {
       fatalError("Descriptor was incomplete.")
     }
     
-    // 32 x 64 allocation in threadgroup memory
-    // leading dimension = transposeState ? 32 : 64
-    let leadingBlockDimension = transposeState ? UInt16(32) : UInt16(64)
+    let leadingBlockDimension = transposeState ? UInt16(32) : blockDimensionD
     
     let loopBody = """
 
@@ -95,12 +93,14 @@ simdgroup_matrix_storage<float> \(name)_sram[\(paddedD / 8)];
   
   // Outer loop over D.
 #pragma clang loop unroll(full)
-  for (ushort d_outer = 0; d_outer < D; d_outer += 64) {
+  for (ushort d_outer = 0; d_outer < D; d_outer += \(blockDimensionD)) {
     threadgroup_barrier(mem_flags::mem_threadgroup);
     
     if (sidx == 0) {
-      ushort D_src_dimension = min(ushort(64), ushort(D - d_outer));
-      ushort D_dst_dimension = min(ushort(64), ushort(\(paddedD) - d_outer));
+      ushort D_src_dimension = min(
+        ushort(\(blockDimensionD)), ushort(D - d_outer));
+      ushort D_dst_dimension = min(
+        ushort(\(blockDimensionD)), ushort(\(paddedD) - d_outer));
       
       uint2 \(name)_offset(d_outer, M_offset);
       auto src = simdgroup_matrix_storage<float>::apply_offset(
@@ -119,14 +119,14 @@ simdgroup_matrix_storage<float> \(name)_sram[\(paddedD / 8)];
     threadgroup_barrier(mem_flags::mem_threadgroup);
 
     // Iterate over the head dimension.
-    if (D - d_outer >= 64) {
+    if (D - d_outer >= \(blockDimensionD)) {
 #pragma clang loop unroll(full)
-      for (ushort d = 0; d < 64; d += 8) {
+      for (ushort d = 0; d < \(blockDimensionD); d += 8) {
         \(loopBody)
       }
     } else {
 #pragma clang loop unroll(full)
-      for (ushort d = 0; d < D % 64; d += 8) {
+      for (ushort d = 0; d < D % \(blockDimensionD); d += 8) {
         \(loopBody)
       }
     }
@@ -145,9 +145,7 @@ simdgroup_matrix_storage<float> \(name)_sram[\(paddedD / 8)];
       fatalError("Descriptor was incomplete.")
     }
     
-    // 32 x 64 allocation in threadgroup memory
-    // leading dimension = transposeState ? 32 : 64
-    let leadingBlockDimension = transposeState ? UInt16(32) : UInt16(64)
+    let leadingBlockDimension = transposeState ? UInt16(32) : blockDimensionD
     
     let loopBody = """
 
@@ -169,18 +167,18 @@ ushort2 origin(d, 0);
   
   // Outer loop over D.
 #pragma clang loop unroll(full)
-  for (ushort d_outer = 0; d_outer < D; d_outer += 64) {
+  for (ushort d_outer = 0; d_outer < D; d_outer += \(blockDimensionD)) {
     threadgroup_barrier(mem_flags::mem_threadgroup);
     
     // Iterate over the head dimension.
-    if (D - d_outer >= 64) {
+    if (D - d_outer >= \(blockDimensionD)) {
 #pragma clang loop unroll(full)
-      for (ushort d = 0; d < 64; d += 8) {
+      for (ushort d = 0; d < \(blockDimensionD); d += 8) {
         \(loopBody)
       }
     } else {
 #pragma clang loop unroll(full)
-      for (ushort d = 0; d < D % 64; d += 8) {
+      for (ushort d = 0; d < D % \(blockDimensionD); d += 8) {
         \(loopBody)
       }
     }
@@ -192,7 +190,8 @@ ushort2 origin(d, 0);
       auto dst = simdgroup_matrix_storage<float>::apply_offset(
         \(name), \(leadingDimension), \(name)_offset, \(transposeState));
      
-      ushort D_dimension = min(ushort(64), ushort(D - d_outer));
+      ushort D_dimension = min(
+        ushort(\(blockDimensionD)), ushort(D - d_outer));
       ushort RC_dimension = min(
         uint(32), \(matrixDimension) - \(matrixOffset));
       ushort2 tile_src(D_dimension, RC_dimension);

@@ -28,6 +28,7 @@ struct AttentionKernel {
   var transposeState: (Q: Bool, K: Bool, V: Bool, O: Bool)
   
   var blockDimensions: (R: UInt16, C: UInt16)
+  var blockDimensionD: UInt16
   var matrixDimensionD: UInt16
   var paddedD: UInt16
   
@@ -60,6 +61,7 @@ struct AttentionKernel {
     // Declare the size of the register allocation.
     matrixDimensionD = matrixDimensions.D
     paddedD = (matrixDimensions.D + 8 - 1) / 8 * 8
+    blockDimensionD = 64
     blockDimensions = (R: 32, C: 32)
     
     leadingDimensions = ("D", "D", "D", "D")
@@ -67,7 +69,7 @@ struct AttentionKernel {
     leadingDimensionDerivativeST = leadingDimensionDerivativeST / 32 * 32
     
     threadgroupSize = 128
-    threadgroupMemoryAllocation = (32 * 32 + 32 * 32) * 4
+    threadgroupMemoryAllocation = (32 * blockDimensionD) * 4
     
     // Inject the contents of the headers.
     source += """

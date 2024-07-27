@@ -48,7 +48,6 @@ extension AttentionKernel {
     }
     
     // Declare the block size along the D dimension.
-    let blockDimensionD: UInt16 = 32
     let leadingBlockDimensionB = transposeState.B ? 32 : blockDimensionD
     let leadingBlockDimensionC = transposeState.C ? 32 : blockDimensionD
     

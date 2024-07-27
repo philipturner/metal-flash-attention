@@ -99,8 +99,6 @@ func profileProblemSize(N: Int, D: Int) -> Int {
   // - Try an explicit register spilling mode, where async copies are used to
   //   minimize the overhead of paging. Use the output buffers as the scratch
   //   space.
-  //   - TODO: Check the efficacy of the optimization that reduces register
-  //     pressure during the accumulate loop.
   //   - TODO: Restructure the outer-product loop to be similar to the
   //     accumulate loop.
   //   - Then, investigate the remaining register pressure bottlenecks.
@@ -112,7 +110,7 @@ func profileProblemSize(N: Int, D: Int) -> Int {
   networkDesc.D = D
   let network = Network(descriptor: networkDesc)
   
-  let cacheAll: Bool = false
+  let cacheAll: Bool = true
   var attentionDesc = AttentionDescriptor()
   attentionDesc.cachedInputs = (
     Q: cacheAll, K: cacheAll, V: cacheAll, dO: cacheAll)
