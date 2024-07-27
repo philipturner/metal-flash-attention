@@ -313,8 +313,9 @@ if (D - d_outer >= D_block_dimension) {
     outerProductDesc.matrixOffset = (M: "gid * 32", N: "r")
     
     var KQT_Descriptor = outerProduct(descriptor: outerProductDesc)
-    KQT_Descriptor.firstIterationLoading = """
+    let loadLD = """
     
+    threadgroup_barrier(mem_flags::mem_threadgroup);
     if (sidx == 0) {
       // Locate the L[i] in device and threadgroup memory.
       auto L_terms_src = L_terms + r;
@@ -368,33 +369,30 @@ if (D - d_outer >= D_block_dimension) {
     let VdOT_descriptor = outerProduct(descriptor: outerProductDesc)
     
     var output = """
-
+  
   // Iterate over the rows.
   for (uint r = 0; r < R; r += 32) {
     // load L[r]
     // load D[r]
+    \(loadLD)
+    
     // S^T = K * Q^T
     simdgroup_matrix_storage<float> ST_sram[32 / 8];
     \(twoOperandAccess(descriptor: KQT_Descriptor))
     
     // P^T = exp(S^T - L)
     \(checkpointSoftmaxT())
-
+    
     // dV += P^T * dO
+    \(accumulate(descriptor: accumulateDesc))
+    
     // dP^T = V * dO^T
     simdgroup_matrix_storage<float> dPT_sram[32 / 8];
-    //
-    // computeDerivativeSoftmaxT()
-    
-    // We're using separate function calls to simplify the code, for the time
-    // being. Once we see a considerable speedup from the other optimizations,
-    // consider fusing the reading of dO again.
-    \(accumulate(descriptor: accumulateDesc))
     \(twoOperandAccess(descriptor: VdOT_descriptor))
     
     // dS^T = P^T * (dP^T - D) * scaleFactor
     \(computeDerivativeSoftmaxT())
-
+    
 """
     
     if computeDerivativeK {
@@ -412,33 +410,37 @@ if (D - d_outer >= D_block_dimension) {
       
       output += """
   
-    // dK += dS^T * Q
-    \(accumulate(descriptor: accumulateDesc))
-  }
+// dK += dS^T * Q
+\(accumulate(descriptor: accumulateDesc))
   
 """
     } else {
       output += """
 
-    // store dS^T[c][r]
-    {
-      uint2 device_origin(r, gid * 32 + sidx * 8);
-      device_origin += uint2(morton_offset);
-      device bfloat* dst =
-      simdgroup_matrix_storage<bfloat>::apply_offset(
-        dST, \(leadingDimensionDerivativeST), device_origin, false);
-      
+// store dS^T[c][r]
+{
+  uint2 device_origin(r, gid * 32 + sidx * 8);
+  device_origin += uint2(morton_offset);
+  device bfloat* dst =
+  simdgroup_matrix_storage<bfloat>::apply_offset(
+    dST, \(leadingDimensionDerivativeST), device_origin, false);
+  
 #pragma clang loop unroll(full)
-      for (ushort c = 0; c < 32; c += 8) {
-        ushort2 thread_origin(c, 0);
-        dST_sram[c / 8].store_bfloat(
-          dst, \(leadingDimensionDerivativeST), thread_origin, false);
-      }
-    }
+  for (ushort c = 0; c < 32; c += 8) {
+    ushort2 thread_origin(c, 0);
+    dST_sram[c / 8].store_bfloat(
+      dst, \(leadingDimensionDerivativeST), thread_origin, false);
   }
+}
 
 """
     }
+    
+    output += """
+
+}
+
+"""
     
     return output
   }
