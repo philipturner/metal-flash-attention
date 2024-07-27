@@ -325,7 +325,7 @@ if (D - d_outer >= D_block_dimension) {
     
     accessDesc.innerLoop = """
 
-// Iterate over the row/column dimension.
+
 \(innerLoopAB(startN: "0", endN: "N_remainder_padded"))
 if (\(matrixOffset.N) + 32 < \(matrixDimensions.N)) {
   \(innerLoopAB(startN: "N_remainder_padded", endN: "32"))
