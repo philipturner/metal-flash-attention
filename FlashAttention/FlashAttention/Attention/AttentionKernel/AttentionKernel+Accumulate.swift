@@ -46,10 +46,13 @@ extension AttentionKernel {
       fatalError("Descriptor was incomplete.")
     }
     
+    // Declare the block size along the D dimension.
+    let blockDimensionD = 64
+    
     var output: String = """
 
 {
-  const ushort D_block_dimension = 64;
+  const ushort D_block_dimension = \(blockDimensionD);
   
   // Declare the remainder of the row/column dimension.
   ushort K_remainder = (\(matrixDimensions.K) % 32 == 0)
@@ -61,7 +64,9 @@ extension AttentionKernel {
     if !cacheC {
       // 32 x 64 allocation in threadgroup memory
       // leading dimension = transposeC ? 32 : 64
-      let leadingBlockDimensionC = transposeState.C ? UInt16(32) : UInt16(64)
+      let leadingBlockDimensionC = transposeState.C 
+      ? UInt16(32) : UInt16(blockDimensionD)
+      
       output += """
 
 const ushort \(C)_leading_block_dimension = \(leadingBlockDimensionC);
@@ -73,16 +78,15 @@ auto \(C)_block = (threadgroup float*)(threadgroup_block);
   \(C)_block, \(C)_leading_block_dimension,
   \(C)_block_offset, \(transposeState.C));
 
-// Where the \(C) data will be written to.
-simdgroup_matrix_storage<float> \(C)_sram[D_block_dimension / 8];
-
 """
     }
     
     do {
       // 32 x 64 allocation in threadgroup memory
       // leading dimension = transposeB ? 32 : 64
-      let leadingBlockDimensionB = transposeState.B ? UInt16(32) : UInt16(64)
+      let leadingBlockDimensionB = transposeState.B 
+      ? UInt16(32) : UInt16(blockDimensionD)
+      
       output += """
 
 const ushort \(B)_leading_block_dimension = \(leadingBlockDimensionB);
@@ -100,18 +104,31 @@ auto \(B)_block = (threadgroup float*)(threadgroup_block);
     output += """
 
 // Outer loop over D.
-#pragma clang loop unroll(\(cacheC ? "full" : "full"))
+#pragma clang loop unroll(\(cacheC ? "full" : "disable"))
 for (ushort d_outer = 0; d_outer < D; d_outer += D_block_dimension) {
   ushort D_src_dimension = min(D_block_dimension, ushort(D - d_outer));
   ushort d_register_start = \(cacheC ? "d_outer" : "0");
-  
-  if (\(matrixOffset.K) == 0) {
-  #pragma clang loop unroll(full)
-    for (ushort d = 0; d < D_block_dimension; d += 8) {
-      \(C)_sram[(d_register_start + d) / 8] = 
-      simdgroup_matrix_storage<float>(0);
+
+"""
+
+    if !cacheC {
+      output += """
+
+// Where the \(C) data will be written to.
+simdgroup_matrix_storage<float> \(C)_sram[D_block_dimension / 8];
+
+"""
     }
-  } else {
+    
+    output += """
+    
+if (\(matrixOffset.K) == 0) {
+#pragma clang loop unroll(full)
+  for (ushort d = 0; d < D_block_dimension; d += 8) {
+    \(C)_sram[(d_register_start + d) / 8] =
+    simdgroup_matrix_storage<float>(0);
+  }
+} else {
 
 """
     
@@ -155,7 +172,7 @@ ushort2 origin(d, 0);
       \(loopBody)
     }
   } else {
-  #pragma clang loop unroll(full)
+    #pragma clang loop unroll(full)
     for (ushort d = 0; d < D % D_block_dimension; d += 8) {
       \(loopBody)
     }
@@ -230,7 +247,7 @@ if (D - d_outer >= D_block_dimension) {
     output += """
 
 threadgroup_barrier(mem_flags::mem_threadgroup);
-      
+
 // Iterate over the row/column dimension.
 #pragma clang loop unroll(full)
 for (ushort k = 0; k < K_remainder_padded; k += 8) {

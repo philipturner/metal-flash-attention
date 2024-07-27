@@ -16,22 +16,22 @@ import QuartzCore
 func executeScript() {
   // Automate the execution of the test suite.
   profileProblemSize(N: 10, D: 3)
-  profileProblemSize(N: 10, D: 80)
-  profileProblemSize(N: 8, D: 2)
-  profileProblemSize(N: 9, D: 2)
-  profileProblemSize(N: 23, D: 2)
-  profileProblemSize(N: 24, D: 2)
-  profileProblemSize(N: 25, D: 2)
-  profileProblemSize(N: 192, D: 77)
-  profileProblemSize(N: 192, D: 80)
-  profileProblemSize(N: 93, D: 32)
-  profileProblemSize(N: 99, D: 35)
-  profileProblemSize(N: 64, D: 32)
-  profileProblemSize(N: 32, D: 64)
-  profileProblemSize(N: 4, D: 1)
-  profileProblemSize(N: 4, D: 2)
-  profileProblemSize(N: 384, D: 95)
-  profileProblemSize(N: 777, D: 199)
+//  profileProblemSize(N: 10, D: 80)
+//  profileProblemSize(N: 8, D: 2)
+//  profileProblemSize(N: 9, D: 2)
+//  profileProblemSize(N: 23, D: 2)
+//  profileProblemSize(N: 24, D: 2)
+//  profileProblemSize(N: 25, D: 2)
+//  profileProblemSize(N: 192, D: 77)
+//  profileProblemSize(N: 192, D: 80)
+//  profileProblemSize(N: 93, D: 32)
+//  profileProblemSize(N: 99, D: 35)
+//  profileProblemSize(N: 64, D: 32)
+//  profileProblemSize(N: 32, D: 64)
+//  profileProblemSize(N: 4, D: 1)
+//  profileProblemSize(N: 4, D: 2)
+//  profileProblemSize(N: 384, D: 95)
+//  profileProblemSize(N: 777, D: 199)
   
 //  let N_array = [128, 160, 192]
 //  let D_array = [32, 48, 64, 80, 96, 128, 160, 192, 256]
@@ -111,9 +111,12 @@ func profileProblemSize(N: Int, D: Int) -> Int {
   networkDesc.D = D
   let network = Network(descriptor: networkDesc)
   
+  let cacheAll: Bool = true
   var attentionDesc = AttentionDescriptor()
-  attentionDesc.cachedInputs = (Q: false, K: false, V: false, dO: false)
-  attentionDesc.cachedOutputs = (dQ: false, dK: false, dV: false, O: false)
+  attentionDesc.cachedInputs = (
+    Q: cacheAll, K: cacheAll, V: cacheAll, dO: cacheAll)
+  attentionDesc.cachedOutputs = (
+    dQ: cacheAll, dK: cacheAll, dV: cacheAll, O: cacheAll)
   attentionDesc.matrixDimensions = (R: UInt32(N), C: UInt32(N), D: UInt16(D))
   attentionDesc.transposeState = (Q: false, K: false, V: false, O: false)
   
