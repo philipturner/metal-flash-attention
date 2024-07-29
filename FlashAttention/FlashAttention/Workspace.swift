@@ -153,7 +153,7 @@ func profileProblemSize(N: Int, D: Int) -> Int {
   networkDesc.D = D
   let network = Network(descriptor: networkDesc)
   
-  let cacheAll: Bool = false
+  let cacheAll: Bool = true
   var attentionDesc = AttentionDescriptor()
   attentionDesc.cachedInputs = (
     Q: cacheAll, K: cacheAll, V: cacheAll, dO: cacheAll)

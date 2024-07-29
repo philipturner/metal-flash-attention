@@ -69,18 +69,6 @@ extension AttentionKernel {
 
 """
     
-    do {
-      let blockDimensionD: UInt16 = 32
-      let leadingBlockDimensionB = transposeState.B ? UInt16(32) : blockDimensionD
-      
-      output += """
-
-const ushort \(B)_leading_block_dimension = \(leadingBlockDimensionB);
-const ushort D_block_dimension = \(blockDimensionD);
-
-"""
-    }
-    
     if cacheA {
       output += """
       
@@ -88,7 +76,7 @@ const ushort D_block_dimension = \(blockDimensionD);
       ushort2 \(B)_block_offset(morton_offset.x, morton_offset.y);
       auto \(B)T_block = (threadgroup float*)(threadgroup_block);
       \(B)T_block = simdgroup_matrix_storage<float>::apply_offset(
-        \(B)T_block, \(B)_leading_block_dimension,
+        \(B)T_block, \(leadingBlockDimensionB),
         \(B)_block_offset, \(!transposeState.B));
 
 """
@@ -99,13 +87,15 @@ const ushort D_block_dimension = \(blockDimensionD);
       ushort2 \(A)_block_offset(morton_offset.x, morton_offset.y + sidx * 8);
       auto \(A)_block = (threadgroup float*)(threadgroup_block);
       \(A)_block = simdgroup_matrix_storage<float>::apply_offset(
-        \(A)_block, 32, \(A)_block_offset, \(transposeState.A));
+        \(A)_block, \(leadingBlockDimensionA),
+        \(A)_block_offset, \(transposeState.A));
       
       // Find where the \(B) data will be read from.
       ushort2 \(B)_block_offset(morton_offset.x, morton_offset.y);
       auto \(B)T_block = (threadgroup float*)(threadgroup_block) + \(32 * 32);
       \(B)T_block = simdgroup_matrix_storage<float>::apply_offset(
-        \(B)T_block, 32, \(B)_block_offset, \(!transposeState.B));
+        \(B)T_block, \(leadingBlockDimensionB),
+        \(B)_block_offset, \(!transposeState.B));
 
 """
     }
@@ -114,13 +104,14 @@ const ushort D_block_dimension = \(blockDimensionD);
     output += """
   
 #pragma clang loop unroll(\(cacheA ? "full" : "disable"))
-  for (ushort d_outer = 0; d_outer < D; d_outer += D_block_dimension) {
+  for (ushort d_outer = 0; d_outer < D; d_outer += \(blockDimensionD)) {
     threadgroup_barrier(mem_flags::mem_threadgroup);
     
     if (sidx == 0) {
-      ushort D_src_dimension = min(D_block_dimension, ushort(D - d_outer));
+      ushort D_src_dimension = min(
+        ushort(\(blockDimensionD)), ushort(D - d_outer));
       ushort D_dst_dimension = min(
-        D_block_dimension, ushort(\(paddedD) - d_outer));
+        ushort(\(blockDimensionD)), ushort(\(paddedD) - d_outer));
     
 """
     
@@ -140,7 +131,7 @@ const ushort D_block_dimension = \(blockDimensionD);
       
       simdgroup_event event;
       event.async_copy(
-        dst, \(B)_leading_block_dimension, tile_dst,
+        dst, \(leadingBlockDimensionB), tile_dst,
         src, \(leadingDimensions.B), tile_src, \(transposeState.B));
       simdgroup_event::wait(1, &event);
       
@@ -161,7 +152,7 @@ const ushort D_block_dimension = \(blockDimensionD);
         ushort2 tile_src(D_src_dimension, M_src_dimension);
         ushort2 tile_dst(D_dst_dimension, M_src_dimension);
         events[0].async_copy(
-          dst, 32, tile_dst,
+          dst, \(leadingBlockDimensionA), tile_dst,
           src, \(leadingDimensions.A), tile_src, \(transposeState.A));
       }
       
@@ -178,7 +169,7 @@ const ushort D_block_dimension = \(blockDimensionD);
         ushort2 tile_src(D_src_dimension, N_src_dimension);
         ushort2 tile_dst(D_dst_dimension, N_dst_dimension);
         events[1].async_copy(
-          dst, \(B)_leading_block_dimension, tile_dst,
+          dst, \(leadingBlockDimensionB), tile_dst,
           src, \(leadingDimensions.B), tile_src, \(transposeState.B));
       }
       simdgroup_event::wait(2, events);
@@ -198,7 +189,7 @@ for (ushort n = \(startN); n < \(endN); n += 8) {
   ushort2 origin(n, d);
   simdgroup_matrix_storage<float> \(B)T;
   \(B)T.load(
-    \(B)T_block, \(B)_leading_block_dimension, origin, \(!transposeState.B));
+    \(B)T_block, \(leadingBlockDimensionB), origin, \(!transposeState.B));
   
   // Mask out the first accumulate at compile-time.
   bool accumulate = (d_outer > 0) || (d > 0);
@@ -234,14 +225,14 @@ for (ushort n = \(startN); n < \(endN); n += 8) {
       return """
 
 // Inner loop over D.
-if (D - d_outer >= D_block_dimension) {
+if (D - d_outer >= \(blockDimensionD)) {
 #pragma clang loop unroll(full)
-  for (ushort d = 0; d < D_block_dimension; d += 8) {
+  for (ushort d = 0; d < \(blockDimensionD); d += 8) {
     \(loopBody)
   }
 } else {
 #pragma clang loop unroll(full)
-  for (ushort d = 0; d < D % D_block_dimension; d += 8) {
+  for (ushort d = 0; d < D % \(blockDimensionD); d += 8) {
     \(loopBody)
   }
 }
