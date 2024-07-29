@@ -5,11 +5,11 @@
 //  Created by Philip Turner on 7/19/24.
 //
 
-// Operations where both arguments are read from RAM.
+// Operations where the accumulator is the attention matrix.
 
-// MARK: - Two-Operand Access
+// MARK: - Outer Product
 
-struct AttentionTwoOperandAccessDescriptor {
+struct AttentionOuterProductDescriptor {
   /// Name of left-hand side, source of a 32 x D block.
   var A: String?
   var cacheA: Bool?
@@ -17,35 +17,37 @@ struct AttentionTwoOperandAccessDescriptor {
   /// Name of right-hand side, source of a 32 x D block.
   var B: String?
   
+  /// Name of product register allocation (32 x 32).
+  var C: String?
+  
   var transposeA: Bool?
   var transposeB: Bool?
   var leadingDimensionA: String?
   var leadingDimensionB: String?
   var matrixDimensions: (M: String, N: String)?
   var matrixOffset: (M: String, N: String)?
-  
-  /// Required. Code that sets the various pointers into threadgroup memory.
-  var reservePointers: String?
-  
-  /// Required. Code for the inner loop, scoped over D.
-  var innerLoop: String?
 }
 
 extension AttentionKernel {
-  func twoOperandAccess(
-    descriptor: AttentionTwoOperandAccessDescriptor
+  // Accepts the operands A and B, then performs the multiplication A * B^T.
+  //
+  // A and C are divided along four SIMDs in the M dimension. Each SIMD carries
+  // out an (8 x D) x (D x 32) matrix multiplication. The product has
+  // dimensions 8 (M dimension) x 32 (N dimension). The caller specifies which
+  // attention matrix dimension (R, C) corresponds to N.
+  func outerProduct(
+    descriptor: AttentionOuterProductDescriptor
   ) -> String {
     guard let A = descriptor.A,
           let cacheA = descriptor.cacheA,
           let B = descriptor.B,
+          let C = descriptor.C,
           let transposeA = descriptor.transposeA,
           let transposeB = descriptor.transposeB,
           let leadingDimensionA = descriptor.leadingDimensionA,
           let leadingDimensionB = descriptor.leadingDimensionB,
           let matrixDimensions = descriptor.matrixDimensions,
-          let matrixOffset = descriptor.matrixOffset,
-          let reservePointers = descriptor.reservePointers,
-          let innerLoop = descriptor.innerLoop else {
+          let matrixOffset = descriptor.matrixOffset else {
       fatalError("Descriptor was incomplete.")
     }
     
@@ -60,14 +62,7 @@ extension AttentionKernel {
 """
     
     do {
-      var blockDimensionD = self.blockDimensionD
-      if !cacheA {
-        guard blockDimensionD % 16 == 0 else {
-          fatalError("Invalid block dimension.")
-        }
-        blockDimensionD /= 2
-      }
-      
+      let blockDimensionD: UInt16 = 32
       let leadingBlockDimensionB = transposeB ? UInt16(32) : blockDimensionD
       
       output += """
@@ -78,7 +73,34 @@ const ushort D_block_dimension = \(blockDimensionD);
 """
     }
     
-    output += reservePointers
+    if cacheA {
+      output += """
+      
+      // Find where the \(B) data will be read from.
+      ushort2 \(B)_block_offset(morton_offset.x, morton_offset.y);
+      auto \(B)T_block = (threadgroup float*)(threadgroup_block);
+      \(B)T_block = simdgroup_matrix_storage<float>::apply_offset(
+        \(B)T_block, \(B)_leading_block_dimension,
+        \(B)_block_offset, \(!transposeB));
+
+"""
+    } else {
+      output += """
+
+      // Find where the \(A) data will be read from.
+      ushort2 \(A)_block_offset(morton_offset.x, morton_offset.y + sidx * 8);
+      auto \(A)_block = (threadgroup float*)(threadgroup_block);
+      \(A)_block = simdgroup_matrix_storage<float>::apply_offset(
+        \(A)_block, 32, \(A)_block_offset, \(transposeA));
+      
+      // Find where the \(B) data will be read from.
+      ushort2 \(B)_block_offset(morton_offset.x, morton_offset.y);
+      auto \(B)T_block = (threadgroup float*)(threadgroup_block) + \(32 * 32);
+      \(B)T_block = simdgroup_matrix_storage<float>::apply_offset(
+        \(B)T_block, 32, \(B)_block_offset, \(!transposeB));
+
+"""
+    }
     
     // Outer loop over D.
     output += """
@@ -140,7 +162,7 @@ const ushort D_block_dimension = \(blockDimensionD);
         uint2 \(B)_offset(d_outer, \(matrixOffset.N));
         auto src = simdgroup_matrix_storage<float>::apply_offset(
           \(B), \(leadingDimensionB), \(B)_offset, \(transposeB));
-        auto dst = (threadgroup float*)(threadgroup_block) + \(32 * self.blockDimensionD / 2);
+        auto dst = (threadgroup float*)(threadgroup_block) + \(32 * 32);
         
         ushort N_src_dimension = min(
           uint(32), \(matrixDimensions.N) - \(matrixOffset.N));
@@ -153,108 +175,6 @@ const ushort D_block_dimension = \(blockDimensionD);
       }
       simdgroup_event::wait(2, events);
     
-"""
-    }
-    
-    output += """
-
-    }
-    threadgroup_barrier(mem_flags::mem_threadgroup);
-    
-    \(innerLoop)
-  }
-}
-
-"""
-    
-    return output
-  }
-}
-
-// MARK: - Outer Product
-
-struct AttentionOuterProductDescriptor {
-  /// Name of left-hand side, source of a 32 x D block.
-  var A: String?
-  var cacheA: Bool?
-  
-  /// Name of right-hand side, source of a 32 x D block.
-  var B: String?
-  
-  /// Name of product register allocation (32 x 32).
-  var C: String?
-  
-  var transposeA: Bool?
-  var transposeB: Bool?
-  var leadingDimensionA: String?
-  var leadingDimensionB: String?
-  var matrixDimensions: (M: String, N: String)?
-  var matrixOffset: (M: String, N: String)?
-}
-
-extension AttentionKernel {
-  // Accepts the operands A and B, then performs the multiplication A * B^T.
-  //
-  // A and C are divided along four SIMDs in the M dimension. Each SIMD carries
-  // out an (8 x D) x (D x 32) matrix multiplication. The product has
-  // dimensions 8 (M dimension) x 32 (N dimension). The caller specifies which
-  // attention dimension (R, C) corresponds to N.
-  //
-  // Returns: Another descriptor, which you can intercept before materializing
-  // the final source code.
-  func outerProduct(
-    descriptor: AttentionOuterProductDescriptor
-  ) -> AttentionTwoOperandAccessDescriptor {
-    guard let A = descriptor.A,
-          let cacheA = descriptor.cacheA,
-          let B = descriptor.B,
-          let C = descriptor.C,
-          let transposeA = descriptor.transposeA,
-          let transposeB = descriptor.transposeB,
-          let leadingDimensionA = descriptor.leadingDimensionA,
-          let leadingDimensionB = descriptor.leadingDimensionB,
-          let matrixDimensions = descriptor.matrixDimensions,
-          let matrixOffset = descriptor.matrixOffset else {
-      fatalError("Descriptor was incomplete.")
-    }
-    
-    var accessDesc = AttentionTwoOperandAccessDescriptor()
-    accessDesc.A = A
-    accessDesc.cacheA = descriptor.cacheA
-    accessDesc.B = B
-    accessDesc.transposeA = transposeA
-    accessDesc.transposeB = transposeB
-    accessDesc.leadingDimensionA = leadingDimensionA
-    accessDesc.leadingDimensionB = leadingDimensionB
-    accessDesc.matrixDimensions = matrixDimensions
-    accessDesc.matrixOffset = matrixOffset
-    
-    if cacheA {
-      accessDesc.reservePointers = """
-      
-      // Find where the \(B) data will be read from.
-      ushort2 \(B)_block_offset(morton_offset.x, morton_offset.y);
-      auto \(B)T_block = (threadgroup float*)(threadgroup_block);
-      \(B)T_block = simdgroup_matrix_storage<float>::apply_offset(
-        \(B)T_block, \(B)_leading_block_dimension,
-        \(B)_block_offset, \(!transposeB));
-
-"""
-    } else {
-      accessDesc.reservePointers = """
-
-      // Find where the \(A) data will be read from.
-      ushort2 \(A)_block_offset(morton_offset.x, morton_offset.y + sidx * 8);
-      auto \(A)_block = (threadgroup float*)(threadgroup_block);
-      \(A)_block = simdgroup_matrix_storage<float>::apply_offset(
-        \(A)_block, 32, \(A)_block_offset, \(transposeA));
-      
-      // Find where the \(B) data will be read from.
-      ushort2 \(B)_block_offset(morton_offset.x, morton_offset.y);
-      auto \(B)T_block = (threadgroup float*)(threadgroup_block) + \(32 * self.blockDimensionD / 2);
-      \(B)T_block = simdgroup_matrix_storage<float>::apply_offset(
-        \(B)T_block, 32, \(B)_block_offset, \(!transposeB));
-
 """
     }
     
@@ -321,16 +241,20 @@ if (D - d_outer >= D_block_dimension) {
 """
     }
     
-    accessDesc.innerLoop = """
+    output += """
 
-
-\(innerLoopAB(startN: "0", endN: "N_remainder_padded"))
-if (\(matrixOffset.N) + 32 < \(matrixDimensions.N)) {
-  \(innerLoopAB(startN: "N_remainder_padded", endN: "32"))
+    }
+    threadgroup_barrier(mem_flags::mem_threadgroup);
+    
+    \(innerLoopAB(startN: "0", endN: "N_remainder_padded"))
+    if (\(matrixOffset.N) + 32 < \(matrixDimensions.N)) {
+      \(innerLoopAB(startN: "N_remainder_padded", endN: "32"))
+    }
+  }
 }
 
 """
     
-    return accessDesc
+    return output
   }
 }

@@ -141,7 +141,6 @@ func profileProblemSize(N: Int, D: Int) -> Int {
   // - Try an explicit register spilling mode, where async copies are used to
   //   minimize the overhead of paging. Use the output buffers as the scratch
   //   space.
-  //   - TODO: Make the L/D terms be async copied only immediately before use.
   //   - TODO: Restructure the outer-product loop to be similar to the
   //     accumulate loop.
   //   - Then, investigate the remaining register pressure bottlenecks

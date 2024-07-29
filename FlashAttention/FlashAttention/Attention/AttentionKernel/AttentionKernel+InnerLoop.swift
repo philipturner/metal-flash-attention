@@ -169,7 +169,7 @@ extension AttentionKernel {
     outerProductDesc.leadingDimensionB = leadingDimensions.K
     outerProductDesc.matrixDimensions = (M: "R", N: "C")
     outerProductDesc.matrixOffset = (M: "gid * 32", N: "c")
-    let QKT_Descriptor = outerProduct(descriptor: outerProductDesc)
+    let QKT = outerProduct(descriptor: outerProductDesc)
     
     var accumulateDesc = AttentionAccumulateDescriptor()
     accumulateDesc.A = "P"
@@ -191,7 +191,7 @@ extension AttentionKernel {
   for (uint c = 0; c < C; c += 32) {
     // S = Q * K^T
     simdgroup_matrix_storage<float> S_sram[32 / 8];
-    \(twoOperandAccess(descriptor: QKT_Descriptor))
+    \(QKT)
     
     // (m, l, P) = softmax(m, l, S * scaleFactor)
     \(maskAlongColumns(sram: "S_sram"))
@@ -218,7 +218,7 @@ extension AttentionKernel {
     outerProductDesc.leadingDimensionB = leadingDimensions.K
     outerProductDesc.matrixDimensions = (M: "R", N: "C")
     outerProductDesc.matrixOffset = (M: "gid * 32", N: "c")
-    let QKT_Descriptor = outerProduct(descriptor: outerProductDesc)
+    let QKT = outerProduct(descriptor: outerProductDesc)
     
     outerProductDesc = AttentionOuterProductDescriptor()
     outerProductDesc.A = "dO"
@@ -231,7 +231,7 @@ extension AttentionKernel {
     outerProductDesc.leadingDimensionB = leadingDimensions.V
     outerProductDesc.matrixDimensions = (M: "R", N: "C")
     outerProductDesc.matrixOffset = (M: "gid * 32", N: "c")
-    let dOVT_Descriptor = outerProduct(descriptor: outerProductDesc)
+    let dOVT = outerProduct(descriptor: outerProductDesc)
     
     var accumulateDesc = AttentionAccumulateDescriptor()
     accumulateDesc.A = "dS"
@@ -251,14 +251,14 @@ extension AttentionKernel {
   for (uint c = 0; c < C; c += 32) {
     // S = Q * K^T
     simdgroup_matrix_storage<float> S_sram[32 / 8];
-    \(twoOperandAccess(descriptor: QKT_Descriptor))
+    \(QKT)
     
     // P = softmax(S * scaleFactor)
     \(checkpointSoftmax())
     
     // dP = dO * V^T
     simdgroup_matrix_storage<float> dP_sram[32 / 8];
-    \(twoOperandAccess(descriptor: dOVT_Descriptor))
+    \(dOVT)
     
     // dS = P * (dP - D) * scaleFactor
     \(computeDerivativeSoftmax())
@@ -282,7 +282,7 @@ extension AttentionKernel {
     outerProductDesc.leadingDimensionB = leadingDimensions.Q
     outerProductDesc.matrixDimensions = (M: "C", N: "R")
     outerProductDesc.matrixOffset = (M: "gid * 32", N: "r")
-    let KQT_Descriptor = outerProduct(descriptor: outerProductDesc)
+    let KQT = outerProduct(descriptor: outerProductDesc)
     
     var accumulateDesc = AttentionAccumulateDescriptor()
     accumulateDesc.A = "PT"
@@ -307,7 +307,7 @@ extension AttentionKernel {
     outerProductDesc.leadingDimensionB = leadingDimensions.O
     outerProductDesc.matrixDimensions = (M: "C", N: "R")
     outerProductDesc.matrixOffset = (M: "gid * 32", N: "r")
-    let VdOT_descriptor = outerProduct(descriptor: outerProductDesc)
+    let VdOT = outerProduct(descriptor: outerProductDesc)
     
     var output = """
   
@@ -315,7 +315,7 @@ extension AttentionKernel {
   for (uint r = 0; r < R; r += 32) {
     // S^T = K * Q^T
     simdgroup_matrix_storage<float> ST_sram[32 / 8];
-    \(twoOperandAccess(descriptor: KQT_Descriptor))
+    \(KQT)
     
     // P^T = exp(S^T - L)
     \(checkpointSoftmaxT())
@@ -325,7 +325,7 @@ extension AttentionKernel {
     
     // dP^T = V * dO^T
     simdgroup_matrix_storage<float> dPT_sram[32 / 8];
-    \(twoOperandAccess(descriptor: VdOT_descriptor))
+    \(VdOT)
     
     // dS^T = P^T * (dP^T - D) * scaleFactor
     \(computeDerivativeSoftmaxT())
