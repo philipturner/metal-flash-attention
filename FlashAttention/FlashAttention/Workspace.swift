@@ -33,6 +33,7 @@ func executeScript() {
   profileProblemSize(N: 384, D: 95)
   profileProblemSize(N: 777, D: 199)
   
+  #if false
   let N_array = [128, 160, 192]
   let D_array = [32, 48, 64, 80, 96, 128, 160, 192, 256]
   var outputString: String = ""
@@ -50,6 +51,7 @@ func executeScript() {
   }
   print()
   print(outputString)
+  #endif
   
   // Before: 100% Caching
   //
@@ -90,6 +92,66 @@ func executeScript() {
   //  latency: 53
   //  latency: 1640
   //  latency: 7624
+  
+  // Old D terms computation
+  //
+  //  latency: 64
+  //  latency: 128
+  //  latency: 55
+  //  latency: 63
+  //  latency: 76
+  //  latency: 73
+  //  latency: 80
+  //  latency: 887
+  //  latency: 896
+  //  latency: 204
+  //  latency: 338
+  //  latency: 155
+  //  latency: 120
+  //  latency: 52
+  //  latency: 57
+  //  latency: 1778
+  //  latency: 7497
+  
+  // New D terms computation
+  //
+  //  latency: 66
+  //  latency: 124
+  //  latency: 54
+  //  latency: 62
+  //  latency: 75
+  //  latency: 77
+  //  latency: 86
+  //  latency: 852
+  //  latency: 829
+  //  latency: 206
+  //  latency: 339
+  //  latency: 152
+  //  latency: 118
+  //  latency: 54
+  //  latency: 56
+  //  latency: 1824
+  //  latency: 7483
+  
+  // New D terms computation (unrolled)
+  //
+  //  latency: 66
+  //  latency: 122
+  //  latency: 57
+  //  latency: 66
+  //  latency: 75
+  //  latency: 76
+  //  latency: 86
+  //  latency: 853
+  //  latency: 819
+  //  latency: 204
+  //  latency: 330
+  //  latency: 151
+  //  latency: 117
+  //  latency: 54
+  //  latency: 60
+  //  latency: 1393
+  //  latency: 6061
 }
 
 // Returns: Throughput in GINSTRS.
@@ -110,7 +172,7 @@ func profileProblemSize(N: Int, D: Int) -> Int {
   networkDesc.D = D
   let network = Network(descriptor: networkDesc)
   
-  let cacheAll: Bool = true
+  let cacheAll: Bool = false
   var attentionDesc = AttentionDescriptor()
   attentionDesc.cachedInputs = (
     Q: cacheAll, K: cacheAll, V: cacheAll, dO: cacheAll)
@@ -251,7 +313,7 @@ func profileProblemSize(N: Int, D: Int) -> Int {
     let start = commandBuffer.gpuStartTime
     let end = commandBuffer.gpuEndTime
     let latency = end - start
-     print("latency:", Int(latency * 1e6))
+    print("latency:", Int(latency * 1e6))
     return latency
   }
   executeCommandBuffer(dispatchCount: 1)

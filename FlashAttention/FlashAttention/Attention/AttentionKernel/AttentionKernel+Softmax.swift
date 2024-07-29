@@ -10,6 +10,16 @@
 // MARK: - L Terms and D Terms
 
 extension AttentionKernel {
+  func blockLTerms() -> String {
+    let offset = 2 * 32 * 32
+    return "(threadgroup float*)(threadgroup_block) + (\(offset))"
+  }
+  
+  func blockDTerms() -> String {
+    let offset = 2 * 32 * 32 + 1 * 32
+    return "(threadgroup float*)(threadgroup_block) + (\(offset))"
+  }
+  
   func computeLTerm() -> String {
     return """
 
@@ -124,14 +134,104 @@ if (D - d_outer >= D_block_dimension) {
 """
   }
   
-  func blockLTerms() -> String {
-    let offset = 2 * 32 * 32
-    return "(threadgroup float*)(threadgroup_block) + (\(offset))"
-  }
+  // Overhauling the original D-terms function, to not rely on the machinery
+  // of two-operand access / outer-product. Breaking the dependency will make
+  // the latter easier to rewrite.
+  func computeDTerm2() -> String {
+    let leadingBlockDimensionO: UInt16 = transposeState.O ? 32 : 8
+    
+    return """
+
+float2 D_term_accumulator(0);
+{
+  // Threads outside of the matrix along the row dimension, have their origin
+  // shifted in-bounds.
+  uint D_offset = morton_offset.x;
+  uint R_offset = min(R, gid * 32 + sidx * 8 + morton_offset.y);
+  uint2 offset_src(D_offset, R_offset);
   
-  func blockDTerms() -> String {
-    let offset = 2 * 32 * 32 + 1 * 32
-    return "(threadgroup float*)(threadgroup_block) + (\(offset))"
+  // Find where the dO and O data will be read from.
+  auto dO_src = simdgroup_matrix_storage<float>::apply_offset(
+    dO, \(leadingDimensions.O), offset_src, \(transposeState.O));
+  auto O_src = simdgroup_matrix_storage<float>::apply_offset(
+    O, \(leadingDimensions.O), offset_src, \(transposeState.O));
+  
+  // Going to use async copy to handle the matrix edge.
+#pragma clang loop unroll(disable) // TODO: Does unrolling improve performance?
+  for (ushort d = 0; d < D - (D % 8); d += 8) {
+    ushort2 origin(d, 0);
+    simdgroup_matrix_storage<float> dO;
+    simdgroup_matrix_storage<float> O;
+    dO.load(dO_src, \(leadingDimensions.O), origin, \(transposeState.O));
+    O.load(O_src, \(leadingDimensions.O), origin, \(transposeState.O));
+    
+    // Perform the pointwise multiplication.
+    float2 dO_value = *(dO.thread_elements());
+    float2 O_value = *(O.thread_elements());
+    D_term_accumulator += dO_value * O_value;
+  }
+}
+
+if (D % 8 != 0) {
+  threadgroup_barrier(mem_flags::mem_threadgroup);
+  if (sidx == 0) {
+    uint D_offset = D - (D % 8);
+    uint R_offset = gid * 32;
+    uint2 offset_src(D_offset, R_offset);
+    
+    auto dO_src = simdgroup_matrix_storage<float>::apply_offset(
+      dO, \(leadingDimensions.O), offset_src, \(transposeState.O));
+    auto O_src = simdgroup_matrix_storage<float>::apply_offset(
+      O, \(leadingDimensions.O), offset_src, \(transposeState.O));
+    auto dO_dst = (threadgroup float*)(threadgroup_block);
+    auto O_dst = (threadgroup float*)(threadgroup_block) + \(32 * 8);
+    
+    ushort D_src_dimension = D % 8;
+    ushort D_dst_dimension = 8;
+    ushort R_src_dimension = min(uint(32), R - gid * 32);
+    ushort2 tile_src(D_src_dimension, R_src_dimension);
+    ushort2 tile_dst(D_dst_dimension, R_src_dimension);
+    
+    // Issue two async copies.
+    simdgroup_event events[2];
+    events[0].async_copy(
+      dO_dst, \(leadingBlockDimensionO), tile_dst,
+      dO_src, \(leadingDimensions.O), tile_src, \(transposeState.O));
+    events[1].async_copy(
+      O_dst, \(leadingBlockDimensionO), tile_dst,
+      O_src, \(leadingDimensions.O), tile_src, \(transposeState.O));
+    simdgroup_event::wait(2, events);
+  }
+
+  // Find where the dO and O data will be read from.
+  ushort2 offset_src(morton_offset.x, morton_offset.y + sidx * 8);
+  auto dO_block = (threadgroup float*)(threadgroup_block);
+  auto O_block = (threadgroup float*)(threadgroup_block) + \(32 * 8);
+  dO_block = simdgroup_matrix_storage<float>::apply_offset(
+    dO_block, \(leadingBlockDimensionO), offset_src, \(transposeState.O));
+  O_block = simdgroup_matrix_storage<float>::apply_offset(
+    O_block, \(leadingBlockDimensionO), offset_src, \(transposeState.O));
+  threadgroup_barrier(mem_flags::mem_threadgroup);
+  
+  // Load the zero-padded edge data.
+  ushort2 origin(0, 0);
+  simdgroup_matrix_storage<float> dO;
+  simdgroup_matrix_storage<float> O;
+  dO.load(dO_block, \(leadingBlockDimensionO), origin, \(transposeState.O));
+  O.load(O_block, \(leadingBlockDimensionO), origin, \(transposeState.O));
+  
+  // Perform the pointwise multiplication.
+  float2 dO_value = *(dO.thread_elements());
+  float2 O_value = *(O.thread_elements());
+  D_term_accumulator += dO_value * O_value;
+}
+
+float D_term = D_term_accumulator[0] + D_term_accumulator[1];
+D_term += simd_shuffle_xor(D_term, 1);
+D_term += simd_shuffle_xor(D_term, 8);
+D_term *= 1 / sqrt(float(D));
+
+"""
   }
 }
 

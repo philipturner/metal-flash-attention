@@ -380,7 +380,7 @@ extension AttentionKernel {
       accumulateDesc.matrixOffset = (M: "gid * 32", K: "r")
       
       output += """
-  
+
 // dK += dS^T * Q
 \(accumulate(descriptor: accumulateDesc))
   
@@ -392,14 +392,14 @@ extension AttentionKernel {
 {
   uint2 device_origin(r, gid * 32 + sidx * 8);
   device_origin += uint2(morton_offset);
-  device bfloat* dst =
-  simdgroup_matrix_storage<bfloat>::apply_offset(
+  device float* dst =
+  simdgroup_matrix_storage<float>::apply_offset(
     dST, \(leadingDimensionDerivativeST), device_origin, false);
   
 #pragma clang loop unroll(full)
   for (ushort c = 0; c < 32; c += 8) {
     ushort2 thread_origin(c, 0);
-    dST_sram[c / 8].store_bfloat(
+    dST_sram[c / 8].store(
       dst, \(leadingDimensionDerivativeST), thread_origin, false);
   }
 }

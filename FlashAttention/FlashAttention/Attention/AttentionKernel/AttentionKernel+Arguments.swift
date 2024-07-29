@@ -240,24 +240,19 @@ extension AttentionKernel {
     operandsMap["dV"] = AttentionOperand(
       precision: .FP32, bufferBinding: 7)
     operandsMap["dST"] = AttentionOperand(
-      // The default kernel doesn't support writing the attention matrix to
-      // memory. The purpose of dS is to increase performance when possible. If
-      // users wanted to set dS to FP32 for correctness, that would defeat the
-      // purpose. In addition, dS serves as a temporary allocation. Its
-      // contents should not be visible to any code that would measure
-      // numerical correctness.
-      //
       // This is an intermediate allocation, managed internally by the MFA
       // backend. We can impose constraints on it that wouldn't typically be
       // feasible. For example, we can force the row stride to be divisible by
-      // the block size (32). This simplifies the code; we don't need to run
+      // the block size (~32). This simplifies the code; we don't need to run
       // async copies to safeguard against corrupted memory accesses.
       //
       // If the matrix rows are noncontiguous, we must modify the in-tree
       // GEMM kernel to support custom leading dimensions. This can be
       // something modified explicitly by the user - an option to override the
-      // default leading dimension.
-      precision: .BF16, bufferBinding: 8)
+      // default leading dimension. The leading dimension is specified after
+      // the 'GEMMKernelDescriptor' is created from the 'GEMMDescriptor', and
+      // before the 'GEMMKernel' is created from the 'GEMMKernelDescriptor'.
+      precision: .FP32, bufferBinding: 8)
     operandsMap["dK"] = AttentionOperand(
       precision: .FP32, bufferBinding: 8)
     operandsMap["dQ"] = AttentionOperand(
@@ -423,7 +418,7 @@ extension AttentionKernel {
 """
       }
       
-      output += computeDTerm()
+      output += computeDTerm2()
       
     case .backwardKeyValue(let computeDerivativeK):
       if cachedInputs.K {
