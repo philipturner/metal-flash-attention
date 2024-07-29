@@ -99,7 +99,6 @@ kernel void attention(
     case .backwardKeyValue(let computeDerivativeK):
       source += createInnerLoopKeyValue(
         computeDerivativeK: computeDerivativeK)
-      threadgroupMemoryAllocation += (32 + 32) * 4
     }
     
     source += createCleanup(type: type)

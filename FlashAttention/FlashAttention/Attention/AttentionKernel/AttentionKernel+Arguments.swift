@@ -418,7 +418,7 @@ extension AttentionKernel {
 """
       }
       
-      output += computeDTerm2()
+      output += computeDTerm()
       
     case .backwardKeyValue(let computeDerivativeK):
       if cachedInputs.K {
@@ -486,7 +486,8 @@ extension AttentionKernel {
         output += """
 
     if (linear_array_slot < R) {
-      \(computeLTerm())
+      // Premultiplied by M_LOG2E_F.
+      float L_term = m + fast::log2(l);
       L_terms[linear_array_slot] = L_term;
     }
 

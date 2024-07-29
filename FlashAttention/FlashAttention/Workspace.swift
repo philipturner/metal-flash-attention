@@ -93,27 +93,7 @@ func executeScript() {
   //  latency: 1640
   //  latency: 7624
   
-  // Old D terms computation
-  //
-  //  latency: 64
-  //  latency: 128
-  //  latency: 55
-  //  latency: 63
-  //  latency: 76
-  //  latency: 73
-  //  latency: 80
-  //  latency: 887
-  //  latency: 896
-  //  latency: 204
-  //  latency: 338
-  //  latency: 155
-  //  latency: 120
-  //  latency: 52
-  //  latency: 57
-  //  latency: 1778
-  //  latency: 7497
-  
-  // New D terms computation
+  // With new D terms computation
   //
   //  latency: 66
   //  latency: 124
@@ -133,25 +113,25 @@ func executeScript() {
   //  latency: 1824
   //  latency: 7483
   
-  // New D terms computation (unrolled)
+  // With higher-latency L[i]/D[i] async copies
   //
   //  latency: 66
-  //  latency: 122
-  //  latency: 57
-  //  latency: 66
-  //  latency: 75
-  //  latency: 76
-  //  latency: 86
-  //  latency: 853
-  //  latency: 819
-  //  latency: 204
-  //  latency: 330
-  //  latency: 151
+  //  latency: 125
+  //  latency: 59
+  //  latency: 62
+  //  latency: 73
+  //  latency: 74
+  //  latency: 84
+  //  latency: 863
+  //  latency: 824
+  //  latency: 205
+  //  latency: 334
+  //  latency: 166
   //  latency: 117
-  //  latency: 54
-  //  latency: 60
-  //  latency: 1393
-  //  latency: 6061
+  //  latency: 56
+  //  latency: 58
+  //  latency: 1834
+  //  latency: 5318
 }
 
 // Returns: Throughput in GINSTRS.
@@ -161,9 +141,11 @@ func profileProblemSize(N: Int, D: Int) -> Int {
   // - Try an explicit register spilling mode, where async copies are used to
   //   minimize the overhead of paging. Use the output buffers as the scratch
   //   space.
+  //   - TODO: Make the L/D terms be async copied only immediately before use.
   //   - TODO: Restructure the outer-product loop to be similar to the
   //     accumulate loop.
-  //   - Then, investigate the remaining register pressure bottlenecks.
+  //   - Then, investigate the remaining register pressure bottlenecks
+  //     (e.g. softmax).
   // - Elide async copies on M3. Can the R edge (FWD, BWD dQ) and C edge
   //   (BWD dK/dV) be masked out through alternative means?
   

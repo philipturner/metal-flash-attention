@@ -284,36 +284,6 @@ extension AttentionKernel {
     outerProductDesc.matrixOffset = (M: "gid * 32", N: "r")
     let KQT_Descriptor = outerProduct(descriptor: outerProductDesc)
     
-    let loadLD = """
-    
-    threadgroup_barrier(mem_flags::mem_threadgroup);
-    if (sidx == 0) {
-      // Locate the L[i] in device and threadgroup memory.
-      auto L_terms_src = L_terms + r;
-      auto L_terms_dst = \(blockLTerms());
-      
-      // Locate the D[i] in device and threadgroup memory.
-      auto D_terms_src = D_terms + r;
-      auto D_terms_dst = \(blockDTerms());
-      
-      // Excessive padding because the softmax loops aren't scoped over
-      // edges of the row dimension.
-      ushort R_src_dimension = min(uint(32), R - r);
-      ushort R_dst_dimension = 32;
-      
-      // Issue two async copies.
-      simdgroup_event events[2];
-      events[0].async_copy(
-        L_terms_dst, 1, ushort2(R_dst_dimension, 1),
-        L_terms_src, 1, ushort2(R_src_dimension, 1));
-      events[1].async_copy(
-        D_terms_dst, 1, ushort2(R_dst_dimension, 1),
-        D_terms_src, 1, ushort2(R_src_dimension, 1));
-      simdgroup_event::wait(2, events);
-    }
-    
-"""
-    
     var accumulateDesc = AttentionAccumulateDescriptor()
     accumulateDesc.A = "PT"
     accumulateDesc.B = "dO"
@@ -343,10 +313,6 @@ extension AttentionKernel {
   
   // Iterate over the rows.
   for (uint r = 0; r < R; r += 32) {
-    // load L[r]
-    // load D[r]
-    \(loadLD)
-    
     // S^T = K * Q^T
     simdgroup_matrix_storage<float> ST_sram[32 / 8];
     \(twoOperandAccess(descriptor: KQT_Descriptor))

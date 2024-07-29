@@ -7,137 +7,10 @@
 
 // Elementwise operations on the attention matrix.
 
-// MARK: - L Terms and D Terms
+// MARK: - D[i] Computation
 
 extension AttentionKernel {
-  func blockLTerms() -> String {
-    let offset = 2 * 32 * 32
-    return "(threadgroup float*)(threadgroup_block) + (\(offset))"
-  }
-  
-  func blockDTerms() -> String {
-    let offset = 2 * 32 * 32 + 1 * 32
-    return "(threadgroup float*)(threadgroup_block) + (\(offset))"
-  }
-  
-  func computeLTerm() -> String {
-    return """
-
-  // Premultiplied by M_LOG2E_F.
-  float L_term = m + fast::log2(l);
-  
-"""
-  }
-  
   func computeDTerm() -> String {
-    var accessDesc = AttentionTwoOperandAccessDescriptor()
-    accessDesc.A = "dO"
-    accessDesc.cacheA = cachedInputs.dO
-    accessDesc.B = "O"
-    accessDesc.transposeA = transposeState.O
-    accessDesc.transposeB = transposeState.O
-    accessDesc.leadingDimensionA = leadingDimensions.O
-    accessDesc.leadingDimensionB = leadingDimensions.O
-    accessDesc.matrixDimensions = (M: "R", N: "R")
-    accessDesc.matrixOffset = (M: "gid * 32", N: "gid * 32")
-    
-    if cachedInputs.dO {
-      accessDesc.reservePointers = """
-
-// Find where the O data will be read from.
-ushort2 B_block_offset(morton_offset.x, morton_offset.y + sidx * 8);
-auto O_block = (threadgroup float*)(threadgroup_block);
-O_block = simdgroup_matrix_storage<float>::apply_offset(
-  O_block, O_leading_block_dimension, B_block_offset, \(transposeState.O));
-
-"""
-    } else {
-      accessDesc.reservePointers = """
-
-// Find where the dO data will be read from.
-ushort2 A_block_offset(morton_offset.x, morton_offset.y + sidx * 8);
-auto dO_block = (threadgroup float*)(threadgroup_block);
-dO_block = simdgroup_matrix_storage<float>::apply_offset(
-  dO_block, O_leading_block_dimension, A_block_offset, \(transposeState.O));
-
-// Find where the O data will be read from.
-ushort2 B_block_offset(morton_offset.x, morton_offset.y + sidx * 8);
-auto O_block = (threadgroup float*)(threadgroup_block) + \(32 * self.blockDimensionD / 2);
-O_block = simdgroup_matrix_storage<float>::apply_offset(
-  O_block, O_leading_block_dimension, B_block_offset, \(transposeState.O));
-
-"""
-    }
-    
-    var loopBody: String
-    if cachedInputs.dO {
-      loopBody = """
-
-// Load the RHS from threadgroup memory.
-ushort2 origin(d, 0);
-simdgroup_matrix_storage<float> dO;
-simdgroup_matrix_storage<float> O;
-dO = dO_sram[(d_outer + d) / 8];
-O.load(O_block, O_leading_block_dimension, origin, \(transposeState.O));
-
-// Perform the pointwise multiplication.
-float2 dO_value = *(dO.thread_elements());
-float2 O_value = *(O.thread_elements());
-D_term_accumulator += dO_value * O_value;
-
-"""
-    } else {
-      loopBody = """
-
-// Load the LHS and RHS from threadgroup memory.
-ushort2 origin(d, 0);
-simdgroup_matrix_storage<float> dO;
-simdgroup_matrix_storage<float> O;
-dO.load(dO_block, O_leading_block_dimension, origin, \(transposeState.O));
-O.load(O_block, O_leading_block_dimension, origin, \(transposeState.O));
-
-// Perform the pointwise multiplication.
-float2 dO_value = *(dO.thread_elements());
-float2 O_value = *(O.thread_elements());
-D_term_accumulator += dO_value * O_value;
-
-"""
-    }
-    
-    accessDesc.innerLoop = """
-
-// Inner loop over D.
-if (D - d_outer >= D_block_dimension) {
-#pragma clang loop unroll(full)
-  for (ushort d = 0; d < D_block_dimension; d += 8) {
-    \(loopBody)
-  }
-} else {
-#pragma clang loop unroll(full)
-  for (ushort d = 0; d < D % D_block_dimension; d += 8) {
-    \(loopBody)
-  }
-}
-
-"""
-    
-    return """
-
-  float2 D_term_accumulator(0);
-  \(twoOperandAccess(descriptor: accessDesc))
-  
-  float D_term = D_term_accumulator[0] + D_term_accumulator[1];
-  D_term += simd_shuffle_xor(D_term, 1);
-  D_term += simd_shuffle_xor(D_term, 8);
-  D_term *= 1 / sqrt(float(D));
-
-"""
-  }
-  
-  // Overhauling the original D-terms function, to not rely on the machinery
-  // of two-operand access / outer-product. Breaking the dependency will make
-  // the latter easier to rewrite.
-  func computeDTerm2() -> String {
     let leadingBlockDimensionO: UInt16 = transposeState.O ? 32 : 8
     
     return """
@@ -157,7 +30,7 @@ float2 D_term_accumulator(0);
     O, \(leadingDimensions.O), offset_src, \(transposeState.O));
   
   // Going to use async copy to handle the matrix edge.
-#pragma clang loop unroll(disable) // TODO: Does unrolling improve performance?
+#pragma clang loop unroll(disable)
   for (ushort d = 0; d < D - (D % 8); d += 8) {
     ushort2 origin(d, 0);
     simdgroup_matrix_storage<float> dO;
@@ -351,21 +224,46 @@ extension AttentionKernel {
     
     return """
 
-    auto L_terms_block = \(blockLTerms());
-    L_terms_block += morton_offset.x;
+simdgroup_matrix_storage<float> PT_sram[32 / 8];
+{
+  threadgroup_barrier(mem_flags::mem_threadgroup);
+  if (sidx == 0) {
+    // Locate the L[i] in device and threadgroup memory.
+    auto L_terms_src = L_terms + r;
+    auto L_terms_dst = (threadgroup float*)(threadgroup_block);
     
-    simdgroup_matrix_storage<float> PT_sram[32 / 8];
-#pragma clang loop unroll(full)
-    for (ushort r = 0; r < 32; r += 8) {
-      ushort2 origin(r, 0);
-      simdgroup_matrix_storage<float> L_terms;
-      L_terms.load(L_terms_block, 1, origin, false);
-      float2 L_term = *(L_terms.thread_elements());
-      
-      float2 ST_elements = float2(*(ST_sram[r / 8].thread_elements()));
-      float2 PT_elements = fast::exp2(ST_elements * \(scaleFactor) - L_term);
-      *(PT_sram[r / 8].thread_elements()) = PT_elements;
-    }
+    // Declare the remainder of the row dimension.
+    const ushort R_remainder = (R % 32 == 0) ? 32 : R % 32;
+    const ushort R_remainder_padded = (R_remainder + 7) / 8 * 8;
+    ushort R_src_dimension = min(uint(32), R - r);
+    ushort R_dst_dimension = (r + 32 < R) ? ushort(32) : R_remainder_padded;
+    
+    // Issue an async copy.
+    simdgroup_event event;
+    event.async_copy(
+      L_terms_dst, 1, ushort2(R_dst_dimension, 1),
+      L_terms_src, 1, ushort2(R_src_dimension, 1));
+    simdgroup_event::wait(1, &event);
+  }
+  
+  // Find where the L data will be read from.
+  auto L_terms_block = (threadgroup float*)(threadgroup_block);
+  L_terms_block += morton_offset.x;
+  threadgroup_barrier(mem_flags::mem_threadgroup);
+  
+  // Compute the softmax.
+  #pragma clang loop unroll(full)
+  for (ushort r = 0; r < 32; r += 8) {
+    ushort2 origin(r, 0);
+    simdgroup_matrix_storage<float> L_terms;
+    L_terms.load(L_terms_block, 1, origin, false);
+    float2 L_term = *(L_terms.thread_elements());
+    
+    float2 ST_elements = float2(*(ST_sram[r / 8].thread_elements()));
+    float2 PT_elements = fast::exp2(ST_elements * \(scaleFactor) - L_term);
+    *(PT_sram[r / 8].thread_elements()) = PT_elements;
+  }
+}
 
 """
   }
@@ -397,23 +295,48 @@ extension AttentionKernel {
     
     return """
 
-    auto D_terms_block = \(blockDTerms());
-    D_terms_block += morton_offset.x;
-
-    simdgroup_matrix_storage<float> dST_sram[32 / 8];
-#pragma clang loop unroll(full)
-    for (ushort r = 0; r < 32; r += 8) {
-      ushort2 origin(r, 0);
-      simdgroup_matrix_storage<float> D_terms;
-      D_terms.load(D_terms_block, 1, origin, false);
-      float2 D_term = *(D_terms.thread_elements());
-      
-      float2 PT_elements = float2(*(PT_sram[r / 8].thread_elements()));
-      float2 dPT_elements = float2(*(dPT_sram[r / 8].thread_elements()));
-      float2 dST_elements = dPT_elements * \(scaleFactor) - D_term;
-      dST_elements *= PT_elements;
-      *(dST_sram[r / 8].thread_elements()) = dST_elements;
-    }
+simdgroup_matrix_storage<float> dST_sram[32 / 8];
+{
+  threadgroup_barrier(mem_flags::mem_threadgroup);
+  if (sidx == 0) {
+    // Locate the D[i] in device and threadgroup memory.
+    auto D_terms_src = D_terms + r;
+    auto D_terms_dst = (threadgroup float*)(threadgroup_block);
+    
+    // Declare the remainder of the row dimension.
+    const ushort R_remainder = (R % 32 == 0) ? 32 : R % 32;
+    const ushort R_remainder_padded = (R_remainder + 7) / 8 * 8;
+    ushort R_src_dimension = min(uint(32), R - r);
+    ushort R_dst_dimension = (r + 32 < R) ? ushort(32) : R_remainder_padded;
+    
+    // Issue an async copy.
+    simdgroup_event event;
+    event.async_copy(
+      D_terms_dst, 1, ushort2(R_dst_dimension, 1),
+      D_terms_src, 1, ushort2(R_src_dimension, 1));
+    simdgroup_event::wait(1, &event);
+  }
+  
+  // Find where the D data will be read from.
+  auto D_terms_block = (threadgroup float*)(threadgroup_block);
+  D_terms_block += morton_offset.x;
+  threadgroup_barrier(mem_flags::mem_threadgroup);
+  
+  // Compute the softmax derivative.
+  #pragma clang loop unroll(full)
+  for (ushort r = 0; r < 32; r += 8) {
+    ushort2 origin(r, 0);
+    simdgroup_matrix_storage<float> D_terms;
+    D_terms.load(D_terms_block, 1, origin, false);
+    float2 D_term = *(D_terms.thread_elements());
+    
+    float2 PT_elements = float2(*(PT_sram[r / 8].thread_elements()));
+    float2 dPT_elements = float2(*(dPT_sram[r / 8].thread_elements()));
+    float2 dST_elements = dPT_elements * \(scaleFactor) - D_term;
+    dST_elements *= PT_elements;
+    *(dST_sram[r / 8].thread_elements()) = dST_elements;
+  }
+}
 
 """
   }

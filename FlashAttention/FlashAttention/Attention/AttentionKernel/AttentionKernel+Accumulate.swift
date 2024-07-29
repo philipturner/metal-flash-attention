@@ -296,9 +296,9 @@ extension AttentionKernel {
       }
       
       // Declare the remainder of the row/column dimension.
-      ushort K_remainder = (\(matrixDimensions.K) % 32 == 0)
+      const ushort K_remainder = (\(matrixDimensions.K) % 32 == 0)
         ? 32 : \(matrixDimensions.K) % 32;
-      ushort K_remainder_padded = (K_remainder + 7) / 8 * 8;
+      const ushort K_remainder_padded = (K_remainder + 7) / 8 * 8;
       \(loadRHS())
       \(declareRHSLocation())
       threadgroup_barrier(mem_flags::mem_threadgroup);
