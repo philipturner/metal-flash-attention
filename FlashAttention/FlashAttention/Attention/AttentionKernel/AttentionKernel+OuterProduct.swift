@@ -51,38 +51,23 @@ extension AttentionKernel {
     // 'accumulate'?
     // - Start by extracting constants that are currently named in the shader
     //   source. This action breaks some dependencies between the code modules.
+    // - Recompose the existing algorithm into modules + DSL.
+    // - Migrate to a different algorithm, where the LHS is read into registers
+    //   before the RHS is accessed.
     
     // Declare the block size along the D dimension.
     let blockDimensionD: UInt16 = 32
     let leadingBlockDimensionA = transposeState.A ? 32 : blockDimensionD
     let leadingBlockDimensionB = transposeState.B ? 32 : blockDimensionD
     
-    // MARK: - Not-Yet Transformed Code
+    // MARK: - LHS
     
-    var output: String = """
-
-{
-  // Declare the remainder of the row/column dimension.
-  ushort N_remainder = (\(matrixDimensions.N) % 32 == 0)
-    ? 32 : \(matrixDimensions.N) % 32;
-  ushort N_remainder_padded = (N_remainder + 7) / 8 * 8;
-
-"""
-    
-    if cacheA {
-      output += """
+    func declareLHSLocation() -> String {
+      guard !cacheA else {
+        return ""
+      }
+      return """
       
-      // Find where the \(B) data will be read from.
-      ushort2 \(B)_block_offset(morton_offset.x, morton_offset.y);
-      auto \(B)T_block = (threadgroup float*)(threadgroup_block);
-      \(B)T_block = simdgroup_matrix_storage<float>::apply_offset(
-        \(B)T_block, \(leadingBlockDimensionB),
-        \(B)_block_offset, \(!transposeState.B));
-
-"""
-    } else {
-      output += """
-
       // Find where the \(A) data will be read from.
       ushort2 \(A)_block_offset(morton_offset.x, morton_offset.y + sidx * 8);
       auto \(A)_block = (threadgroup float*)(threadgroup_block);
@@ -90,91 +75,92 @@ extension AttentionKernel {
         \(A)_block, \(leadingBlockDimensionA),
         \(A)_block_offset, \(transposeState.A));
       
-      // Find where the \(B) data will be read from.
-      ushort2 \(B)_block_offset(morton_offset.x, morton_offset.y);
-      auto \(B)T_block = (threadgroup float*)(threadgroup_block) + \(32 * 32);
-      \(B)T_block = simdgroup_matrix_storage<float>::apply_offset(
-        \(B)T_block, \(leadingBlockDimensionB),
-        \(B)_block_offset, \(!transposeState.B));
-
-"""
+      """
     }
     
-    // Outer loop over D.
-    output += """
-  
-#pragma clang loop unroll(\(cacheA ? "full" : "disable"))
-  for (ushort d_outer = 0; d_outer < D; d_outer += \(blockDimensionD)) {
-    threadgroup_barrier(mem_flags::mem_threadgroup);
-    
-    if (sidx == 0) {
-      ushort D_src_dimension = min(
-        ushort(\(blockDimensionD)), ushort(D - d_outer));
-      ushort D_dst_dimension = min(
-        ushort(\(blockDimensionD)), ushort(\(paddedD) - d_outer));
-    
-"""
-    
-    if cacheA {
-      output += """
+    func loadLHS() -> String {
+      guard !cacheA else {
+        return ""
+      }
+      return """
       
-      uint2 \(B)_offset(d_outer, \(matrixOffset.N));
-      auto src = simdgroup_matrix_storage<float>::apply_offset(
-        \(B), \(leadingDimensions.B), \(B)_offset, \(transposeState.B));
-      auto dst = (threadgroup float*)(threadgroup_block);
-      
-      ushort N_src_dimension = min(
-        uint(32), \(matrixDimensions.N) - \(matrixOffset.N));
-      ushort N_dst_dimension = max(N_remainder_padded, N_src_dimension);
-      ushort2 tile_src(D_src_dimension, N_src_dimension);
-      ushort2 tile_dst(D_dst_dimension, N_dst_dimension);
-      
-      simdgroup_event event;
-      event.async_copy(
-        dst, \(leadingBlockDimensionB), tile_dst,
-        src, \(leadingDimensions.B), tile_src, \(transposeState.B));
-      simdgroup_event::wait(1, &event);
-      
-"""
-    } else {
-      output += """
-      
-      // load \(A)[m]
-      simdgroup_event events[2];
-      {
+      threadgroup_barrier(mem_flags::mem_threadgroup);
+      if (sidx == 0) {
         uint2 \(A)_offset(d_outer, \(matrixOffset.M));
         auto src = simdgroup_matrix_storage<float>::apply_offset(
           \(A), \(leadingDimensions.A), \(A)_offset, \(transposeState.A));
         auto dst = (threadgroup float*)(threadgroup_block);
         
+        ushort D_src_dimension = min(
+          ushort(\(blockDimensionD)), ushort(D - d_outer));
+        ushort D_dst_dimension = min(
+          ushort(\(blockDimensionD)), ushort(\(paddedD) - d_outer));
         ushort M_src_dimension = min(
           uint(32), \(matrixDimensions.M) - \(matrixOffset.M));
         ushort2 tile_src(D_src_dimension, M_src_dimension);
         ushort2 tile_dst(D_dst_dimension, M_src_dimension);
-        events[0].async_copy(
+        
+        simdgroup_event event;
+        event.async_copy(
           dst, \(leadingBlockDimensionA), tile_dst,
           src, \(leadingDimensions.A), tile_src, \(transposeState.A));
+        simdgroup_event::wait(1, &event);
       }
       
-      // load \(B)[n]
-      {
+      """
+    }
+    
+    // MARK: - RHS
+    
+    // 'offset' - The offset in threadgroup memory. Accomodates for the fact
+    // that the current algorithm reads both operands at once.
+    
+    func declareRHSLocation() -> String {
+      let offset: UInt16 = cacheA ? 0 : 32 * 32
+      
+      return """
+      
+      // Find where the \(B) data will be read from.
+      ushort2 \(B)_block_offset(morton_offset.x, morton_offset.y);
+      auto \(B)T_block = (threadgroup float*)(threadgroup_block) + \(offset);
+      \(B)T_block = simdgroup_matrix_storage<float>::apply_offset(
+        \(B)T_block, \(leadingBlockDimensionB),
+        \(B)_block_offset, \(!transposeState.B));
+      
+      """
+    }
+    
+    func loadRHS() -> String {
+      let offset: UInt16 = cacheA ? 0 : 32 * 32
+      
+      return """
+      
+      threadgroup_barrier(mem_flags::mem_threadgroup);
+      if (sidx == 0) {
         uint2 \(B)_offset(d_outer, \(matrixOffset.N));
         auto src = simdgroup_matrix_storage<float>::apply_offset(
           \(B), \(leadingDimensions.B), \(B)_offset, \(transposeState.B));
-        auto dst = (threadgroup float*)(threadgroup_block) + \(32 * 32);
+        auto dst = (threadgroup float*)(threadgroup_block) + \(offset);
         
+        ushort D_src_dimension = min(
+          ushort(\(blockDimensionD)), ushort(D - d_outer));
+        ushort D_dst_dimension = min(
+          ushort(\(blockDimensionD)), ushort(\(paddedD) - d_outer));
         ushort N_src_dimension = min(
           uint(32), \(matrixDimensions.N) - \(matrixOffset.N));
-        ushort N_dst_dimension = max(N_remainder_padded, N_src_dimension);
+        ushort N_dst_dimension = max(
+          N_remainder_padded, N_src_dimension);
         ushort2 tile_src(D_src_dimension, N_src_dimension);
         ushort2 tile_dst(D_dst_dimension, N_dst_dimension);
-        events[1].async_copy(
+        
+        simdgroup_event event;
+        event.async_copy(
           dst, \(leadingBlockDimensionB), tile_dst,
           src, \(leadingDimensions.B), tile_src, \(transposeState.B));
+        simdgroup_event::wait(1, &event);
       }
-      simdgroup_event::wait(2, events);
-    
-"""
+      
+      """
     }
     
     func innerLoopAB(startN: String, endN: String) -> String {
@@ -240,20 +226,31 @@ if (D - d_outer >= \(blockDimensionD)) {
 """
     }
     
-    output += """
-
-    }
-    threadgroup_barrier(mem_flags::mem_threadgroup);
+    // MARK: - Loop Over Head Dimension
     
-    \(innerLoopAB(startN: "0", endN: "N_remainder_padded"))
-    if (\(matrixOffset.N) + 32 < \(matrixDimensions.N)) {
-      \(innerLoopAB(startN: "N_remainder_padded", endN: "32"))
-    }
-  }
-}
-
-"""
+    return """
     
-    return output
+    // Outer loop over D.
+    #pragma clang loop unroll(\(cacheA ? "full" : "disable"))
+    for (ushort d_outer = 0; d_outer < D; d_outer += \(blockDimensionD)) {
+      \(loadLHS())
+      \(declareLHSLocation())
+      
+      // Declare the remainder of the row/column dimension.
+      ushort N_remainder = (\(matrixDimensions.N) % 32 == 0)
+        ? 32 : \(matrixDimensions.N) % 32;
+      ushort N_remainder_padded = (N_remainder + 7) / 8 * 8;
+      \(loadRHS())
+      \(declareRHSLocation())
+      threadgroup_barrier(mem_flags::mem_threadgroup);
+      
+      // Inner loop over D.
+      \(innerLoopAB(startN: "0", endN: "N_remainder_padded"))
+      if (\(matrixOffset.N) + 32 < \(matrixDimensions.N)) {
+        \(innerLoopAB(startN: "N_remainder_padded", endN: "32"))
+      }
+    }
+    
+    """
   }
 }

@@ -323,6 +323,7 @@ extension AttentionKernel {
       """
     }
     
+    // Branch on which form the loop should take.
     var descriptor = LoopIterationDescriptor()
     if cacheC {
       descriptor.registerOffset = "d_outer"
