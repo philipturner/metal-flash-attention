@@ -163,10 +163,10 @@ extension AttentionKernel {
     outerProductDesc.cacheA = cachedInputs.Q
     outerProductDesc.B = "K"
     outerProductDesc.C = "S"
-    outerProductDesc.transposeA = transposeState.Q
-    outerProductDesc.transposeB = transposeState.K
-    outerProductDesc.leadingDimensionA = leadingDimensions.Q
-    outerProductDesc.leadingDimensionB = leadingDimensions.K
+    outerProductDesc.transposeState = (
+      A: transposeState.Q, B: transposeState.K)
+    outerProductDesc.leadingDimensions = (
+      A: leadingDimensions.Q, B: leadingDimensions.K)
     outerProductDesc.matrixDimensions = (M: "R", N: "C")
     outerProductDesc.matrixOffset = (M: "gid * 32", N: "c")
     let QKT = outerProduct(descriptor: outerProductDesc)
@@ -212,10 +212,10 @@ extension AttentionKernel {
     outerProductDesc.cacheA = cachedInputs.Q
     outerProductDesc.B = "K"
     outerProductDesc.C = "S"
-    outerProductDesc.transposeA = transposeState.Q
-    outerProductDesc.transposeB = transposeState.K
-    outerProductDesc.leadingDimensionA = leadingDimensions.Q
-    outerProductDesc.leadingDimensionB = leadingDimensions.K
+    outerProductDesc.transposeState = (
+      A: transposeState.Q, B: transposeState.K)
+    outerProductDesc.leadingDimensions = (
+      A: leadingDimensions.Q, B: leadingDimensions.K)
     outerProductDesc.matrixDimensions = (M: "R", N: "C")
     outerProductDesc.matrixOffset = (M: "gid * 32", N: "c")
     let QKT = outerProduct(descriptor: outerProductDesc)
@@ -225,10 +225,10 @@ extension AttentionKernel {
     outerProductDesc.cacheA = cachedInputs.dO
     outerProductDesc.B = "V"
     outerProductDesc.C = "dP"
-    outerProductDesc.transposeA = transposeState.O
-    outerProductDesc.transposeB = transposeState.V
-    outerProductDesc.leadingDimensionA = leadingDimensions.O
-    outerProductDesc.leadingDimensionB = leadingDimensions.V
+    outerProductDesc.transposeState = (
+      A: transposeState.O, B: transposeState.V)
+    outerProductDesc.leadingDimensions = (
+      A: leadingDimensions.O, B: leadingDimensions.V)
     outerProductDesc.matrixDimensions = (M: "R", N: "C")
     outerProductDesc.matrixOffset = (M: "gid * 32", N: "c")
     let dOVT = outerProduct(descriptor: outerProductDesc)
@@ -276,10 +276,10 @@ extension AttentionKernel {
     outerProductDesc.cacheA = cachedInputs.K
     outerProductDesc.B = "Q"
     outerProductDesc.C = "ST"
-    outerProductDesc.transposeA = transposeState.K
-    outerProductDesc.transposeB = transposeState.Q
-    outerProductDesc.leadingDimensionA = leadingDimensions.K
-    outerProductDesc.leadingDimensionB = leadingDimensions.Q
+    outerProductDesc.transposeState = (
+      A: transposeState.K, B: transposeState.Q)
+    outerProductDesc.leadingDimensions = (
+      A: leadingDimensions.K, B: leadingDimensions.Q)
     outerProductDesc.matrixDimensions = (M: "C", N: "R")
     outerProductDesc.matrixOffset = (M: "gid * 32", N: "r")
     let KQT = outerProduct(descriptor: outerProductDesc)
@@ -301,10 +301,10 @@ extension AttentionKernel {
     outerProductDesc.cacheA = cachedInputs.V
     outerProductDesc.B = "dO"
     outerProductDesc.C = "dPT"
-    outerProductDesc.transposeA = transposeState.V
-    outerProductDesc.transposeB = transposeState.O
-    outerProductDesc.leadingDimensionA = leadingDimensions.V
-    outerProductDesc.leadingDimensionB = leadingDimensions.O
+    outerProductDesc.transposeState = (
+      A: transposeState.V, B: transposeState.O)
+    outerProductDesc.leadingDimensions = (
+      A: leadingDimensions.V, B: leadingDimensions.O)
     outerProductDesc.matrixDimensions = (M: "C", N: "R")
     outerProductDesc.matrixOffset = (M: "gid * 32", N: "r")
     let VdOT = outerProduct(descriptor: outerProductDesc)

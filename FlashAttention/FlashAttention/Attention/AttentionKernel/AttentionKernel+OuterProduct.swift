@@ -20,10 +20,8 @@ struct AttentionOuterProductDescriptor {
   /// Name of product register allocation (32 x 32).
   var C: String?
   
-  var transposeA: Bool?
-  var transposeB: Bool?
-  var leadingDimensionA: String?
-  var leadingDimensionB: String?
+  var transposeState: (A: Bool, B: Bool)?
+  var leadingDimensions: (A: String, B: String)?
   var matrixDimensions: (M: String, N: String)?
   var matrixOffset: (M: String, N: String)?
 }
@@ -42,14 +40,24 @@ extension AttentionKernel {
           let cacheA = descriptor.cacheA,
           let B = descriptor.B,
           let C = descriptor.C,
-          let transposeA = descriptor.transposeA,
-          let transposeB = descriptor.transposeB,
-          let leadingDimensionA = descriptor.leadingDimensionA,
-          let leadingDimensionB = descriptor.leadingDimensionB,
+          let transposeState = descriptor.transposeState,
+          let leadingDimensions = descriptor.leadingDimensions,
           let matrixDimensions = descriptor.matrixDimensions,
           let matrixOffset = descriptor.matrixOffset else {
       fatalError("Descriptor was incomplete.")
     }
+    
+    // How do I incrementally transform this function into one very similar to
+    // 'accumulate'?
+    // - Start by extracting constants that are currently named in the shader
+    //   source. This action breaks some dependencies between the code modules.
+    
+    // Declare the block size along the D dimension.
+    let blockDimensionD: UInt16 = 32
+    let leadingBlockDimensionA = transposeState.A ? 32 : blockDimensionD
+    let leadingBlockDimensionB = transposeState.B ? 32 : blockDimensionD
+    
+    // MARK: - Not-Yet Transformed Code
     
     var output: String = """
 
@@ -63,7 +71,7 @@ extension AttentionKernel {
     
     do {
       let blockDimensionD: UInt16 = 32
-      let leadingBlockDimensionB = transposeB ? UInt16(32) : blockDimensionD
+      let leadingBlockDimensionB = transposeState.B ? UInt16(32) : blockDimensionD
       
       output += """
 
@@ -81,7 +89,7 @@ const ushort D_block_dimension = \(blockDimensionD);
       auto \(B)T_block = (threadgroup float*)(threadgroup_block);
       \(B)T_block = simdgroup_matrix_storage<float>::apply_offset(
         \(B)T_block, \(B)_leading_block_dimension,
-        \(B)_block_offset, \(!transposeB));
+        \(B)_block_offset, \(!transposeState.B));
 
 """
     } else {
@@ -91,13 +99,13 @@ const ushort D_block_dimension = \(blockDimensionD);
       ushort2 \(A)_block_offset(morton_offset.x, morton_offset.y + sidx * 8);
       auto \(A)_block = (threadgroup float*)(threadgroup_block);
       \(A)_block = simdgroup_matrix_storage<float>::apply_offset(
-        \(A)_block, 32, \(A)_block_offset, \(transposeA));
+        \(A)_block, 32, \(A)_block_offset, \(transposeState.A));
       
       // Find where the \(B) data will be read from.
       ushort2 \(B)_block_offset(morton_offset.x, morton_offset.y);
       auto \(B)T_block = (threadgroup float*)(threadgroup_block) + \(32 * 32);
       \(B)T_block = simdgroup_matrix_storage<float>::apply_offset(
-        \(B)T_block, 32, \(B)_block_offset, \(!transposeB));
+        \(B)T_block, 32, \(B)_block_offset, \(!transposeState.B));
 
 """
     }
@@ -121,7 +129,7 @@ const ushort D_block_dimension = \(blockDimensionD);
       
       uint2 \(B)_offset(d_outer, \(matrixOffset.N));
       auto src = simdgroup_matrix_storage<float>::apply_offset(
-        \(B), \(leadingDimensionB), \(B)_offset, \(transposeB));
+        \(B), \(leadingDimensions.B), \(B)_offset, \(transposeState.B));
       auto dst = (threadgroup float*)(threadgroup_block);
       
       ushort N_src_dimension = min(
@@ -133,7 +141,7 @@ const ushort D_block_dimension = \(blockDimensionD);
       simdgroup_event event;
       event.async_copy(
         dst, \(B)_leading_block_dimension, tile_dst,
-        src, \(leadingDimensionB), tile_src, \(transposeB));
+        src, \(leadingDimensions.B), tile_src, \(transposeState.B));
       simdgroup_event::wait(1, &event);
       
 """
@@ -145,7 +153,7 @@ const ushort D_block_dimension = \(blockDimensionD);
       {
         uint2 \(A)_offset(d_outer, \(matrixOffset.M));
         auto src = simdgroup_matrix_storage<float>::apply_offset(
-          \(A), \(leadingDimensionA), \(A)_offset, \(transposeA));
+          \(A), \(leadingDimensions.A), \(A)_offset, \(transposeState.A));
         auto dst = (threadgroup float*)(threadgroup_block);
         
         ushort M_src_dimension = min(
@@ -154,14 +162,14 @@ const ushort D_block_dimension = \(blockDimensionD);
         ushort2 tile_dst(D_dst_dimension, M_src_dimension);
         events[0].async_copy(
           dst, 32, tile_dst,
-          src, \(leadingDimensionA), tile_src, \(transposeA));
+          src, \(leadingDimensions.A), tile_src, \(transposeState.A));
       }
       
       // load \(B)[n]
       {
         uint2 \(B)_offset(d_outer, \(matrixOffset.N));
         auto src = simdgroup_matrix_storage<float>::apply_offset(
-          \(B), \(leadingDimensionB), \(B)_offset, \(transposeB));
+          \(B), \(leadingDimensions.B), \(B)_offset, \(transposeState.B));
         auto dst = (threadgroup float*)(threadgroup_block) + \(32 * 32);
         
         ushort N_src_dimension = min(
@@ -171,7 +179,7 @@ const ushort D_block_dimension = \(blockDimensionD);
         ushort2 tile_dst(D_dst_dimension, N_dst_dimension);
         events[1].async_copy(
           dst, \(B)_leading_block_dimension, tile_dst,
-          src, \(leadingDimensionB), tile_src, \(transposeB));
+          src, \(leadingDimensions.B), tile_src, \(transposeState.B));
       }
       simdgroup_event::wait(2, events);
     
@@ -190,7 +198,7 @@ for (ushort n = \(startN); n < \(endN); n += 8) {
   ushort2 origin(n, d);
   simdgroup_matrix_storage<float> \(B)T;
   \(B)T.load(
-    \(B)T_block, \(B)_leading_block_dimension, origin, \(!transposeB));
+    \(B)T_block, \(B)_leading_block_dimension, origin, \(!transposeState.B));
   
   // Mask out the first accumulate at compile-time.
   bool accumulate = (d_outer > 0) || (d > 0);
@@ -205,7 +213,7 @@ for (ushort n = \(startN); n < \(endN); n += 8) {
 // Load the LHS from threadgroup memory.
 ushort2 origin(d, 0);
 simdgroup_matrix_storage<float> \(A);
-\(A).load(\(A)_block, 32, origin, \(transposeA));
+\(A).load(\(A)_block, 32, origin, \(transposeState.A));
 
 // Inner loop over N.
 #pragma clang loop unroll(full)
@@ -213,7 +221,7 @@ for (ushort n = \(startN); n < \(endN); n += 8) {
   // Load the RHS from threadgroup memory.
   ushort2 origin(n, d);
   simdgroup_matrix_storage<float> \(B)T;
-  \(B)T.load(\(B)T_block, 32, origin, \(!transposeB));
+  \(B)T.load(\(B)T_block, 32, origin, \(!transposeState.B));
   
   // Mask out the first accumulate at compile-time.
   bool accumulate = (d_outer > 0) || (d > 0);
