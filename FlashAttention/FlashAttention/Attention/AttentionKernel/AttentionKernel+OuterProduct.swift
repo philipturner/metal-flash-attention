@@ -5,19 +5,12 @@
 //  Created by Philip Turner on 7/19/24.
 //
 
-// Operations where the accumulator is the attention matrix.
-
-// MARK: - Outer Product
+// M x K x N
+// parallelization x head x traversal
 
 struct AttentionOuterProductDescriptor {
-  /// Name of left-hand side, source of a 32 x D block.
   var A: String?
-  var cacheA: Bool?
-  
-  /// Name of right-hand side, source of a 32 x D block.
   var B: String?
-  
-  /// Name of product register allocation (32 x 32).
   var C: String?
   
   var transposeState: (A: Bool, B: Bool)?

@@ -105,7 +105,7 @@ constant uint C [[function_constant(1)]];
   }
 }
 
-// MARK: - Syntactic Sugar
+// MARK: - Utilities
 
 extension AttentionKernel {
   func cached(_ operand: String) -> Bool {
@@ -180,6 +180,43 @@ extension AttentionKernel {
     } else {
       return blockDimensions.head
     }
+  }
+}
+
+extension AttentionKernel {
+  var parallelizationDimension: String {
+    switch type {
+    case .forward, .backwardQuery:
+      return "R"
+    case .backwardKeyValue:
+      return "C"
+    }
+  }
+  
+  var parallelizationOffset: String {
+    "gid * \(blockDimensions.parallelization)"
+  }
+  
+  var traversalDimension: String {
+    switch type {
+    case .forward, .backwardQuery:
+      return "C"
+    case .backwardKeyValue:
+      return "R"
+    }
+  }
+  
+  var traversalOffset: String {
+    switch type {
+    case .forward, .backwardQuery:
+      return "c"
+    case .backwardKeyValue:
+      return "r"
+    }
+  }
+  
+  var paddedHeadDimension: UInt16 {
+    (headDimension + 8 - 1) / 8 * 8
   }
 }
 

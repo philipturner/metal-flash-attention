@@ -23,7 +23,7 @@
 		9881AA202C25B26D0056D05C /* ShaderCache.swift in Sources */ = {isa = PBXBuildFile; fileRef = 9881AA1F2C25B26D0056D05C /* ShaderCache.swift */; };
 		9881AA232C25C22B0056D05C /* LaplacianTest.swift in Sources */ = {isa = PBXBuildFile; fileRef = 9881AA222C25C22B0056D05C /* LaplacianTest.swift */; };
 		9881AA252C25FDC20056D05C /* AdversarialShapeTest.swift in Sources */ = {isa = PBXBuildFile; fileRef = 9881AA242C25FDC20056D05C /* AdversarialShapeTest.swift */; };
-		9882512E2C4E9F890047052E /* AttentionKernel+LoadStore.swift in Sources */ = {isa = PBXBuildFile; fileRef = 9882512D2C4E9F890047052E /* AttentionKernel+LoadStore.swift */; };
+		9882512E2C4E9F890047052E /* AttentionKernel+Caching.swift in Sources */ = {isa = PBXBuildFile; fileRef = 9882512D2C4E9F890047052E /* AttentionKernel+Caching.swift */; };
 		98DA5B302C29F04A000F4E06 /* ComplexModule in Frameworks */ = {isa = PBXBuildFile; productRef = 98DA5B2F2C29F04A000F4E06 /* ComplexModule */; };
 		98DA5B322C29F04A000F4E06 /* Numerics in Frameworks */ = {isa = PBXBuildFile; productRef = 98DA5B312C29F04A000F4E06 /* Numerics */; };
 		98DA5B342C29F04A000F4E06 /* RealModule in Frameworks */ = {isa = PBXBuildFile; productRef = 98DA5B332C29F04A000F4E06 /* RealModule */; };
@@ -59,7 +59,7 @@
 		9881AA1F2C25B26D0056D05C /* ShaderCache.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = ShaderCache.swift; sourceTree = "<group>"; };
 		9881AA222C25C22B0056D05C /* LaplacianTest.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = LaplacianTest.swift; sourceTree = "<group>"; };
 		9881AA242C25FDC20056D05C /* AdversarialShapeTest.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = AdversarialShapeTest.swift; sourceTree = "<group>"; };
-		9882512D2C4E9F890047052E /* AttentionKernel+LoadStore.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = "AttentionKernel+LoadStore.swift"; sourceTree = "<group>"; };
+		9882512D2C4E9F890047052E /* AttentionKernel+Caching.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = "AttentionKernel+Caching.swift"; sourceTree = "<group>"; };
 		98DA5B352C2AFD65000F4E06 /* Network.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = Network.swift; sourceTree = "<group>"; };
 		98DA5B372C2AFF9E000F4E06 /* FiniteDifferencingTest.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = FiniteDifferencingTest.swift; sourceTree = "<group>"; };
 		98DA5B392C2B3A6D000F4E06 /* Softmax.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = Softmax.swift; sourceTree = "<group>"; };
@@ -92,8 +92,8 @@
 			children = (
 				98DA5B472C2DE2DA000F4E06 /* AttentionKernel.swift */,
 				9827D7A42C4ABF0F00649C7B /* AttentionKernel+Accumulate.swift */,
+				9882512D2C4E9F890047052E /* AttentionKernel+Caching.swift */,
 				98FB66E02C347CBA00C56CED /* AttentionKernel+InnerLoop.swift */,
-				9882512D2C4E9F890047052E /* AttentionKernel+LoadStore.swift */,
 				9827D7A22C4ABEEA00649C7B /* AttentionKernel+OuterProduct.swift */,
 				9827D7A62C4AC05C00649C7B /* AttentionKernel+Softmax.swift */,
 			);
@@ -259,7 +259,7 @@
 				98DA5B362C2AFD65000F4E06 /* Network.swift in Sources */,
 				982EBD602C5954D600AB4E00 /* AttentionKernel+OuterProduct.swift in Sources */,
 				9881AA182C25B0440056D05C /* GEMMHeaders.swift in Sources */,
-				9882512E2C4E9F890047052E /* AttentionKernel+LoadStore.swift in Sources */,
+				9882512E2C4E9F890047052E /* AttentionKernel+Caching.swift in Sources */,
 				98DA5B382C2AFF9E000F4E06 /* FiniteDifferencingTest.swift in Sources */,
 				9881AA202C25B26D0056D05C /* ShaderCache.swift in Sources */,
 				98DA5B482C2DE2DA000F4E06 /* AttentionKernel.swift in Sources */,

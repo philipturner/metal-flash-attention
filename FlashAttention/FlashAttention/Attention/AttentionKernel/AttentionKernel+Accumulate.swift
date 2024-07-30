@@ -5,20 +5,13 @@
 //  Created by Philip Turner on 7/19/24.
 //
 
-// Operations where the LHS is the attention matrix.
-
-// MARK: - Accumulate
+// M x K x N
+// parallelization x traversal x head
 
 struct AttentionAccumulateDescriptor {
-  /// Name of left-hand side (N x N).
   var A: String?
-  
-  /// Name of right-hand side (N x D).
   var B: String?
-  
-  /// Name of accumulator (N x D).
   var C: String?
-  var cacheC: Bool?
   
   var transposeState: (B: Bool, C: Bool)?
   var leadingDimensions: (B: String, C: String)?
