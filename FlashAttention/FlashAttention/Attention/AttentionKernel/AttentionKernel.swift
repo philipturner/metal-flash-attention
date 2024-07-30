@@ -30,7 +30,6 @@ struct AttentionKernel {
   var blockDimensions: (R: UInt16, C: UInt16)
   var blockDimensionD: UInt16
   var matrixDimensionD: UInt16
-  var paddedD: UInt16
   
   // The row stride of the intermediate attention matrix.
   var leadingDimensionDerivativeST: UInt32
@@ -60,8 +59,7 @@ struct AttentionKernel {
     
     // Declare the size of the register allocation.
     matrixDimensionD = matrixDimensions.D
-    paddedD = (matrixDimensions.D + 8 - 1) / 8 * 8
-    blockDimensionD = 64
+    blockDimensionD = 16
     blockDimensions = (R: 32, C: 32)
     
     leadingDimensions = ("D", "D", "D", "D")

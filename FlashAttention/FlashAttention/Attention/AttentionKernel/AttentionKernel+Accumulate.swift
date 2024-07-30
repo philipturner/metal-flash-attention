@@ -47,7 +47,7 @@ extension AttentionKernel {
       fatalError("Descriptor was incomplete.")
     }
     
-    // Declare the block size along the D dimension.
+    // Declare the block dimensions.
     let leadingBlockDimensionB = transposeState.B ? 32 : blockDimensionD
     let leadingBlockDimensionC = transposeState.C ? 32 : blockDimensionD
     
@@ -289,6 +289,7 @@ extension AttentionKernel {
       // Load the accumulator.
       \(allocateAccumulator(descriptor: iterationDesc))
       if (\(matrixOffset.K) == 0) {
+        // Where the accumulator is zero-initialized.
         \(initializeAccumulator(descriptor: iterationDesc))
       } else {
         \(loadAccumulator(descriptor: iterationDesc))
@@ -336,6 +337,7 @@ extension AttentionKernel {
       descriptor.registerSize = blockDimensionD
       
       // Add the first iterations.
+      let paddedD = (matrixDimensionD + 8 - 1) / 8 * 8
       let loopEndFloor = paddedD - paddedD % blockDimensionD
       var output = """
       

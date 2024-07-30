@@ -55,8 +55,7 @@ extension AttentionKernel {
     // - Migrate to a different algorithm, where the LHS is read into registers
     //   before the RHS is accessed.
     
-    // Declare the block size along the D dimension.
-    let blockDimensionD: UInt16 = 32
+    // Declare the block dimensions.
     let leadingBlockDimensionA = transposeState.A ? 32 : blockDimensionD
     let leadingBlockDimensionB = transposeState.B ? 32 : blockDimensionD
     
@@ -169,13 +168,11 @@ extension AttentionKernel {
     // that the current algorithm reads both operands at once.
     
     func declareRHSLocation() -> String {
-      let offset: UInt16 = cacheA ? 0 : 32 * 32
-      
-      return """
+      """
       
       // Find where the \(B) data will be read from.
       ushort2 \(B)_block_offset(morton_offset.x, morton_offset.y);
-      auto \(B)T_block = (threadgroup float*)(threadgroup_block) + \(offset);
+      auto \(B)T_block = (threadgroup float*)(threadgroup_block);
       \(B)T_block = simdgroup_matrix_storage<float>::apply_offset(
         \(B)T_block, \(leadingBlockDimensionB),
         \(B)_block_offset, \(!transposeState.B));
@@ -186,16 +183,14 @@ extension AttentionKernel {
     func loadRHS(
       descriptor: LoopIterationDescriptor
     ) -> String {
-      let offset: UInt16 = cacheA ? 0 : 32 * 32
-      
-      return """
+      """
       
       threadgroup_barrier(mem_flags::mem_threadgroup);
       if (sidx == 0) {
         uint2 \(B)_offset(d_outer, \(matrixOffset.N));
         auto src = simdgroup_matrix_storage<float>::apply_offset(
           \(B), \(leadingDimensions.B), \(B)_offset, \(transposeState.B));
-        auto dst = (threadgroup float*)(threadgroup_block) + \(offset);
+        auto dst = (threadgroup float*)(threadgroup_block);
         
         ushort D_src_dimension = min(
           ushort(\(blockDimensionD)), ushort(D - d_outer));
@@ -292,9 +287,45 @@ extension AttentionKernel {
       """
     }
     
+    var output = allocateAccumulator()
     var descriptor = LoopIterationDescriptor()
     if cacheA {
-      fatalError("Not implemented.")
+      descriptor.accumulateConditional = "true"
+      descriptor.registerOffset = "d_outer"
+      descriptor.registerSize = blockDimensionD
+      
+      // Add the first iterations.
+      let paddedD = (matrixDimensionD + 8 - 1) / 8 * 8
+      let loopEndFloor = paddedD - paddedD % blockDimensionD
+      output += """
+      
+      \(initializeAccumulator())
+      
+      #pragma clang loop unroll(full)
+      for (
+        ushort d_outer = 0;
+        d_outer < \(loopEndFloor);
+        d_outer += \(blockDimensionD)
+      ) {
+        \(loopIteration(descriptor: descriptor))
+      }
+      
+      """
+      
+      // Add the last iteration, if unaligned.
+      if loopEndFloor < paddedD {
+        descriptor.registerOffset = "\(loopEndFloor)"
+        descriptor.registerSize = paddedD - loopEndFloor
+        
+        output += """
+        {
+          ushort d_outer = \(loopEndFloor);
+          \(loopIteration(descriptor: descriptor))
+        }
+        """
+      }
+      
+      return output
     } else {
       descriptor.accumulateConditional = "true"
       descriptor.registerOffset = "0"
@@ -303,18 +334,17 @@ extension AttentionKernel {
       // doesn't increase the register pressure.
       descriptor.registerSize = blockDimensionD
       
-      return """
+      output += """
       
-      \(allocateAccumulator())
       \(initializeAccumulator())
       
-      // Outer loop over D.
-      #pragma clang loop unroll(\(cacheA ? "full" : "disable"))
+      #pragma clang loop unroll(disable)
       for (ushort d_outer = 0; d_outer < D; d_outer += \(blockDimensionD)) {
         \(loopIteration(descriptor: descriptor))
       }
       
       """
     }
+    return output
   }
 }

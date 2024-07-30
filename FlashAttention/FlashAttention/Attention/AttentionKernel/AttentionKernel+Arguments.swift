@@ -68,22 +68,27 @@ extension AttentionKernel {
     }
     
     let leadingBlockDimension = transposeState ? UInt16(32) : blockDimensionD
-    
     let loopBody = """
-
-ushort2 origin(d, 0);
-\(name)_sram[(d_outer + d) / 8].load(
-  \(name)_block, \(leadingBlockDimension), origin, \(transposeState));
-
-"""
+    
+    ushort2 origin(d, 0);
+    \(name)_sram[(d_outer + d) / 8].load(
+      \(name)_block, \(leadingBlockDimension), origin, \(transposeState));
+    
+    """
+    
+    let paddedD = (matrixDimensionD + 8 - 1) / 8 * 8
+    func allocateLHS(name: String) -> String {
+      """
+      
+      simdgroup_matrix_storage<float> \(name)_sram[\(paddedD / 8)];
+      
+      """
+    }
     
     return """
 
-simdgroup_matrix_storage<float> \(name)_sram[\(paddedD / 8)];
+\(allocateLHS(name: name))
 {
-  uint M_offset = \(matrixOffset);
-  ushort M_src_dimension = min(uint(32), \(matrixDimension) - M_offset);
-  
   // Find where the \(name) data will be read from.
   ushort2 \(name)_block_offset(morton_offset.x, morton_offset.y + sidx * 8);
   auto \(name)_block = (threadgroup float*)(threadgroup_block);
@@ -97,18 +102,19 @@ simdgroup_matrix_storage<float> \(name)_sram[\(paddedD / 8)];
     threadgroup_barrier(mem_flags::mem_threadgroup);
     
     if (sidx == 0) {
-      ushort D_src_dimension = min(
-        ushort(\(blockDimensionD)), ushort(D - d_outer));
-      ushort D_dst_dimension = min(
-        ushort(\(blockDimensionD)), ushort(\(paddedD) - d_outer));
-      
-      uint2 \(name)_offset(d_outer, M_offset);
+      uint2 \(name)_offset(d_outer, \(matrixOffset));
       auto src = simdgroup_matrix_storage<float>::apply_offset(
         \(name), \(leadingDimension), \(name)_offset, \(transposeState));
       auto dst = (threadgroup float*)(threadgroup_block);
      
-      ushort2 tile_src(D_src_dimension, M_src_dimension);
-      ushort2 tile_dst(D_dst_dimension, M_src_dimension);
+      ushort D_src_dimension = min(
+        ushort(\(blockDimensionD)), ushort(D - d_outer));
+      ushort D_dst_dimension = min(
+        ushort(\(blockDimensionD)), ushort(\(paddedD) - d_outer));
+      ushort M_dimension = min(
+        uint(32), \(matrixDimension) - \(matrixOffset));
+      ushort2 tile_src(D_src_dimension, M_dimension);
+      ushort2 tile_dst(D_dst_dimension, M_dimension);
       
       simdgroup_event event;
       event.async_copy(
@@ -146,14 +152,13 @@ simdgroup_matrix_storage<float> \(name)_sram[\(paddedD / 8)];
     }
     
     let leadingBlockDimension = transposeState ? UInt16(32) : blockDimensionD
-    
     let loopBody = """
-
-ushort2 origin(d, 0);
-\(name)_sram[(d_outer + d) / 8].store(
-  \(name)_block, \(leadingBlockDimension), origin, \(transposeState));
-
-"""
+    
+    ushort2 origin(d, 0);
+    \(name)_sram[(d_outer + d) / 8].store(
+      \(name)_block, \(leadingBlockDimension), origin, \(transposeState));
+    
+    """
     
     return """
 
@@ -192,15 +197,14 @@ ushort2 origin(d, 0);
      
       ushort D_dimension = min(
         ushort(\(blockDimensionD)), ushort(D - d_outer));
-      ushort RC_dimension = min(
+      ushort M_dimension = min(
         uint(32), \(matrixDimension) - \(matrixOffset));
-      ushort2 tile_src(D_dimension, RC_dimension);
-      ushort2 tile_dst(D_dimension, RC_dimension);
+      ushort2 tile(D_dimension, M_dimension);
       
       simdgroup_event event;
       event.async_copy(
-        dst, \(leadingDimension), tile_dst,
-        src, \(leadingBlockDimension), tile_src, \(transposeState));
+        dst, \(leadingDimension), tile,
+        src, \(leadingBlockDimension), tile, \(transposeState));
       simdgroup_event::wait(1, &event);
     }
   }
@@ -337,26 +341,13 @@ extension AttentionKernel {
 
 extension AttentionKernel {
   func createSetup(type: AttentionKernelType) -> String {
-    // Code that prepares an accumulator variable.
-    func declareAccumulator(name: String) -> String {
+    func allocateAccumulator(name: String) -> String {
+      let paddedD = (matrixDimensionD + 8 - 1) / 8 * 8
       return """
-  
-  simdgroup_matrix_storage<float> \(name)_sram[\(paddedD / 8)];
-
-"""
-    }
-    
-    // Code that prepares an accumulator variable.
-    func zeroInitializeAccumulator(name: String) -> String {
-      return """
-  
-  simdgroup_matrix_storage<float> \(name)_sram[\(paddedD / 8)];
-#pragma clang loop unroll(full)
-  for (ushort d = 0; d < D; d += 8) {
-    \(name)_sram[d / 8] = simdgroup_matrix_storage<float>(0);
-  }
-
-"""
+      
+      simdgroup_matrix_storage<float> \(name)_sram[\(paddedD / 8)];
+      
+      """
     }
     
     // Initialize the output string.
@@ -375,7 +366,7 @@ extension AttentionKernel {
       }
       
       if cachedOutputs.O {
-        output += declareAccumulator(name: "O")
+        output += allocateAccumulator(name: "O")
       }
       
       output += """
@@ -408,7 +399,7 @@ extension AttentionKernel {
       
       if computeDerivativeQ {
         if cachedOutputs.dQ {
-          output += declareAccumulator(name: "dQ")
+          output += allocateAccumulator(name: "dQ")
         }
         
         output += """
@@ -442,11 +433,11 @@ extension AttentionKernel {
       }
       
       if computeDerivativeK, cachedOutputs.dK {
-        output += declareAccumulator(name: "dK")
+        output += allocateAccumulator(name: "dK")
       }
       
       if cachedOutputs.dV {
-        output += declareAccumulator(name: "dV")
+        output += allocateAccumulator(name: "dV")
       }
     }
     
@@ -456,15 +447,6 @@ extension AttentionKernel {
 
 extension AttentionKernel {
   func createCleanup(type: AttentionKernelType) -> String {
-    // A threadgroup barrier, formatted to match the correct indentation.
-    func threadgroupBarrier() -> String {
-      return """
-
-    threadgroup_barrier(mem_flags::mem_threadgroup);
-
-  """
-    }
-    
     // Initialize the output string.
     var output: String = ""
     
