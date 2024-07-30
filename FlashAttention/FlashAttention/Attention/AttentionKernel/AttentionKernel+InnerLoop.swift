@@ -292,27 +292,7 @@ extension AttentionKernel {
     outerProductDesc.matrixOffset = (M: "gid * 32", N: "r")
     let VdOT = outerProduct(descriptor: outerProductDesc)
     
-    var output = """
-  
-  // Iterate over the rows.
-  for (uint r = 0; r < R; r += 32) {
-    // S^T = K * Q^T
-    \(KQT)
-    
-    // P^T = exp(S^T - L)
-    \(checkpointSoftmaxT())
-    
-    // dV += P^T * dO
-    \(accumulate(descriptor: accumulateDesc))
-    
-    // dP^T = V * dO^T
-    \(VdOT)
-    
-    // dS^T = P^T * (dP^T - D) * scaleFactor
-    \(computeDerivativeSoftmaxT())
-    
-"""
-    
+    var dSTQ: String = ""
     if computeDerivativeK {
       var accumulateDesc = AttentionAccumulateDescriptor()
       accumulateDesc.A = "dST"
@@ -325,59 +305,32 @@ extension AttentionKernel {
         B: leadingDimensions.Q, C: leadingDimensions.K)
       accumulateDesc.matrixDimensions = (M: "C", K: "R")
       accumulateDesc.matrixOffset = (M: "gid * 32", K: "r")
-      
-      output += """
-
-// dK += dS^T * Q
-\(accumulate(descriptor: accumulateDesc))
-  
-"""
-    } else {
-      // dS^T is an intermediate allocation, managed internally by the MFA
-      // backend. We can impose constraints on it that wouldn't typically be
-      // feasible. For example, we can force the row stride to be divisible by
-      // the block size (~32). This simplifies the code; we don't need to run
-      // async copies to safeguard against corrupted memory accesses.
-      //
-      // If the matrix rows are noncontiguous, we must modify the in-tree
-      // GEMM kernel to support custom leading dimensions. This can be
-      // something modified explicitly by the user - an option to override the
-      // default leading dimension. The leading dimension is specified after
-      // the 'GEMMKernelDescriptor' is created from the 'GEMMDescriptor', and
-      // before the 'GEMMKernel' is created from the 'GEMMKernelDescriptor'.
-      
-      var leadingDimension = "(C + \(blockDimensions.R) - 1)"
-      leadingDimension = "\(leadingDimension) / \(blockDimensions.R)"
-      leadingDimension = "\(leadingDimension) * \(blockDimensions.R)"
-      
-      output += """
-
-// store dS^T[c][r]
-{
-  uint2 device_origin(r, gid * 32 + sidx * 8);
-  device_origin += uint2(morton_offset);
-  device float* dst =
-  simdgroup_matrix_storage<float>::apply_offset(
-    dST, \(leadingDimension), device_origin, false);
-  
-#pragma clang loop unroll(full)
-  for (ushort c = 0; c < 32; c += 8) {
-    ushort2 thread_origin(c, 0);
-    dST_sram[c / 8].store(
-      dst, \(leadingDimension), thread_origin, false);
-  }
-}
-
-"""
+      dSTQ = accumulate(descriptor: accumulateDesc)
     }
     
-    // Add the final closing brace.
-    output += """
-
-}
-
-"""
+    return """
     
-    return output
+    // Iterate over the rows.
+    for (uint r = 0; r < R; r += 32) {
+      // S^T = K * Q^T
+      \(KQT)
+      
+      // P^T = exp(S^T - L)
+      \(checkpointSoftmaxT())
+      
+      // dV += P^T * dO
+      \(accumulate(descriptor: accumulateDesc))
+      
+      // dP^T = V * dO^T
+      \(VdOT)
+      
+      // dS^T = P^T * (dP^T - D) * scaleFactor
+      \(computeDerivativeSoftmaxT())
+      
+      // dK += dS^T * Q
+      \(dSTQ)
+    }
+    
+    """
   }
 }

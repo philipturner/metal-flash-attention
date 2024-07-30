@@ -42,7 +42,7 @@
 //     FP16:  8 * (D / 4) bytes
 
 struct AttentionLoadStoreDescriptor {
-  /// Source or destination of an R x D block.
+  /// Name of operand (N x D).
   var name: String?
   
   var transposeState: Bool?
@@ -53,9 +53,11 @@ struct AttentionLoadStoreDescriptor {
 }
 
 extension AttentionKernel {
-  // Does not have any delay between prefetching something and writing it to
-  // registers. This may cause a regression from the old MFA; investigate M1
-  // performance at a later date.
+  // The size of a cached operand, along the head dimension.
+  func paddedD() -> UInt16 {
+    (headDimension + 8 - 1) / 8 * 8
+  }
+  
   func load(descriptor: AttentionLoadStoreDescriptor) -> String {
     guard let name = descriptor.name,
           let transposeState = descriptor.transposeState,
@@ -65,7 +67,9 @@ extension AttentionKernel {
       fatalError("Descriptor was incomplete.")
     }
     
-    let leadingBlockDimension = transposeState ? 32 : blockDimensions.D
+    let leadingBlockDimension = transposeState ?
+    blockDimensions.R : blockDimensions.D
+    
     let loopBody = """
     
     ushort2 origin(d, 0);
@@ -74,11 +78,10 @@ extension AttentionKernel {
     
     """
     
-    let paddedD = (headDimension + 8 - 1) / 8 * 8
     func allocateLHS(name: String) -> String {
       """
       
-      simdgroup_matrix_storage<float> \(name)_sram[\(paddedD / 8)];
+      simdgroup_matrix_storage<float> \(name)_sram[\(paddedD() / 8)];
       
       """
     }
@@ -221,6 +224,11 @@ extension AttentionKernel {
 }
 
 extension AttentionKernel {
+  // The thread's index along the parallelization dimension.
+  fileprivate func parallelizationIndex() -> String {
+    "gid * \(blockDimensions.parallelization) + sidx * 8 + morton_offset.y"
+  }
+  
   func createSetup(type: AttentionKernelType) -> String {
     func allocateAccumulator(name: String) -> String {
       let paddedD = (headDimension + 8 - 1) / 8 * 8
@@ -285,7 +293,7 @@ extension AttentionKernel {
         
         output += """
 
-  float L_term = L_terms[linear_array_slot];
+  float L_term = L_terms[\(parallelizationIndex())];
 
 """
       }
@@ -351,7 +359,7 @@ extension AttentionKernel {
     if (linear_array_slot < R) {
       // Premultiplied by M_LOG2E_F.
       float L_term = m + fast::log2(l);
-      L_terms[linear_array_slot] = L_term;
+      L_terms[\(parallelizationIndex())] = L_term;
     }
 
 """
@@ -371,9 +379,9 @@ extension AttentionKernel {
       
       // D[i]
       output += """
-
-  if (linear_array_slot < R) {
-    D_terms[linear_array_slot] = D_term;
+  
+  if (\(parallelizationIndex()) < R) {
+    D_terms[\(parallelizationIndex())] = D_term;
   }
 
 """

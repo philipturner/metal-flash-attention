@@ -43,7 +43,10 @@ struct AttentionDescriptor {
   /// - Parameters R: Number of rows in the attention matrix.
   /// - Parameters C: Number of columns in the attention matrix.
   /// - Parameters D: Size of the head.
-  var matrixDimensions: (R: UInt32, C: UInt32, D: UInt16)?
+  ///
+  /// NOTE: For now, the attention matrix must be square, to simplify the
+  /// implementation. I will revisit this later.
+  var matrixDimensions: (N: UInt32, D: UInt16)?
   
   /// Whether each operand is transposed in RAM.
   ///

@@ -161,7 +161,7 @@ func profileProblemSize(N: Int, D: Int) -> Int {
     Q: cacheAll, K: cacheAll, V: cacheAll, dO: cacheAll)
   attentionDesc.cachedOutputs = (
     dQ: cacheAll, dK: cacheAll, dV: cacheAll, O: cacheAll)
-  attentionDesc.matrixDimensions = (R: UInt32(N), C: UInt32(N), D: UInt16(D))
+  attentionDesc.matrixDimensions = (N: UInt32(N), D: UInt16(D))
   attentionDesc.transposeState = (Q: false, K: false, V: false, O: false)
   
   attentionDesc.type = .forward(true)
@@ -176,12 +176,9 @@ func profileProblemSize(N: Int, D: Int) -> Int {
   func createPipeline(kernel: AttentionKernel) -> MTLComputePipelineState {
     // Set the function constants.
     let constants = MTLFunctionConstantValues()
-    guard attentionDesc.matrixDimensions!.R ==
-            attentionDesc.matrixDimensions!.C else {
-      fatalError("Rectangular attention matrices are not supported yet.")
-    }
-    var N = attentionDesc.matrixDimensions!.R
+    var N = attentionDesc.matrixDimensions!.N
     constants.setConstantValue(&N, type: .uint, index: 0)
+    constants.setConstantValue(&N, type: .uint, index: 1)
     
     let device = MTLContext.global.device
     let library = try! device.makeLibrary(source: kernel.source, options: nil)

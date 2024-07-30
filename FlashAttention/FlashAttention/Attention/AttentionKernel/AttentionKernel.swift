@@ -26,15 +26,11 @@ struct AttentionKernel {
   var cachedInputs: (Q: Bool, K: Bool, V: Bool, dO: Bool)
   var cachedOutputs: (dQ: Bool, dK: Bool, dV: Bool, O: Bool)
   var transposeState: (Q: Bool, K: Bool, V: Bool, O: Bool)
+  var type: AttentionKernelType
   
-  // [TODO: Document] ... Alternatively, change the definition
-  // of "R" and "C", so they flip during the backward pass. This decision
-  // will remove a lot of ambiguity in intermediate variable names. We
-  // currently resort to GEMM M/N/K, which causes a name conflict with the
-  // sequence length dimension N).
-  var blockDimensions: (R: UInt16, C: UInt16, D: UInt16)
+  var blockDimensions: (
+    parallelization: UInt16, traversal: UInt16, head: UInt16)
   var headDimension: UInt16
-  var leadingDimensions: (Q: String, K: String, V: String, O: String)
   
   // The source code to compile.
   var source: String = ""
@@ -57,25 +53,18 @@ struct AttentionKernel {
     self.cachedInputs = cachedInputs
     self.cachedOutputs = cachedOutputs
     self.transposeState = transposeState
+    self.type = type
     
     // Declare the block sizes.
-    blockDimensions = (R: 32, C: 32, D: 64)
+    blockDimensions = (parallelization: 32, traversal: 32, head: 64)
     headDimension = matrixDimensions.D
-    leadingDimensions = (
-      transposeState.Q ? "N" : "\(headDimension)",
-      transposeState.K ? "N" : "\(headDimension)",
-      transposeState.V ? "N" : "\(headDimension)",
-      transposeState.O ? "N" : "\(headDimension)")
-    
     do {
-      let simdsPerGroup = blockDimensions.R / 8
+      let simdsPerGroup = blockDimensions.parallelization / 8
       threadgroupSize = 32 * simdsPerGroup
     }
-    do {
-      threadgroupMemoryAllocation = max(
-        blockDimensions.R * blockDimensions.D * 4,
-        blockDimensions.D * blockDimensions.C * 4)
-    }
+    threadgroupMemoryAllocation = max(
+      blockDimensions.parallelization * blockDimensions.head * 4,
+      blockDimensions.traversal * blockDimensions.head * 4)
     
     // Inject the contents of the headers.
     source += """
@@ -83,16 +72,17 @@ struct AttentionKernel {
 \(createMetalSimdgroupMatrixStorage())
 using namespace metal;
 
-// Currently, the attention matrix row and column dimensions must be the same.
-// This is to simplify many ambiguities.
-constant uint N [[function_constant(0)]];
+// R = row dimension (output sequence)
+// C = column dimensin (input sequence)
+constant uint R [[function_constant(0)]];
+constant uint C [[function_constant(1)]];
 
-// Declare the function.
-kernel void attention(
+
 
 """
     
-    source += createArguments(type: type)
+    // Add the contents of the functio.
+    source += createFunctionSignature(type: type)
     source += createSetup(type: type)
     switch type {
     case .forward:
@@ -115,10 +105,90 @@ kernel void attention(
   }
 }
 
-// MARK: - Arguments
+// MARK: - Syntactic Sugar
 
 extension AttentionKernel {
-  func createArguments(type: AttentionKernelType) -> String {
+  func cached(_ operand: String) -> Bool {
+    switch operand {
+    case "Q": return cachedInputs.Q
+    case "K": return cachedInputs.K
+    case "V": return cachedInputs.V
+    case "O": return cachedOutputs.O
+      
+    case "dQ": return cachedOutputs.dQ
+    case "dK": return cachedOutputs.dK
+    case "dV": return cachedOutputs.dV
+    case "dO": return cachedInputs.dO
+      
+    default: fatalError("Unrecognized operand.")
+    }
+  }
+  
+  func transposed(_ operand: String) -> Bool {
+    switch operand {
+    case "Q", "dQ": return transposeState.Q
+    case "K", "dK": return transposeState.K
+    case "V", "dV": return transposeState.V
+    case "O", "dO": return transposeState.O
+    default: fatalError("Unrecognized operand.")
+    }
+  }
+  
+  func sequenceLength(_ operand: String) -> String {
+    switch operand {
+    case "Q", "dQ": return "R"
+    case "K", "dK": return "C"
+    case "V", "dV": return "C"
+    case "O", "dO": return "R"
+    default: fatalError("Unrecognized operand.")
+    }
+  }
+  
+  func blockSequenceLength(_ operand: String) -> UInt16 {
+    switch type {
+    case .forward, .backwardQuery:
+      switch operand {
+      case "Q", "dQ": return blockDimensions.parallelization
+      case "K", "dK": return blockDimensions.traversal
+      case "V", "dV": return blockDimensions.traversal
+      case "O", "dO": return blockDimensions.parallelization
+      default: fatalError("Unrecognized operand.")
+      }
+      
+    case .backwardKeyValue:
+      switch operand {
+      case "Q", "dQ": return blockDimensions.traversal
+      case "K", "dK": return blockDimensions.parallelization
+      case "V", "dV": return blockDimensions.parallelization
+      case "O", "dO": return blockDimensions.traversal
+      default: fatalError("Unrecognized operand.")
+      }
+    }
+  }
+  
+  func leadingDimension(_ operand: String) -> String {
+    if transposed(operand) {
+      return sequenceLength(operand)
+    } else {
+      return "\(headDimension)"
+    }
+  }
+  
+  func leadingBlockDimension(_ operand: String) -> UInt16 {
+    if transposed(operand) {
+      return blockSequenceLength(operand)
+    } else {
+      return blockDimensions.head
+    }
+  }
+}
+
+
+// MARK: - Function Signature
+
+extension AttentionKernel {
+  func createFunctionSignature(type: AttentionKernelType) -> String {
+    // Data structure that holds the precision and buffer index.
     struct AttentionOperand {
       var precision: GEMMOperandPrecision
       var bufferBinding: Int
@@ -144,8 +214,6 @@ extension AttentionKernel {
       precision: .FP32, bufferBinding: 6)
     operandsMap["dV"] = AttentionOperand(
       precision: .FP32, bufferBinding: 7)
-    operandsMap["dST"] = AttentionOperand(
-      precision: .FP32, bufferBinding: 8)
     operandsMap["dK"] = AttentionOperand(
       precision: .FP32, bufferBinding: 8)
     operandsMap["dQ"] = AttentionOperand(
@@ -179,52 +247,45 @@ extension AttentionKernel {
       ]
       if computeDerivativeK {
         operandKeys.append("dK")
-      } else {
-        operandKeys.append("dST")
       }
     }
     
-    // Collect the operands into a single string.
-    var output: String = ""
-    for key in operandKeys {
-      let operand = operandsMap[key]!
+    // Generate the code that specifies the inputs and outputs.
+    func createBufferBindings(
+      keys: [String],
+      map: [String: AttentionOperand]
+    ) -> String {
+      var output: String = ""
+      for key in operandKeys {
+        let operand = operandsMap[key]!
+        
+        var line = "  "
+        line += "device "
+        line += operand.precision.name + " "
+        line += "*" + key + " "
+        line += "[[buffer(\(operand.bufferBinding))]]"
+        line += ",\n"
+        output += line
+      }
+      return output
+    }
+    
+    // Generate the full signature.
+    return """
+    
+    // Declare the function.
+    kernel void attention(
+      \(createBufferBindings(keys: operandKeys, map: operandsMap))
       
-      var line = "  "
-      line += "device "
-      line += operand.precision.name + " "
-      line += "*" + key + " "
-      line += "[[buffer(\(operand.bufferBinding))]]"
-      line += ",\n"
-      output += line
-    }
+      threadgroup uchar *threadgroup_block [[threadgroup(0)]],
+      
+      uint gid [[threadgroup_position_in_grid]],
+      ushort sidx [[simdgroup_index_in_threadgroup]],
+      ushort lane_id [[thread_index_in_simdgroup]]
+    ) {
+      ushort2 morton_offset = morton_order(lane_id);
     
-    // Add the arguments that define the thread's position.
-    output += """
-  
-  threadgroup uchar *threadgroup_block [[threadgroup(0)]],
-  
-  uint gid [[threadgroup_position_in_grid]],
-  ushort sidx [[simdgroup_index_in_threadgroup]],
-  ushort lane_id [[thread_index_in_simdgroup]]
-) {
-  ushort2 morton_offset = morton_order(lane_id);
-
-"""
-    
-    // The thread's array slot in the row or column dimension (whichever the
-    // kernel is parallelized over). Used for indexing into 1D arrays.
-    switch type {
-    case .forward, .backwardQuery:
-      output += """
-
-  uint linear_array_slot = 
-  gid * \(blockDimensions.R) + sidx * 8 + morton_offset.y;
-
-"""
-    default:
-      break
-    }
-    
-    return output
+    """
   }
 }
+

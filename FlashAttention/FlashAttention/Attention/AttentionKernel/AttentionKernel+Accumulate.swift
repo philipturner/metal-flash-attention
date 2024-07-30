@@ -10,13 +10,13 @@
 // MARK: - Accumulate
 
 struct AttentionAccumulateDescriptor {
-  /// Name of left-hand side (R x C).
+  /// Name of left-hand side (N x N).
   var A: String?
   
-  /// Name of right-hand side (C x D).
+  /// Name of right-hand side (N x D).
   var B: String?
   
-  /// Name of accumulator (R x D).
+  /// Name of accumulator (N x D).
   var C: String?
   var cacheC: Bool?
   
