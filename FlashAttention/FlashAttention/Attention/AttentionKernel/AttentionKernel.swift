@@ -117,9 +117,6 @@ kernel void attention(
 
 // MARK: - Arguments
 
-// TODO: Make an enumeration over the different operands in attention. That
-// will make it easier to de-duplicate code across the descriptors.
-
 extension AttentionKernel {
   func createArguments(type: AttentionKernelType) -> String {
     struct AttentionOperand {

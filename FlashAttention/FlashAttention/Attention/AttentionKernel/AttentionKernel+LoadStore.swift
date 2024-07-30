@@ -1,13 +1,11 @@
 //
-//  AttentionKernel+Arguments.swift
+//  AttentionKernel+LoadStore.swift
 //  FlashAttention
 //
 //  Created by Philip Turner on 7/22/24.
 //
 
-// Operations that store data to main memory.
-
-// MARK: - HBM Access
+// Loading and storing operands that are cached in registers.
 
 // SIMD Matrix Storage
 //   register allocation per thread
