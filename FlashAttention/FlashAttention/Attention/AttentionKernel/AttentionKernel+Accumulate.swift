@@ -48,8 +48,8 @@ extension AttentionKernel {
     }
     
     // Declare the block dimensions.
-    let leadingBlockDimensionB = transposeState.B ? 32 : blockDimensionD
-    let leadingBlockDimensionC = transposeState.C ? 32 : blockDimensionD
+    let leadingBlockDimensionB = transposeState.B ? 32 : blockDimensions.D
+    let leadingBlockDimensionC = transposeState.C ? 32 : blockDimensions.D
     
     // MARK: - Accumulator
     
@@ -115,7 +115,7 @@ extension AttentionKernel {
         
         // It doesn't matter if the rows below the matrix edge are garbage.
         ushort D_dimension = min(
-          ushort(\(blockDimensionD)), ushort(D - d_outer));
+          ushort(\(blockDimensions.D)), ushort(D - d_outer));
         ushort M_dimension = min(
           uint(32), \(matrixDimensions.M) - \(matrixOffset.M));
         ushort2 tile(D_dimension, M_dimension);
@@ -187,7 +187,7 @@ extension AttentionKernel {
           \(C), \(leadingDimensions.C), \(C)_offset, \(transposeState.C));
         
         ushort D_dimension = min(
-          ushort(\(blockDimensionD)), ushort(D - d_outer));
+          ushort(\(blockDimensions.D)), ushort(D - d_outer));
         ushort M_dimension = min(
           uint(32), \(matrixDimensions.M) - \(matrixOffset.M));
         ushort2 tile(D_dimension, M_dimension);
@@ -228,7 +228,7 @@ extension AttentionKernel {
         auto dst = (threadgroup float*)(threadgroup_block);
         
         ushort D_dimension = min(
-          ushort(\(blockDimensionD)), ushort(D - d_outer));
+          ushort(\(blockDimensions.D)), ushort(D - d_outer));
         ushort K_src_dimension = min(
           uint(32), \(matrixDimensions.K) - \(matrixOffset.K));
         ushort K_dst_dimension = max(K_remainder_padded, K_src_dimension);
@@ -334,18 +334,18 @@ extension AttentionKernel {
     var descriptor = LoopIterationDescriptor()
     if cacheC {
       descriptor.registerOffset = "d_outer"
-      descriptor.registerSize = blockDimensionD
+      descriptor.registerSize = blockDimensions.D
       
       // Add the first iterations.
-      let paddedD = (matrixDimensionD + 8 - 1) / 8 * 8
-      let loopEndFloor = paddedD - paddedD % blockDimensionD
+      let paddedD = (headDimension + 8 - 1) / 8 * 8
+      let loopEndFloor = paddedD - paddedD % blockDimensions.D
       var output = """
       
       #pragma clang loop unroll(full)
       for (
         ushort d_outer = 0;
         d_outer < \(loopEndFloor);
-        d_outer += \(blockDimensionD)
+        d_outer += \(blockDimensions.D)
       ) {
         \(loopIteration(descriptor: descriptor))
       }
@@ -371,12 +371,12 @@ extension AttentionKernel {
       
       // Future optimization: shorten the last loop iteration, if doing so
       // doesn't increase the register pressure.
-      descriptor.registerSize = blockDimensionD
+      descriptor.registerSize = blockDimensions.D
       
       return """
       
       #pragma clang loop unroll(disable)
-      for (ushort d_outer = 0; d_outer < D; d_outer += \(blockDimensionD)) {
+      for (ushort d_outer = 0; d_outer < D; d_outer += \(blockDimensions.D)) {
         \(loopIteration(descriptor: descriptor))
       }
 

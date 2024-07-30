@@ -27,9 +27,11 @@ struct AttentionKernel {
   var cachedOutputs: (dQ: Bool, dK: Bool, dV: Bool, O: Bool)
   var transposeState: (Q: Bool, K: Bool, V: Bool, O: Bool)
   
-  var blockDimensions: (R: UInt16, C: UInt16)
-  var blockDimensionD: UInt16
-  var matrixDimensionD: UInt16
+  var blockDimensions: (R: UInt16, C: UInt16, D: UInt16)
+  
+  // TODO: Remove 'D' from the function constants. Everything that depends on
+  // it can be specified during codegen.
+  var headDimension: UInt16
   
   // The row stride of the intermediate attention matrix.
   var leadingDimensionDerivativeST: UInt32
@@ -58,16 +60,25 @@ struct AttentionKernel {
     self.transposeState = transposeState
     
     // Declare the size of the register allocation.
-    matrixDimensionD = matrixDimensions.D
-    blockDimensionD = 16
-    blockDimensions = (R: 32, C: 32)
+    //
+    // TODO: Have the user specify R and C. Auto-detect which one is the
+    // dimension that SIMDs traverse. Alternatively, change the definition
+    // of "R" and "C", so they flip during the backward pass. This decision
+    // will remove a lot of ambiguity in intermediate variable names. We
+    // currently resort to GEMM M/N/K, which causes a name conflict with the
+    // sequence length dimension N).
+    blockDimensions = (R: 32, C: 32, D: 64)
+    headDimension = matrixDimensions.D
     
+    // TODO: Make the kernel not depend on the sequence length.
     leadingDimensions = ("D", "D", "D", "D")
     leadingDimensionDerivativeST = matrixDimensions.C + 32 - 1
     leadingDimensionDerivativeST = leadingDimensionDerivativeST / 32 * 32
     
+    // TODO: Allow the number of SIMDs per group to vary. Auto-detect this
+    // from the kernel type and the specified block dimensions.
     threadgroupSize = 128
-    threadgroupMemoryAllocation = (32 * blockDimensionD) * 4
+    threadgroupMemoryAllocation = 32 * blockDimensions.D * 4
     
     // Inject the contents of the headers.
     source += """

@@ -56,8 +56,8 @@ extension AttentionKernel {
     //   before the RHS is accessed.
     
     // Declare the block dimensions.
-    let leadingBlockDimensionA = transposeState.A ? 32 : blockDimensionD
-    let leadingBlockDimensionB = transposeState.B ? 32 : blockDimensionD
+    let leadingBlockDimensionA = transposeState.A ? 32 : blockDimensions.D
+    let leadingBlockDimensionB = transposeState.B ? 32 : blockDimensions.D
     
     // MARK: - Accumulator
     
@@ -134,7 +134,7 @@ extension AttentionKernel {
         auto dst = (threadgroup float*)(threadgroup_block);
         
         ushort D_src_dimension = min(
-          ushort(\(blockDimensionD)), ushort(D - d_outer));
+          ushort(\(blockDimensions.D)), ushort(D - d_outer));
         ushort D_dst_dimension = \(descriptor.registerSize);
         ushort M_src_dimension = min(
           uint(32), \(matrixDimensions.M) - \(matrixOffset.M));
@@ -193,7 +193,7 @@ extension AttentionKernel {
         auto dst = (threadgroup float*)(threadgroup_block);
         
         ushort D_src_dimension = min(
-          ushort(\(blockDimensionD)), ushort(D - d_outer));
+          ushort(\(blockDimensions.D)), ushort(D - d_outer));
         ushort D_dst_dimension = \(descriptor.registerSize);
         ushort N_src_dimension = min(
           uint(32), \(matrixDimensions.N) - \(matrixOffset.N));
@@ -292,11 +292,11 @@ extension AttentionKernel {
     if cacheA {
       descriptor.accumulateConditional = "true"
       descriptor.registerOffset = "d_outer"
-      descriptor.registerSize = blockDimensionD
+      descriptor.registerSize = blockDimensions.D
       
       // Add the first iterations.
-      let paddedD = (matrixDimensionD + 8 - 1) / 8 * 8
-      let loopEndFloor = paddedD - paddedD % blockDimensionD
+      let paddedD = (headDimension + 8 - 1) / 8 * 8
+      let loopEndFloor = paddedD - paddedD % blockDimensions.D
       output += """
       
       \(initializeAccumulator())
@@ -305,7 +305,7 @@ extension AttentionKernel {
       for (
         ushort d_outer = 0;
         d_outer < \(loopEndFloor);
-        d_outer += \(blockDimensionD)
+        d_outer += \(blockDimensions.D)
       ) {
         \(loopIteration(descriptor: descriptor))
       }
@@ -332,14 +332,14 @@ extension AttentionKernel {
       
       // Future optimization: shorten the last loop iteration, if doing so
       // doesn't increase the register pressure.
-      descriptor.registerSize = blockDimensionD
+      descriptor.registerSize = blockDimensions.D
       
       output += """
       
       \(initializeAccumulator())
       
       #pragma clang loop unroll(disable)
-      for (ushort d_outer = 0; d_outer < D; d_outer += \(blockDimensionD)) {
+      for (ushort d_outer = 0; d_outer < D; d_outer += \(blockDimensions.D)) {
         \(loopIteration(descriptor: descriptor))
       }
       

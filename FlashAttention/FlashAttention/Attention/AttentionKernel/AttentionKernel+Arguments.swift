@@ -67,7 +67,7 @@ extension AttentionKernel {
       fatalError("Descriptor was incomplete.")
     }
     
-    let leadingBlockDimension = transposeState ? UInt16(32) : blockDimensionD
+    let leadingBlockDimension = transposeState ? 32 : blockDimensions.D
     let loopBody = """
     
     ushort2 origin(d, 0);
@@ -76,7 +76,7 @@ extension AttentionKernel {
     
     """
     
-    let paddedD = (matrixDimensionD + 8 - 1) / 8 * 8
+    let paddedD = (headDimension + 8 - 1) / 8 * 8
     func allocateLHS(name: String) -> String {
       """
       
@@ -98,7 +98,7 @@ extension AttentionKernel {
   
   // Outer loop over D.
 #pragma clang loop unroll(full)
-  for (ushort d_outer = 0; d_outer < D; d_outer += \(blockDimensionD)) {
+  for (ushort d_outer = 0; d_outer < D; d_outer += \(blockDimensions.D)) {
     threadgroup_barrier(mem_flags::mem_threadgroup);
     
     if (sidx == 0) {
@@ -108,9 +108,9 @@ extension AttentionKernel {
       auto dst = (threadgroup float*)(threadgroup_block);
      
       ushort D_src_dimension = min(
-        ushort(\(blockDimensionD)), ushort(D - d_outer));
+        ushort(\(blockDimensions.D)), ushort(D - d_outer));
       ushort D_dst_dimension = min(
-        ushort(\(blockDimensionD)), ushort(\(paddedD) - d_outer));
+        ushort(\(blockDimensions.D)), ushort(\(paddedD) - d_outer));
       ushort M_dimension = min(
         uint(32), \(matrixDimension) - \(matrixOffset));
       ushort2 tile_src(D_src_dimension, M_dimension);
@@ -125,14 +125,14 @@ extension AttentionKernel {
     threadgroup_barrier(mem_flags::mem_threadgroup);
 
     // Iterate over the head dimension.
-    if (D - d_outer >= \(blockDimensionD)) {
+    if (D - d_outer >= \(blockDimensions.D)) {
 #pragma clang loop unroll(full)
-      for (ushort d = 0; d < \(blockDimensionD); d += 8) {
+      for (ushort d = 0; d < \(blockDimensions.D); d += 8) {
         \(loopBody)
       }
     } else {
 #pragma clang loop unroll(full)
-      for (ushort d = 0; d < D % \(blockDimensionD); d += 8) {
+      for (ushort d = 0; d < D % \(blockDimensions.D); d += 8) {
         \(loopBody)
       }
     }
@@ -151,7 +151,7 @@ extension AttentionKernel {
       fatalError("Descriptor was incomplete.")
     }
     
-    let leadingBlockDimension = transposeState ? UInt16(32) : blockDimensionD
+    let leadingBlockDimension = transposeState ? 32 : blockDimensions.D
     let loopBody = """
     
     ushort2 origin(d, 0);
@@ -172,18 +172,18 @@ extension AttentionKernel {
   
   // Outer loop over D.
 #pragma clang loop unroll(full)
-  for (ushort d_outer = 0; d_outer < D; d_outer += \(blockDimensionD)) {
+  for (ushort d_outer = 0; d_outer < D; d_outer += \(blockDimensions.D)) {
     threadgroup_barrier(mem_flags::mem_threadgroup);
     
     // Iterate over the head dimension.
-    if (D - d_outer >= \(blockDimensionD)) {
+    if (D - d_outer >= \(blockDimensions.D)) {
 #pragma clang loop unroll(full)
-      for (ushort d = 0; d < \(blockDimensionD); d += 8) {
+      for (ushort d = 0; d < \(blockDimensions.D); d += 8) {
         \(loopBody)
       }
     } else {
 #pragma clang loop unroll(full)
-      for (ushort d = 0; d < D % \(blockDimensionD); d += 8) {
+      for (ushort d = 0; d < D % \(blockDimensions.D); d += 8) {
         \(loopBody)
       }
     }
@@ -196,7 +196,7 @@ extension AttentionKernel {
         \(name), \(leadingDimension), \(name)_offset, \(transposeState));
      
       ushort D_dimension = min(
-        ushort(\(blockDimensionD)), ushort(D - d_outer));
+        ushort(\(blockDimensions.D)), ushort(D - d_outer));
       ushort M_dimension = min(
         uint(32), \(matrixDimension) - \(matrixOffset));
       ushort2 tile(D_dimension, M_dimension);
@@ -342,7 +342,7 @@ extension AttentionKernel {
 extension AttentionKernel {
   func createSetup(type: AttentionKernelType) -> String {
     func allocateAccumulator(name: String) -> String {
-      let paddedD = (matrixDimensionD + 8 - 1) / 8 * 8
+      let paddedD = (headDimension + 8 - 1) / 8 * 8
       return """
       
       simdgroup_matrix_storage<float> \(name)_sram[\(paddedD / 8)];
