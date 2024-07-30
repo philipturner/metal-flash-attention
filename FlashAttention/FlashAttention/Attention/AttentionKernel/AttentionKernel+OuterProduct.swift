@@ -34,16 +34,16 @@ extension AttentionKernel {
   // dimensions 8 (M dimension) x 32 (N dimension). The caller specifies which
   // attention matrix dimension (R, C) corresponds to N.
   func outerProduct(
-    descriptor: AttentionOuterProductDescriptor
+    descriptor outerProductDesc: AttentionOuterProductDescriptor
   ) -> String {
-    guard let A = descriptor.A,
-          let cacheA = descriptor.cacheA,
-          let B = descriptor.B,
-          let C = descriptor.C,
-          let transposeState = descriptor.transposeState,
-          let leadingDimensions = descriptor.leadingDimensions,
-          let matrixDimensions = descriptor.matrixDimensions,
-          let matrixOffset = descriptor.matrixOffset else {
+    guard let A = outerProductDesc.A,
+          let cacheA = outerProductDesc.cacheA,
+          let B = outerProductDesc.B,
+          let C = outerProductDesc.C,
+          let transposeState = outerProductDesc.transposeState,
+          let leadingDimensions = outerProductDesc.leadingDimensions,
+          let matrixDimensions = outerProductDesc.matrixDimensions,
+          let matrixOffset = outerProductDesc.matrixOffset else {
       fatalError("Descriptor was incomplete.")
     }
     
@@ -59,6 +59,30 @@ extension AttentionKernel {
     let blockDimensionD: UInt16 = 32
     let leadingBlockDimensionA = transposeState.A ? 32 : blockDimensionD
     let leadingBlockDimensionB = transposeState.B ? 32 : blockDimensionD
+    
+    // MARK: - Accumulator
+    
+    func allocateAccumulator() -> String {
+      """
+      
+      // Where the \(C) data will be written to.
+      simdgroup_matrix_storage<float> \(C)_sram[32 / 8];
+      
+      """
+    }
+    
+    // Future optimization: when the loop is unrolled, fuse the zero
+    // initialization with a non-accumulating SIMD matmul.
+    func initializeAccumulator() -> String {
+      """
+      
+      #pragma clang loop unroll(full)
+      for (ushort n = 0; n < 32; n += 8) {
+        \(C)_sram[n / 8] = simdgroup_matrix_storage<float>(0);
+      }
+      
+      """
+    }
     
     // MARK: - LHS
     
@@ -78,7 +102,9 @@ extension AttentionKernel {
       """
     }
     
-    func loadLHS() -> String {
+    func loadLHS(
+      descriptor: LoopIterationDescriptor
+    ) -> String {
       guard !cacheA else {
         return ""
       }
@@ -93,8 +119,7 @@ extension AttentionKernel {
         
         ushort D_src_dimension = min(
           ushort(\(blockDimensionD)), ushort(D - d_outer));
-        ushort D_dst_dimension = min(
-          ushort(\(blockDimensionD)), ushort(\(paddedD) - d_outer));
+        ushort D_dst_dimension = \(descriptor.registerSize);
         ushort M_src_dimension = min(
           uint(32), \(matrixDimensions.M) - \(matrixOffset.M));
         ushort2 tile_src(D_src_dimension, M_src_dimension);
@@ -106,6 +131,9 @@ extension AttentionKernel {
           src, \(leadingDimensions.A), tile_src, \(transposeState.A));
         simdgroup_event::wait(1, &event);
       }
+      
+      \(declareLHSLocation())
+      threadgroup_barrier(mem_flags::mem_threadgroup);
       
       """
     }
@@ -130,7 +158,9 @@ extension AttentionKernel {
       """
     }
     
-    func loadRHS() -> String {
+    func loadRHS(
+      descriptor: LoopIterationDescriptor
+    ) -> String {
       let offset: UInt16 = cacheA ? 0 : 32 * 32
       
       return """
@@ -144,8 +174,7 @@ extension AttentionKernel {
         
         ushort D_src_dimension = min(
           ushort(\(blockDimensionD)), ushort(D - d_outer));
-        ushort D_dst_dimension = min(
-          ushort(\(blockDimensionD)), ushort(\(paddedD) - d_outer));
+        ushort D_dst_dimension = \(descriptor.registerSize);
         ushort N_src_dimension = min(
           uint(32), \(matrixDimensions.N) - \(matrixOffset.N));
         ushort N_dst_dimension = max(
@@ -163,7 +192,11 @@ extension AttentionKernel {
       """
     }
     
-    func innerLoopAB(startN: String, endN: String) -> String {
+    func multiplyAB(
+      startN: String,
+      endN: String,
+      descriptor: LoopIterationDescriptor
+    ) -> String {
       var loopBody: String
       if cacheA {
         loopBody = """
@@ -177,10 +210,8 @@ for (ushort n = \(startN); n < \(endN); n += 8) {
   \(B)T.load(
     \(B)T_block, \(leadingBlockDimensionB), origin, \(!transposeState.B));
   
-  // Mask out the first accumulate at compile-time.
-  bool accumulate = (d_outer > 0) || (d > 0);
   \(C)_sram[n / 8].multiply(
-    \(A)_sram[(d_outer + d) / 8], \(B)T, accumulate);
+    \(A)_sram[(d_outer + d) / 8], \(B)T, /*accumulate=*/true);
 }
 
 """
@@ -200,57 +231,89 @@ for (ushort n = \(startN); n < \(endN); n += 8) {
   simdgroup_matrix_storage<float> \(B)T;
   \(B)T.load(\(B)T_block, 32, origin, \(!transposeState.B));
   
-  // Mask out the first accumulate at compile-time.
-  bool accumulate = (d_outer > 0) || (d > 0);
-  \(C)_sram[n / 8].multiply(\(A), \(B)T, accumulate);
+  \(C)_sram[n / 8].multiply(
+    \(A), \(B)T, /*accumulate=*/true);
 }
 
 """
       }
       
       return """
-
-// Inner loop over D.
-if (D - d_outer >= \(blockDimensionD)) {
-#pragma clang loop unroll(full)
-  for (ushort d = 0; d < \(blockDimensionD); d += 8) {
-    \(loopBody)
-  }
-} else {
-#pragma clang loop unroll(full)
-  for (ushort d = 0; d < D % \(blockDimensionD); d += 8) {
-    \(loopBody)
-  }
-}
-
-"""
+      
+      // Inner loop over D.
+      #pragma clang loop unroll(full)
+      for (ushort d = 0; d < \(descriptor.registerSize); d += 8) {
+        \(loopBody)
+      }
+      
+      """
     }
     
     // MARK: - Loop Over Head Dimension
     
-    return """
+    struct LoopIterationDescriptor {
+      // Whether to accumulate in the SIMD matmul.
+      var accumulateConditional: String = ""
+      var registerOffset: String = ""
+      var registerSize: UInt16 = .zero
+    }
     
-    // Outer loop over D.
-    #pragma clang loop unroll(\(cacheA ? "full" : "disable"))
-    for (ushort d_outer = 0; d_outer < D; d_outer += \(blockDimensionD)) {
-      \(loadLHS())
-      \(declareLHSLocation())
+    func loopIteration(
+      descriptor iterationDesc: LoopIterationDescriptor
+    ) -> String {
+      """
+      
+      // Load the left-hand side.
+      \(loadLHS(descriptor: iterationDesc))
       
       // Declare the remainder of the row/column dimension.
       ushort N_remainder = (\(matrixDimensions.N) % 32 == 0)
         ? 32 : \(matrixDimensions.N) % 32;
       ushort N_remainder_padded = (N_remainder + 7) / 8 * 8;
-      \(loadRHS())
+      
+      // Load the right-hand side.
+      \(loadRHS(descriptor: iterationDesc))
       \(declareRHSLocation())
       threadgroup_barrier(mem_flags::mem_threadgroup);
       
-      // Inner loop over D.
-      \(innerLoopAB(startN: "0", endN: "N_remainder_padded"))
+      // Inner loop over D (the accumulation dimension).
+      \(multiplyAB(
+          startN: "0",
+          endN: "N_remainder_padded",
+          descriptor: iterationDesc))
       if (\(matrixOffset.N) + 32 < \(matrixDimensions.N)) {
-        \(innerLoopAB(startN: "N_remainder_padded", endN: "32"))
+        \(multiplyAB(
+            startN: "N_remainder_padded",
+            endN: "32",
+            descriptor: iterationDesc))
       }
+      
+      """
     }
     
-    """
+    var descriptor = LoopIterationDescriptor()
+    if cacheA {
+      fatalError("Not implemented.")
+    } else {
+      descriptor.accumulateConditional = "false"
+      descriptor.registerOffset = "0"
+      
+      // Future optimization: shorten the last loop iteration, if doing so
+      // doesn't increase the register pressure.
+      descriptor.registerSize = blockDimensionD
+      
+      return """
+      
+      \(allocateAccumulator())
+      \(initializeAccumulator())
+      
+      // Outer loop over D.
+      #pragma clang loop unroll(\(cacheA ? "full" : "disable"))
+      for (ushort d_outer = 0; d_outer < D; d_outer += \(blockDimensionD)) {
+        \(loopIteration(descriptor: descriptor))
+      }
+      
+      """
+    }
   }
 }

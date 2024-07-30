@@ -190,7 +190,6 @@ extension AttentionKernel {
   // Iterate over the columns.
   for (uint c = 0; c < C; c += 32) {
     // S = Q * K^T
-    simdgroup_matrix_storage<float> S_sram[32 / 8];
     \(QKT)
     
     // (m, l, P) = softmax(m, l, S * scaleFactor)
@@ -250,14 +249,12 @@ extension AttentionKernel {
   // Iterate over the columns.
   for (uint c = 0; c < C; c += 32) {
     // S = Q * K^T
-    simdgroup_matrix_storage<float> S_sram[32 / 8];
     \(QKT)
     
     // P = softmax(S * scaleFactor)
     \(checkpointSoftmax())
     
     // dP = dO * V^T
-    simdgroup_matrix_storage<float> dP_sram[32 / 8];
     \(dOVT)
     
     // dS = P * (dP - D) * scaleFactor
@@ -314,7 +311,6 @@ extension AttentionKernel {
   // Iterate over the rows.
   for (uint r = 0; r < R; r += 32) {
     // S^T = K * Q^T
-    simdgroup_matrix_storage<float> ST_sram[32 / 8];
     \(KQT)
     
     // P^T = exp(S^T - L)
@@ -324,7 +320,6 @@ extension AttentionKernel {
     \(accumulate(descriptor: accumulateDesc))
     
     // dP^T = V * dO^T
-    simdgroup_matrix_storage<float> dPT_sram[32 / 8];
     \(VdOT)
     
     // dS^T = P^T * (dP^T - D) * scaleFactor

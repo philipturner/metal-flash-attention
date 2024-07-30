@@ -143,6 +143,8 @@ func profileProblemSize(N: Int, D: Int) -> Int {
   //   space.
   //   - TODO: Restructure the outer-product loop to be similar to the
   //     accumulate loop.
+  //   - Implement the "future optimization" notes before running any
+  //     benchmarks.
   //   - Then, investigate the remaining register pressure bottlenecks
   //     (e.g. softmax).
   // - Elide async copies on M3. Can the R edge (FWD, BWD dQ) and C edge
