@@ -9,6 +9,8 @@
 // parallelization x head
 
 extension AttentionKernel {
+  
+  
   func load(name: String) -> String {
     func loadBlock(registerSize: UInt16) -> String {
       """
@@ -26,7 +28,7 @@ extension AttentionKernel {
     
     return """
 
-\(allocateOperand(name: name))
+\(allocateCachedOperand(name: name))
 {
   // Find where the \(name) data will be read from.
   ushort2 \(name)_block_offset(morton_offset.x, morton_offset.y + sidx * 8);
@@ -138,7 +140,7 @@ extension AttentionKernel {
       ushort R_dimension = min(
         uint(\(blockDimensions.parallelization)),
         uint(\(parallelizationDimension) - \(parallelizationOffset)));
-      ushort2 tile(D_dimension, M_dimension);
+      ushort2 tile(D_dimension, R_dimension);
       
       simdgroup_event event;
       event.async_copy(
@@ -155,17 +157,12 @@ extension AttentionKernel {
 
 extension AttentionKernel {
   // Allocate registers for the specified operand.
-  fileprivate func allocateOperand(name: String) -> String {
+  fileprivate func allocateCachedOperand(name: String) -> String {
     """
     
     simdgroup_matrix_storage<float> \(name)_sram[\(paddedHeadDimension / 8)];
     
     """
-  }
-  
-  // The thread's index along the parallelization dimension.
-  fileprivate var parallelizationIndex: String {
-    "gid * \(blockDimensions.parallelization) + sidx * 8 + morton_offset.y"
   }
   
   // Prepare the addresses and registers for the attention loop.
@@ -179,7 +176,7 @@ extension AttentionKernel {
         output += load(name: "Q")
       }
       if cachedOutputs.O {
-        output += allocateOperand(name: "O")
+        output += allocateCachedOperand(name: "O")
       }
       output += """
 
@@ -196,17 +193,17 @@ extension AttentionKernel {
         output += load(name: "dO")
       }
       if computeDerivativeQ, cachedOutputs.dQ {
-        output += load(name: "dQ")
+        output += allocateCachedOperand(name: "dQ")
       }
       if computeDerivativeQ {
         output += """
         
-        float L_term = L_terms[\(parallelizationIndex)];
+        float L_term = L_terms[\(parallelizationThreadOffset)];
         
         """
       }
       
-      // One could optimize this by recycling dO if it's already cached.
+      // One could optimize this by recycling dO (if it's cached).
       output += computeDTerm()
       
     case .backwardKeyValue(let computeDerivativeK):
@@ -217,18 +214,16 @@ extension AttentionKernel {
         output += load(name: "V")
       }
       if computeDerivativeK, cachedOutputs.dK {
-        output += allocateOperand(name: "dK")
+        output += allocateCachedOperand(name: "dK")
       }
       if cachedOutputs.dV {
-        output += allocateOperand(name: "dV")
+        output += allocateCachedOperand(name: "dV")
       }
     }
     
     return output
   }
-}
-
-extension AttentionKernel {
+  
   // Store any cached outputs to memory.
   func createCleanup(type: AttentionKernelType) -> String {
     // Initialize the output string.
@@ -236,19 +231,16 @@ extension AttentionKernel {
     
     switch type {
     case .forward(let computeL):
-      // O
       if cachedOutputs.O {
         output += store(name: "O")
       }
-      
-      // L[i]
       if computeL {
         output += """
         
-        if (\(parallelizationIndex) < R) {
+        if (\(parallelizationThreadOffset) < R) {
           // Premultiplied by M_LOG2E_F.
           float L_term = m + fast::log2(l);
-          L_terms[\(parallelizationIndex)] = L_term;
+          L_terms[\(parallelizationThreadOffset)] = L_term;
         }
         
         """
@@ -260,8 +252,8 @@ extension AttentionKernel {
       }
       output += """
       
-      if (\(parallelizationIndex) < R) {
-        D_terms[\(parallelizationIndex)] = D_term;
+      if (\(parallelizationThreadOffset) < R) {
+        D_terms[\(parallelizationThreadOffset)] = D_term;
       }
       
       """

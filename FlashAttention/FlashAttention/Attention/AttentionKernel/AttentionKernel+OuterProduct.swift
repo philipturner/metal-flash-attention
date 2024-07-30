@@ -191,7 +191,7 @@ extension AttentionKernel {
         ushort N_src_dimension = min(
           uint(32), \(matrixDimensions.N) - \(matrixOffset.N));
         ushort N_dst_dimension = max(
-          N_remainder_padded, N_src_dimension);
+          \(paddedTraversalDimension), N_src_dimension);
         ushort2 tile_src(D_src_dimension, N_src_dimension);
         ushort2 tile_dst(D_dst_dimension, N_dst_dimension);
         
@@ -255,11 +255,6 @@ extension AttentionKernel {
       \(allocateLHS(descriptor: iterationDesc))
       \(loadLHS(descriptor: iterationDesc))
       
-      // Declare the remainder of the row/column dimension.
-      ushort N_remainder = (\(matrixDimensions.N) % 32 == 0)
-        ? 32 : \(matrixDimensions.N) % 32;
-      ushort N_remainder_padded = (N_remainder + 7) / 8 * 8;
-      
       // Load the right-hand side.
       \(loadRHS(descriptor: iterationDesc))
       \(declareRHSLocation())
@@ -268,11 +263,11 @@ extension AttentionKernel {
       threadgroup_barrier(mem_flags::mem_threadgroup);
       \(multiplyAB(
           startN: "0",
-          endN: "N_remainder_padded",
+          endN: paddedTraversalDimension,
           descriptor: iterationDesc))
       if (\(matrixOffset.N) + 32 < \(matrixDimensions.N)) {
         \(multiplyAB(
-            startN: "N_remainder_padded",
+            startN: paddedTraversalDimension,
             endN: "32",
             descriptor: iterationDesc))
       }

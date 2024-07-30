@@ -197,6 +197,10 @@ extension AttentionKernel {
     "gid * \(blockDimensions.parallelization)"
   }
   
+  var parallelizationThreadOffset: String {
+    "\(parallelizationOffset) + sidx * 8 + morton_offset.y"
+  }
+  
   var traversalDimension: String {
     switch type {
     case .forward, .backwardQuery:
@@ -213,6 +217,15 @@ extension AttentionKernel {
     case .backwardKeyValue:
       return "r"
     }
+  }
+  
+  var paddedTraversalDimension: String {
+    let blockDim = blockDimensions.traversal
+    let remainder = "\(traversalDimension) % \(blockDim)"
+    
+    var output = "(\(remainder) == 0) ? \(blockDim) : \(remainder)"
+    output = "((\(output)) + 7) / 8 * 8"
+    return output
   }
   
   var paddedHeadDimension: UInt16 {

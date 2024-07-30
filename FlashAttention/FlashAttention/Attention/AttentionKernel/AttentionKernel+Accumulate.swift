@@ -224,7 +224,7 @@ extension AttentionKernel {
           ushort(\(blockDimensions.D)), ushort(\(headDimension) - d_outer));
         ushort K_src_dimension = min(
           uint(32), \(matrixDimensions.K) - \(matrixOffset.K));
-        ushort K_dst_dimension = max(K_remainder_padded, K_src_dimension);
+        ushort K_dst_dimension = max(\(paddedTraversalDimension), K_src_dimension);
         ushort2 tile_src(D_dimension, K_src_dimension);
         ushort2 tile_dst(D_dimension, K_dst_dimension);
         
@@ -291,11 +291,6 @@ extension AttentionKernel {
             descriptor: iterationDesc))
       }
       
-      // Declare the remainder of the row/column dimension.
-      const ushort K_remainder = (\(matrixDimensions.K) % 32 == 0)
-        ? 32 : \(matrixDimensions.K) % 32;
-      const ushort K_remainder_padded = (K_remainder + 7) / 8 * 8;
-      
       // Load the right-hand side.
       \(loadRHS())
       \(declareRHSLocation())
@@ -304,11 +299,11 @@ extension AttentionKernel {
       threadgroup_barrier(mem_flags::mem_threadgroup);
       \(multiplyAB(
           startK: "0",
-          endK: "K_remainder_padded",
+          endK: paddedTraversalDimension,
           descriptor: iterationDesc))
       if (\(matrixOffset.K) + 32 < \(matrixDimensions.K)) {
         \(multiplyAB(
-            startK: "K_remainder_padded", 
+            startK: paddedTraversalDimension, 
             endK: "32",
             descriptor: iterationDesc))
       } else {
