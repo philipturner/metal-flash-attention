@@ -53,7 +53,7 @@ float2 D_term_accumulator(0);
   threadgroup_barrier(mem_flags::mem_threadgroup);
   if (sidx == 0) {
     uint D_offset = \(loopEndFloor);
-    uint R_offset = gid * 32;
+    uint R_offset = \(parallelizationOffset);
     uint2 offset_src(D_offset, R_offset);
     
     auto dO_src = simdgroup_matrix_storage<float>::apply_offset(
@@ -66,7 +66,9 @@ float2 D_term_accumulator(0);
     
     ushort D_src_dimension = \(headDimension) % 8;
     ushort D_dst_dimension = 8;
-    ushort R_src_dimension = min(uint(32), R - gid * 32);
+    ushort R_src_dimension = min(
+      uint(\(blockDimensions.parallelization)),
+      uint(\(parallelizationDimension) - \(parallelizationOffset)));
     ushort2 tile_src(D_src_dimension, R_src_dimension);
     ushort2 tile_dst(D_dst_dimension, R_src_dimension);
     
@@ -115,7 +117,7 @@ float2 D_term_accumulator(0);
 float D_term = D_term_accumulator[0] + D_term_accumulator[1];
 D_term += simd_shuffle_xor(D_term, 1);
 D_term += simd_shuffle_xor(D_term, 8);
-D_term *= 1 / sqrt(float(\(headDimension)));
+D_term *= \(backwardScale);
 
 """
     
@@ -136,11 +138,11 @@ D_term *= 1 / sqrt(float(\(headDimension)));
       auto \(name)_terms_dst = (threadgroup float*)(threadgroup_block);
       
       ushort R_src_dimension = min(
-        ushort(\(blockDimensions.traversal)),
-        ushort(\(traversalDimension) - \(traversalOffset)));
+        uint(\(blockDimensions.traversal)),
+        uint(\(traversalDimension) - \(traversalOffset)));
       ushort R_src_dimension = min(
-        ushort(\(blockDimensions.traversal)),
-        ushort(\(paddedTraversalDimension) - \(traversalOffset)));
+        uint(\(blockDimensions.traversal)),
+        uint(\(paddedTraversalDimension) - \(traversalOffset)));
       
       // Issue an async copy.
       simdgroup_event event;
