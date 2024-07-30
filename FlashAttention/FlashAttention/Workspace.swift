@@ -155,7 +155,7 @@ func profileProblemSize(N: Int, D: Int) -> Int {
   networkDesc.D = D
   let network = Network(descriptor: networkDesc)
   
-  let cacheAll: Bool = false
+  let cacheAll: Bool = true
   var attentionDesc = AttentionDescriptor()
   attentionDesc.cachedInputs = (
     Q: cacheAll, K: cacheAll, V: cacheAll, dO: cacheAll)
@@ -176,12 +176,12 @@ func profileProblemSize(N: Int, D: Int) -> Int {
   func createPipeline(kernel: AttentionKernel) -> MTLComputePipelineState {
     // Set the function constants.
     let constants = MTLFunctionConstantValues()
-    var R = attentionDesc.matrixDimensions!.R
-    var C = attentionDesc.matrixDimensions!.C
-    var D = attentionDesc.matrixDimensions!.D
-    constants.setConstantValue(&R, type: .uint, index: 0)
-    constants.setConstantValue(&C, type: .uint, index: 1)
-    constants.setConstantValue(&D, type: .ushort, index: 2)
+    guard attentionDesc.matrixDimensions!.R ==
+            attentionDesc.matrixDimensions!.C else {
+      fatalError("Rectangular attention matrices are not supported yet.")
+    }
+    var N = attentionDesc.matrixDimensions!.R
+    constants.setConstantValue(&N, type: .uint, index: 0)
     
     let device = MTLContext.global.device
     let library = try! device.makeLibrary(source: kernel.source, options: nil)
@@ -284,7 +284,7 @@ func profileProblemSize(N: Int, D: Int) -> Int {
         dispatch(
           kernel: kernelBackwardKeyValue,
           pipeline: pipelineBackwardKeyValue,
-          along: kernelBackwardKeyValue.blockDimensions.C)
+          along: kernelBackwardKeyValue.blockDimensions.R)
       }
     }
     

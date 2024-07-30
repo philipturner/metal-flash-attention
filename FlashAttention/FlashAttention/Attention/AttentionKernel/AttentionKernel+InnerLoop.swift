@@ -347,6 +347,10 @@ extension AttentionKernel {
   
 """
     } else {
+      var leadingDimension = "(C + \(blockDimensions.R) - 1)"
+      leadingDimension = "\(leadingDimension) / \(blockDimensions.R)"
+      leadingDimension = "\(leadingDimension) * \(blockDimensions.R)"
+      
       output += """
 
 // store dS^T[c][r]
@@ -355,13 +359,13 @@ extension AttentionKernel {
   device_origin += uint2(morton_offset);
   device float* dst =
   simdgroup_matrix_storage<float>::apply_offset(
-    dST, \(leadingDimensionDerivativeST), device_origin, false);
+    dST, \(leadingDimension), device_origin, false);
   
 #pragma clang loop unroll(full)
   for (ushort c = 0; c < 32; c += 8) {
     ushort2 thread_origin(c, 0);
     dST_sram[c / 8].store(
-      dst, \(leadingDimensionDerivativeST), thread_origin, false);
+      dst, \(leadingDimension), thread_origin, false);
   }
 }
 

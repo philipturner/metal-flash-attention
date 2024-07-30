@@ -98,7 +98,11 @@ extension AttentionKernel {
   
   // Outer loop over D.
 #pragma clang loop unroll(full)
-  for (ushort d_outer = 0; d_outer < D; d_outer += \(blockDimensions.D)) {
+  for (
+    ushort d_outer = 0;
+    d_outer < \(headDimension);
+    d_outer += \(blockDimensions.D)
+  ) {
     threadgroup_barrier(mem_flags::mem_threadgroup);
     
     if (sidx == 0) {
@@ -108,7 +112,7 @@ extension AttentionKernel {
       auto dst = (threadgroup float*)(threadgroup_block);
      
       ushort D_src_dimension = min(
-        ushort(\(blockDimensions.D)), ushort(D - d_outer));
+        ushort(\(blockDimensions.D)), ushort(\(headDimension) - d_outer));
       ushort D_dst_dimension = min(
         ushort(\(blockDimensions.D)), ushort(\(paddedD) - d_outer));
       ushort M_dimension = min(
@@ -125,14 +129,14 @@ extension AttentionKernel {
     threadgroup_barrier(mem_flags::mem_threadgroup);
 
     // Iterate over the head dimension.
-    if (D - d_outer >= \(blockDimensions.D)) {
+    if (\(headDimension) - d_outer >= \(blockDimensions.D)) {
 #pragma clang loop unroll(full)
       for (ushort d = 0; d < \(blockDimensions.D); d += 8) {
         \(loopBody)
       }
     } else {
 #pragma clang loop unroll(full)
-      for (ushort d = 0; d < D % \(blockDimensions.D); d += 8) {
+      for (ushort d = 0; d < \(headDimension % blockDimensions.D); d += 8) {
         \(loopBody)
       }
     }
@@ -172,18 +176,22 @@ extension AttentionKernel {
   
   // Outer loop over D.
 #pragma clang loop unroll(full)
-  for (ushort d_outer = 0; d_outer < D; d_outer += \(blockDimensions.D)) {
+  for (
+    ushort d_outer = 0;
+    d_outer < \(headDimension);
+    d_outer += \(blockDimensions.D)
+  ) {
     threadgroup_barrier(mem_flags::mem_threadgroup);
     
     // Iterate over the head dimension.
-    if (D - d_outer >= \(blockDimensions.D)) {
+    if (\(headDimension) - d_outer >= \(blockDimensions.D)) {
 #pragma clang loop unroll(full)
       for (ushort d = 0; d < \(blockDimensions.D); d += 8) {
         \(loopBody)
       }
     } else {
 #pragma clang loop unroll(full)
-      for (ushort d = 0; d < D % \(blockDimensions.D); d += 8) {
+      for (ushort d = 0; d < \(headDimension % blockDimensions.D); d += 8) {
         \(loopBody)
       }
     }
@@ -196,7 +204,7 @@ extension AttentionKernel {
         \(name), \(leadingDimension), \(name)_offset, \(transposeState));
      
       ushort D_dimension = min(
-        ushort(\(blockDimensions.D)), ushort(D - d_outer));
+        ushort(\(blockDimensions.D)), ushort(\(headDimension) - d_outer));
       ushort M_dimension = min(
         uint(32), \(matrixDimension) - \(matrixOffset));
       ushort2 tile(D_dimension, M_dimension);
@@ -211,131 +219,6 @@ extension AttentionKernel {
 }
 
 """
-  }
-}
-
-// MARK: - Arguments
-
-extension AttentionKernel {
-  func createArguments(type: AttentionKernelType) -> String {
-    struct AttentionOperand {
-      var precision: GEMMOperandPrecision
-      var bufferBinding: Int
-    }
-    
-    // Index the operands available during the forward pass.
-    var operandsMap: [String: AttentionOperand] = [:]
-    operandsMap["Q"] = AttentionOperand(
-      precision: .FP32, bufferBinding: 0)
-    operandsMap["K"] = AttentionOperand(
-      precision: .FP32, bufferBinding: 1)
-    operandsMap["V"] = AttentionOperand(
-      precision: .FP32, bufferBinding: 2)
-    operandsMap["O"] = AttentionOperand(
-      precision: .FP32, bufferBinding: 3)
-    operandsMap["L_terms"] = AttentionOperand(
-      precision: .FP32, bufferBinding: 4)
-    
-    // Index the operands available during the backward pass.
-    operandsMap["dO"] = AttentionOperand(
-      precision: .FP32, bufferBinding: 5)
-    operandsMap["D_terms"] = AttentionOperand(
-      precision: .FP32, bufferBinding: 6)
-    operandsMap["dV"] = AttentionOperand(
-      precision: .FP32, bufferBinding: 7)
-    operandsMap["dST"] = AttentionOperand(
-      // This is an intermediate allocation, managed internally by the MFA
-      // backend. We can impose constraints on it that wouldn't typically be
-      // feasible. For example, we can force the row stride to be divisible by
-      // the block size (~32). This simplifies the code; we don't need to run
-      // async copies to safeguard against corrupted memory accesses.
-      //
-      // If the matrix rows are noncontiguous, we must modify the in-tree
-      // GEMM kernel to support custom leading dimensions. This can be
-      // something modified explicitly by the user - an option to override the
-      // default leading dimension. The leading dimension is specified after
-      // the 'GEMMKernelDescriptor' is created from the 'GEMMDescriptor', and
-      // before the 'GEMMKernel' is created from the 'GEMMKernelDescriptor'.
-      precision: .FP32, bufferBinding: 8)
-    operandsMap["dK"] = AttentionOperand(
-      precision: .FP32, bufferBinding: 8)
-    operandsMap["dQ"] = AttentionOperand(
-      precision: .FP32, bufferBinding: 9)
-    
-    // Select the operands used by this variant.
-    var operandKeys: [String]
-    switch type {
-    case .forward(let computeL):
-      operandKeys = [
-        "Q", "K", "V", "O"
-      ]
-      if computeL {
-        operandKeys.append("L_terms")
-      }
-    case .backwardQuery(let computeDerivativeQ):
-      if computeDerivativeQ {
-        operandKeys = [
-          "Q", "K", "V", "O",
-          "L_terms", "dO", "D_terms", "dQ"
-        ]
-      } else {
-        operandKeys = [
-          "O", "dO", "D_terms"
-        ]
-      }
-    case .backwardKeyValue(let computeDerivativeK):
-      operandKeys = [
-        "Q", "K", "V",
-        "L_terms", "dO", "D_terms", "dV"
-      ]
-      if computeDerivativeK {
-        operandKeys.append("dK")
-      } else {
-        operandKeys.append("dST")
-      }
-    }
-    
-    // Collect the operands into a single string.
-    var output: String = ""
-    for key in operandKeys {
-      let operand = operandsMap[key]!
-      
-      var line = "  "
-      line += "device "
-      line += operand.precision.name + " "
-      line += "*" + key + " "
-      line += "[[buffer(\(operand.bufferBinding))]]"
-      line += ",\n"
-      output += line
-    }
-    
-    // Add the arguments that define the thread's position.
-    output += """
-  
-  threadgroup uchar *threadgroup_block [[threadgroup(0)]],
-  
-  uint gid [[threadgroup_position_in_grid]],
-  ushort sidx [[simdgroup_index_in_threadgroup]],
-  ushort lane_id [[thread_index_in_simdgroup]]
-) {
-  ushort2 morton_offset = morton_order(lane_id);
-
-"""
-    
-    // The thread's array slot in the row or column dimension (whichever the
-    // kernel is parallelized over). Used for indexing into 1D arrays.
-    switch type {
-    case .forward, .backwardQuery:
-      output += """
-
-  uint linear_array_slot = gid * 32 + sidx * 8 + morton_offset.y;
-
-"""
-    default:
-      break
-    }
-    
-    return output
   }
 }
 

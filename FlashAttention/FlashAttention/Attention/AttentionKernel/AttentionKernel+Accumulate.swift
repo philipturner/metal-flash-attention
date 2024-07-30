@@ -115,7 +115,7 @@ extension AttentionKernel {
         
         // It doesn't matter if the rows below the matrix edge are garbage.
         ushort D_dimension = min(
-          ushort(\(blockDimensions.D)), ushort(D - d_outer));
+          ushort(\(blockDimensions.D)), ushort(\(headDimension) - d_outer));
         ushort M_dimension = min(
           uint(32), \(matrixDimensions.M) - \(matrixOffset.M));
         ushort2 tile(D_dimension, M_dimension);
@@ -187,7 +187,7 @@ extension AttentionKernel {
           \(C), \(leadingDimensions.C), \(C)_offset, \(transposeState.C));
         
         ushort D_dimension = min(
-          ushort(\(blockDimensions.D)), ushort(D - d_outer));
+          ushort(\(blockDimensions.D)), ushort(\(headDimension) - d_outer));
         ushort M_dimension = min(
           uint(32), \(matrixDimensions.M) - \(matrixOffset.M));
         ushort2 tile(D_dimension, M_dimension);
@@ -228,7 +228,7 @@ extension AttentionKernel {
         auto dst = (threadgroup float*)(threadgroup_block);
         
         ushort D_dimension = min(
-          ushort(\(blockDimensions.D)), ushort(D - d_outer));
+          ushort(\(blockDimensions.D)), ushort(\(headDimension) - d_outer));
         ushort K_src_dimension = min(
           uint(32), \(matrixDimensions.K) - \(matrixOffset.K));
         ushort K_dst_dimension = max(K_remainder_padded, K_src_dimension);
@@ -376,7 +376,11 @@ extension AttentionKernel {
       return """
       
       #pragma clang loop unroll(disable)
-      for (ushort d_outer = 0; d_outer < D; d_outer += \(blockDimensions.D)) {
+      for (
+        ushort d_outer = 0;
+        d_outer < \(headDimension);
+        d_outer += \(blockDimensions.D)
+      ) {
         \(loopIteration(descriptor: descriptor))
       }
 

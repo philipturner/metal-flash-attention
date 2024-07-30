@@ -31,7 +31,7 @@ float2 D_term_accumulator(0);
   
   // Going to use async copy to handle the matrix edge.
 #pragma clang loop unroll(disable)
-  for (ushort d = 0; d < D - (D % 8); d += 8) {
+  for (ushort d = 0; d < \(headDimension) - (\(headDimension) % 8); d += 8) {
     ushort2 origin(d, 0);
     simdgroup_matrix_storage<float> dO;
     simdgroup_matrix_storage<float> O;
@@ -45,10 +45,10 @@ float2 D_term_accumulator(0);
   }
 }
 
-if (D % 8 != 0) {
+if (\(headDimension) % 8 != 0) {
   threadgroup_barrier(mem_flags::mem_threadgroup);
   if (sidx == 0) {
-    uint D_offset = D - (D % 8);
+    uint D_offset = \(headDimension) - (\(headDimension) % 8);
     uint R_offset = gid * 32;
     uint2 offset_src(D_offset, R_offset);
     
@@ -59,7 +59,7 @@ if (D % 8 != 0) {
     auto dO_dst = (threadgroup float*)(threadgroup_block);
     auto O_dst = (threadgroup float*)(threadgroup_block) + \(32 * 8);
     
-    ushort D_src_dimension = D % 8;
+    ushort D_src_dimension = \(headDimension) % 8;
     ushort D_dst_dimension = 8;
     ushort R_src_dimension = min(uint(32), R - gid * 32);
     ushort2 tile_src(D_src_dimension, R_src_dimension);
@@ -102,7 +102,7 @@ if (D % 8 != 0) {
 float D_term = D_term_accumulator[0] + D_term_accumulator[1];
 D_term += simd_shuffle_xor(D_term, 1);
 D_term += simd_shuffle_xor(D_term, 8);
-D_term *= 1 / sqrt(float(D));
+D_term *= 1 / sqrt(float(\(headDimension)));
 
 """
   }
@@ -148,7 +148,7 @@ extension AttentionKernel {
 
 extension AttentionKernel {
   func onlineSoftmax() -> String {
-    let scaleFactor = "(M_LOG2E_F / sqrt(float(D)))"
+    let scaleFactor = "(M_LOG2E_F / sqrt(float(\(headDimension))))"
     
     return """
 
@@ -204,7 +204,7 @@ extension AttentionKernel {
   }
   
   func checkpointSoftmax() -> String {
-    let scaleFactor = "(M_LOG2E_F / sqrt(float(D)))"
+    let scaleFactor = "(M_LOG2E_F / sqrt(float(\(headDimension))))"
     
     return """
 
@@ -220,7 +220,7 @@ extension AttentionKernel {
   }
   
   func checkpointSoftmaxT() -> String {
-    let scaleFactor = "(M_LOG2E_F / sqrt(float(D)))"
+    let scaleFactor = "(M_LOG2E_F / sqrt(float(\(headDimension))))"
     
     return """
 
@@ -273,7 +273,7 @@ simdgroup_matrix_storage<float> PT_sram[32 / 8];
 
 extension AttentionKernel {
   func computeDerivativeSoftmax() -> String {
-    let scaleFactor = "(1 / sqrt(float(D)))"
+    let scaleFactor = "(1 / sqrt(float(\(headDimension))))"
     
     return """
 
@@ -291,7 +291,7 @@ extension AttentionKernel {
   }
   
   func computeDerivativeSoftmaxT() -> String {
-    let scaleFactor = "(1 / sqrt(float(D)))"
+    let scaleFactor = "(1 / sqrt(float(\(headDimension))))"
     
     return """
 

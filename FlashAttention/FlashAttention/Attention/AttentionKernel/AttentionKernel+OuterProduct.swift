@@ -134,7 +134,7 @@ extension AttentionKernel {
         auto dst = (threadgroup float*)(threadgroup_block);
         
         ushort D_src_dimension = min(
-          ushort(\(blockDimensions.D)), ushort(D - d_outer));
+          ushort(\(blockDimensions.D)), ushort(\(headDimension) - d_outer));
         ushort D_dst_dimension = \(descriptor.registerSize);
         ushort M_src_dimension = min(
           uint(32), \(matrixDimensions.M) - \(matrixOffset.M));
@@ -193,7 +193,7 @@ extension AttentionKernel {
         auto dst = (threadgroup float*)(threadgroup_block);
         
         ushort D_src_dimension = min(
-          ushort(\(blockDimensions.D)), ushort(D - d_outer));
+          ushort(\(blockDimensions.D)), ushort(\(headDimension) - d_outer));
         ushort D_dst_dimension = \(descriptor.registerSize);
         ushort N_src_dimension = min(
           uint(32), \(matrixDimensions.N) - \(matrixOffset.N));
@@ -339,7 +339,11 @@ extension AttentionKernel {
       \(initializeAccumulator())
       
       #pragma clang loop unroll(disable)
-      for (ushort d_outer = 0; d_outer < D; d_outer += \(blockDimensions.D)) {
+      for (
+        ushort d_outer = 0;
+        d_outer < \(headDimension);
+        d_outer += \(blockDimensions.D)
+      ) {
         \(loopIteration(descriptor: descriptor))
       }
       
