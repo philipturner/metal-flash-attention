@@ -43,8 +43,8 @@
 //     FP32: 12 * (D / 4) bytes
 //     FP16:  8 * (D / 4) bytes
 
-struct AttentionHBMAccessDescriptor {
-  /// Source or destination of a 32 x D block.
+struct AttentionLoadStoreDescriptor {
+  /// Source or destination of an R x D block.
   var name: String?
   
   var transposeState: Bool?
@@ -58,7 +58,7 @@ extension AttentionKernel {
   // Does not have any delay between prefetching something and writing it to
   // registers. This may cause a regression from the old MFA; investigate M1
   // performance at a later date.
-  func load(descriptor: AttentionHBMAccessDescriptor) -> String {
+  func load(descriptor: AttentionLoadStoreDescriptor) -> String {
     guard let name = descriptor.name,
           let transposeState = descriptor.transposeState,
           let leadingDimension = descriptor.leadingDimension,
@@ -146,7 +146,7 @@ extension AttentionKernel {
 """
   }
   
-  func store(descriptor: AttentionHBMAccessDescriptor) -> String {
+  func store(descriptor: AttentionLoadStoreDescriptor) -> String {
     guard let name = descriptor.name,
           let transposeState = descriptor.transposeState,
           let leadingDimension = descriptor.leadingDimension,
@@ -239,7 +239,7 @@ extension AttentionKernel {
     switch type {
     case .forward:
       if cachedInputs.Q {
-        var accessDesc = AttentionHBMAccessDescriptor()
+        var accessDesc = AttentionLoadStoreDescriptor()
         accessDesc.name = "Q"
         accessDesc.transposeState = transposeState.Q
         accessDesc.leadingDimension = leadingDimensions.Q
@@ -261,7 +261,7 @@ extension AttentionKernel {
       
     case .backwardQuery(let computeDerivativeQ):
       if cachedInputs.Q {
-        var accessDesc = AttentionHBMAccessDescriptor()
+        var accessDesc = AttentionLoadStoreDescriptor()
         accessDesc.name = "Q"
         accessDesc.transposeState = transposeState.Q
         accessDesc.leadingDimension = leadingDimensions.Q
@@ -271,7 +271,7 @@ extension AttentionKernel {
       }
       
       if cachedInputs.dO {
-        var accessDesc = AttentionHBMAccessDescriptor()
+        var accessDesc = AttentionLoadStoreDescriptor()
         accessDesc.name = "dO"
         accessDesc.transposeState = transposeState.O
         accessDesc.leadingDimension = leadingDimensions.O
@@ -296,7 +296,7 @@ extension AttentionKernel {
       
     case .backwardKeyValue(let computeDerivativeK):
       if cachedInputs.K {
-        var accessDesc = AttentionHBMAccessDescriptor()
+        var accessDesc = AttentionLoadStoreDescriptor()
         accessDesc.name = "K"
         accessDesc.transposeState = transposeState.K
         accessDesc.leadingDimension = leadingDimensions.K
@@ -306,7 +306,7 @@ extension AttentionKernel {
       }
       
       if cachedInputs.V {
-        var accessDesc = AttentionHBMAccessDescriptor()
+        var accessDesc = AttentionLoadStoreDescriptor()
         accessDesc.name = "V"
         accessDesc.transposeState = transposeState.V
         accessDesc.leadingDimension = leadingDimensions.V
@@ -337,7 +337,7 @@ extension AttentionKernel {
     case .forward(let computeL):
       // O
       if cachedOutputs.O {
-        var accessDesc = AttentionHBMAccessDescriptor()
+        var accessDesc = AttentionLoadStoreDescriptor()
         accessDesc.name = "O"
         accessDesc.transposeState = transposeState.O
         accessDesc.leadingDimension = leadingDimensions.O
@@ -362,7 +362,7 @@ extension AttentionKernel {
     case .backwardQuery(let computeDerivativeQ):
       // dQ
       if computeDerivativeQ, cachedOutputs.dQ {
-        var accessDesc = AttentionHBMAccessDescriptor()
+        var accessDesc = AttentionLoadStoreDescriptor()
         accessDesc.name = "dQ"
         accessDesc.transposeState = transposeState.Q
         accessDesc.leadingDimension = leadingDimensions.Q
@@ -383,7 +383,7 @@ extension AttentionKernel {
     case .backwardKeyValue(let computeDerivativeK):
       // dK
       if computeDerivativeK, cachedOutputs.dK {
-        var accessDesc = AttentionHBMAccessDescriptor()
+        var accessDesc = AttentionLoadStoreDescriptor()
         accessDesc.name = "dK"
         accessDesc.transposeState = transposeState.K
         accessDesc.leadingDimension = leadingDimensions.K
@@ -394,7 +394,7 @@ extension AttentionKernel {
       
       // dV
       if cachedOutputs.dV {
-        var accessDesc = AttentionHBMAccessDescriptor()
+        var accessDesc = AttentionLoadStoreDescriptor()
         accessDesc.name = "dV"
         accessDesc.transposeState = transposeState.V
         accessDesc.leadingDimension = leadingDimensions.V

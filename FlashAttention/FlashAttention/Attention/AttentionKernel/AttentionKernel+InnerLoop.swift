@@ -347,6 +347,19 @@ extension AttentionKernel {
   
 """
     } else {
+      // dS^T is an intermediate allocation, managed internally by the MFA
+      // backend. We can impose constraints on it that wouldn't typically be
+      // feasible. For example, we can force the row stride to be divisible by
+      // the block size (~32). This simplifies the code; we don't need to run
+      // async copies to safeguard against corrupted memory accesses.
+      //
+      // If the matrix rows are noncontiguous, we must modify the in-tree
+      // GEMM kernel to support custom leading dimensions. This can be
+      // something modified explicitly by the user - an option to override the
+      // default leading dimension. The leading dimension is specified after
+      // the 'GEMMKernelDescriptor' is created from the 'GEMMDescriptor', and
+      // before the 'GEMMKernel' is created from the 'GEMMKernelDescriptor'.
+      
       var leadingDimension = "(C + \(blockDimensions.R) - 1)"
       leadingDimension = "\(leadingDimension) / \(blockDimensions.R)"
       leadingDimension = "\(leadingDimension) * \(blockDimensions.R)"

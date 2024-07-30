@@ -62,13 +62,20 @@ struct AttentionKernel {
     blockDimensions = (R: 32, C: 32, D: 64)
     headDimension = matrixDimensions.D
     leadingDimensions = (
-      transposeState.Q ? "R" : "\(headDimension)",
-      transposeState.K ? "C" : "\(headDimension)",
-      transposeState.V ? "C" : "\(headDimension)",
-      transposeState.O ? "R" : "\(headDimension)")
+      transposeState.Q ? "N" : "\(headDimension)",
+      transposeState.K ? "N" : "\(headDimension)",
+      transposeState.V ? "N" : "\(headDimension)",
+      transposeState.O ? "N" : "\(headDimension)")
     
-    threadgroupSize = 32 * (blockDimensions.R / 8)
-    threadgroupMemoryAllocation = 32 * blockDimensions.D * 4
+    do {
+      let simdsPerGroup = blockDimensions.R / 8
+      threadgroupSize = 32 * simdsPerGroup
+    }
+    do {
+      threadgroupMemoryAllocation = max(
+        blockDimensions.R * blockDimensions.D * 4,
+        blockDimensions.D * blockDimensions.C * 4)
+    }
     
     // Inject the contents of the headers.
     source += """
@@ -110,6 +117,9 @@ kernel void attention(
 
 // MARK: - Arguments
 
+// TODO: Make an enumeration over the different operands in attention. That
+// will make it easier to de-duplicate code across the descriptors.
+
 extension AttentionKernel {
   func createArguments(type: AttentionKernelType) -> String {
     struct AttentionOperand {
@@ -138,18 +148,6 @@ extension AttentionKernel {
     operandsMap["dV"] = AttentionOperand(
       precision: .FP32, bufferBinding: 7)
     operandsMap["dST"] = AttentionOperand(
-      // This is an intermediate allocation, managed internally by the MFA
-      // backend. We can impose constraints on it that wouldn't typically be
-      // feasible. For example, we can force the row stride to be divisible by
-      // the block size (~32). This simplifies the code; we don't need to run
-      // async copies to safeguard against corrupted memory accesses.
-      //
-      // If the matrix rows are noncontiguous, we must modify the in-tree
-      // GEMM kernel to support custom leading dimensions. This can be
-      // something modified explicitly by the user - an option to override the
-      // default leading dimension. The leading dimension is specified after
-      // the 'GEMMKernelDescriptor' is created from the 'GEMMDescriptor', and
-      // before the 'GEMMKernel' is created from the 'GEMMKernelDescriptor'.
       precision: .FP32, bufferBinding: 8)
     operandsMap["dK"] = AttentionOperand(
       precision: .FP32, bufferBinding: 8)
@@ -222,7 +220,8 @@ extension AttentionKernel {
     case .forward, .backwardQuery:
       output += """
 
-  uint linear_array_slot = gid * 32 + sidx * 8 + morton_offset.y;
+  uint linear_array_slot = 
+  gid * \(blockDimensions.R) + sidx * 8 + morton_offset.y;
 
 """
     default:

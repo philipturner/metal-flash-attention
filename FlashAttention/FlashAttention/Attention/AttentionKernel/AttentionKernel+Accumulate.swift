@@ -10,13 +10,13 @@
 // MARK: - Accumulate
 
 struct AttentionAccumulateDescriptor {
-  /// Name of left-hand side register allocation (32 x 32).
+  /// Name of left-hand side (R x C).
   var A: String?
   
-  /// Name of right-hand side, source of a 32 x D block.
+  /// Name of right-hand side (C x D).
   var B: String?
   
-  /// Name of product register allocation (32 x D).
+  /// Name of accumulator (R x D).
   var C: String?
   var cacheC: Bool?
   
