@@ -25,7 +25,7 @@ enum AttentionKernelType {
   /// Backward attention, computing dK and dV.
   ///
   /// Variants:
-  /// - `false`: compute dV, store the intermediate dS
+  /// - `false`: compute dV
   /// - `true`: compute dV and dK
   ///
   /// Depends on: L[i], D[i]

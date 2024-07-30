@@ -7,10 +7,10 @@
 	objects = {
 
 /* Begin PBXBuildFile section */
-		9827D7A32C4ABEEA00649C7B /* AttentionKernel+OuterProduct.swift in Sources */ = {isa = PBXBuildFile; fileRef = 9827D7A22C4ABEEA00649C7B /* AttentionKernel+OuterProduct.swift */; };
 		9827D7A52C4ABF0F00649C7B /* AttentionKernel+Accumulate.swift in Sources */ = {isa = PBXBuildFile; fileRef = 9827D7A42C4ABF0F00649C7B /* AttentionKernel+Accumulate.swift */; };
 		9827D7A72C4AC05C00649C7B /* AttentionKernel+Softmax.swift in Sources */ = {isa = PBXBuildFile; fileRef = 9827D7A62C4AC05C00649C7B /* AttentionKernel+Softmax.swift */; };
 		982EBD5F2C5949CC00AB4E00 /* AttentionOperandPrecision.swift in Resources */ = {isa = PBXBuildFile; fileRef = 982EBD5E2C5949CC00AB4E00 /* AttentionOperandPrecision.swift */; };
+		982EBD602C5954D600AB4E00 /* AttentionKernel+OuterProduct.swift in Sources */ = {isa = PBXBuildFile; fileRef = 9827D7A22C4ABEEA00649C7B /* AttentionKernel+OuterProduct.swift */; };
 		9881A9F62C24C8230056D05C /* FlashAttentionApp.swift in Sources */ = {isa = PBXBuildFile; fileRef = 9881A9F52C24C8230056D05C /* FlashAttentionApp.swift */; };
 		9881A9F82C24C8230056D05C /* ContentView.swift in Sources */ = {isa = PBXBuildFile; fileRef = 9881A9F72C24C8230056D05C /* ContentView.swift */; };
 		9881AA052C24C85E0056D05C /* Workspace.swift in Sources */ = {isa = PBXBuildFile; fileRef = 9881AA042C24C85E0056D05C /* Workspace.swift */; };
@@ -37,7 +37,6 @@
 		98DA5B442C2DB893000F4E06 /* DerivativeSoftmaxTest.swift in Sources */ = {isa = PBXBuildFile; fileRef = 98DA5B432C2DB893000F4E06 /* DerivativeSoftmaxTest.swift */; };
 		98DA5B482C2DE2DA000F4E06 /* AttentionKernel.swift in Sources */ = {isa = PBXBuildFile; fileRef = 98DA5B472C2DE2DA000F4E06 /* AttentionKernel.swift */; };
 		98DA5B4A2C2EF788000F4E06 /* AttentionDescriptor.swift in Sources */ = {isa = PBXBuildFile; fileRef = 98DA5B492C2EF788000F4E06 /* AttentionDescriptor.swift */; };
-		98DA5B4C2C2F0052000F4E06 /* AttentionOperand.swift in Sources */ = {isa = PBXBuildFile; fileRef = 98DA5B4B2C2F0052000F4E06 /* AttentionOperand.swift */; };
 		98F950F92C49671600C370E4 /* StoreDerivativeSTest.swift in Sources */ = {isa = PBXBuildFile; fileRef = 98F950F82C49671600C370E4 /* StoreDerivativeSTest.swift */; };
 		98FB66E12C347CBA00C56CED /* AttentionKernel+InnerLoop.swift in Sources */ = {isa = PBXBuildFile; fileRef = 98FB66E02C347CBA00C56CED /* AttentionKernel+InnerLoop.swift */; };
 /* End PBXBuildFile section */
@@ -264,6 +263,7 @@
 			buildActionMask = 2147483647;
 			files = (
 				98DA5B362C2AFD65000F4E06 /* Network.swift in Sources */,
+				982EBD602C5954D600AB4E00 /* AttentionKernel+OuterProduct.swift in Sources */,
 				9881AA182C25B0440056D05C /* GEMMHeaders.swift in Sources */,
 				9882512E2C4E9F890047052E /* AttentionKernel+LoadStore.swift in Sources */,
 				98DA5B382C2AFF9E000F4E06 /* FiniteDifferencingTest.swift in Sources */,
@@ -277,7 +277,6 @@
 				98FB66E12C347CBA00C56CED /* AttentionKernel+InnerLoop.swift in Sources */,
 				98DA5B422C2CA75D000F4E06 /* DerivativeSoftmax.swift in Sources */,
 				9881AA232C25C22B0056D05C /* LaplacianTest.swift in Sources */,
-				9827D7A32C4ABEEA00649C7B /* AttentionKernel+OuterProduct.swift in Sources */,
 				9881AA1C2C25B11C0056D05C /* CoreCount.swift in Sources */,
 				98DA5B442C2DB893000F4E06 /* DerivativeSoftmaxTest.swift in Sources */,
 				9827D7A52C4ABF0F00649C7B /* AttentionKernel+Accumulate.swift in Sources */,
@@ -290,7 +289,6 @@
 				98DA5B3D2C2C5086000F4E06 /* MTLContext.swift in Sources */,
 				9881AA162C25AEF10056D05C /* GEMMOperandPrecision.swift in Sources */,
 				98DA5B3A2C2B3A6D000F4E06 /* Softmax.swift in Sources */,
-				98DA5B4C2C2F0052000F4E06 /* AttentionOperand.swift in Sources */,
 			);
 			runOnlyForDeploymentPostprocessing = 0;
 		};

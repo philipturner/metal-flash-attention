@@ -7,19 +7,26 @@
 
 // Make an enumeration over the different operands in attention. That
 // will make it easier to de-duplicate code across the descriptors.
+//
+// Removing support for algorithm variants that materialize
+// S or dS in memory, for now (to simplify the code). Later, we
+// add them as optimizations, just like reduced precision is an
+// optimization.
+
 enum AttentionOperand {
   case Q
   case K
-  case S
+  // case S
   case V
   case O
   
   case dO
   case dV
-  case dS
+  // case dS
   case dK
   case dQ
 }
+
 
 enum AttentionOperandPrecision {
   case full

@@ -20,7 +20,7 @@
 //   }
 //   O /= l
 //
-// Backward Query (true)
+// Backward Query
 //   for c in 0..<C {
 //     load K[c]
 //     S = Q * K^T
@@ -32,21 +32,7 @@
 //     dQ += dS * K
 //   }
 //
-// Backward Key-Value (false)
-//   for r in 0..<R {
-//     load Q[r]
-//     load L[r]
-//     S^T = K * Q^T
-//     P^T = exp(S^T - L)
-//     load dO[r]
-//     load D[r]
-//     dV += P^T * dO
-//     dP^T = V * dO^T
-//     dS^T = P^T * (dP^T - D) * scaleFactor
-//     store dS^T[c][r]
-//   }
-//
-// Backward Key-Value (true)
+// Backward Key-Value
 //   for r in 0..<R {
 //     load Q[r]
 //     load L[r]
@@ -90,7 +76,7 @@
 //   store dO
 //   store L
 //
-// Backward Query (true)
+// Backward Query
 //   // Setup
 //   initialize dQ[32][128]
 //   load L[32]
@@ -122,7 +108,7 @@
 //   store dQ
 //   store D
 //
-// Backward Key-Value (true)
+// Backward Key-Value
 //   // Setup
 //   initialize dK[32][128]
 //   initialize dV[32][128]
