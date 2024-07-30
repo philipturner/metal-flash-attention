@@ -245,6 +245,8 @@ extension AttentionKernel {
       """
     }
     
+    // MARK: - Matrix Multiplication
+    
     func multiplyAB(
       startK: String,
       endK: String,
@@ -264,8 +266,7 @@ extension AttentionKernel {
             \(B)_block, \(leadingBlockDimensionB),
             origin, \(transposeState.B));
           
-          // Add the contributions from the c-th/r-th element of the
-          // attention matrix row/column.
+          // Issue one SIMD matmul instruction.
           \(C)_sram[(\(descriptor.registerOffset) + d) / 8].multiply(
             \(A)_sram[k / 8], \(B), /*accumulate=*/true);
         }
@@ -304,9 +305,9 @@ extension AttentionKernel {
       // Load the right-hand side.
       \(loadRHS())
       \(declareRHSLocation())
-      threadgroup_barrier(mem_flags::mem_threadgroup);
       
-      // Inner loop over K (the accumulation dimension).
+      // Inner loop over K, the accumulation dimension.
+      threadgroup_barrier(mem_flags::mem_threadgroup);
       \(multiplyAB(
           startK: "0",
           endK: "K_remainder_padded",

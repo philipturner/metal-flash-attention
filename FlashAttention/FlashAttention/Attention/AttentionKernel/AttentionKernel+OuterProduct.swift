@@ -72,7 +72,9 @@ extension AttentionKernel {
     }
     
     // Future optimization: when the loop is unrolled, fuse the zero
-    // initialization with a non-accumulating SIMD matmul.
+    // initialization with a non-accumulating SIMD matmul. This optimization
+    // may apply to the case where A isn't cached. Provided, it doesn't harm
+    // the register pressure.
     func initializeAccumulator() -> String {
       """
       
@@ -85,6 +87,21 @@ extension AttentionKernel {
     }
     
     // MARK: - LHS
+    
+    func allocateLHS(
+      descriptor: LoopIterationDescriptor
+    ) -> String {
+      guard !cacheA else {
+        return ""
+      }
+      return """
+      
+      // Where the \(A) data will be written to.
+      simdgroup_matrix_storage<float>
+      \(A)_sram[\(descriptor.registerSize) / 8];
+      
+      """
+    }
     
     func declareLHSLocation() -> String {
       guard !cacheA else {
@@ -134,6 +151,14 @@ extension AttentionKernel {
       
       \(declareLHSLocation())
       threadgroup_barrier(mem_flags::mem_threadgroup);
+      
+      // Iterate over the head dimension.
+      #pragma clang loop unroll(full)
+      for (ushort d = 0; d < \(descriptor.registerSize); d += 8) {
+        ushort2 origin(d, 0);
+        \(A)_sram[(\(descriptor.registerOffset) + d) / 8].load(
+          \(A)_block, \(leadingBlockDimensionA), origin, \(transposeState.A));
+      }
       
       """
     }
@@ -192,58 +217,33 @@ extension AttentionKernel {
       """
     }
     
+    // MARK: - Matrix Multiplication
+    
     func multiplyAB(
       startN: String,
       endN: String,
       descriptor: LoopIterationDescriptor
     ) -> String {
-      var loopBody: String
-      if cacheA {
-        loopBody = """
-
-// Inner loop over N.
-#pragma clang loop unroll(full)
-for (ushort n = \(startN); n < \(endN); n += 8) {
-  // Load the RHS from threadgroup memory.
-  ushort2 origin(n, d);
-  simdgroup_matrix_storage<float> \(B)T;
-  \(B)T.load(
-    \(B)T_block, \(leadingBlockDimensionB), origin, \(!transposeState.B));
-  
-  \(C)_sram[n / 8].multiply(
-    \(A)_sram[(d_outer + d) / 8], \(B)T, /*accumulate=*/true);
-}
-
-"""
-      } else {
-        loopBody = """
-
-// Load the LHS from threadgroup memory.
-ushort2 origin(d, 0);
-simdgroup_matrix_storage<float> \(A);
-\(A).load(\(A)_block, 32, origin, \(transposeState.A));
-
-// Inner loop over N.
-#pragma clang loop unroll(full)
-for (ushort n = \(startN); n < \(endN); n += 8) {
-  // Load the RHS from threadgroup memory.
-  ushort2 origin(n, d);
-  simdgroup_matrix_storage<float> \(B)T;
-  \(B)T.load(\(B)T_block, 32, origin, \(!transposeState.B));
-  
-  \(C)_sram[n / 8].multiply(
-    \(A), \(B)T, /*accumulate=*/true);
-}
-
-"""
-      }
+      """
       
-      return """
-      
-      // Inner loop over D.
+      // Inner loop over the head dimension.
       #pragma clang loop unroll(full)
       for (ushort d = 0; d < \(descriptor.registerSize); d += 8) {
-        \(loopBody)
+        // Inner loop over the row/column dimension.
+        #pragma clang loop unroll(full)
+        for (ushort n = \(startN); n < \(endN); n += 8) {
+          // Load the RHS from threadgroup memory.
+          ushort2 origin(n, d);
+          simdgroup_matrix_storage<float> \(B)T;
+          \(B)T.load(
+            \(B)T_block, \(leadingBlockDimensionB),
+            origin, \(!transposeState.B));
+          
+          // Issue one SIMD matmul instruction.
+          \(C)_sram[n / 8].multiply(
+            \(A)_sram[(\(descriptor.registerOffset) + d) / 8],
+            \(B)T, /*accumulate=*/\(descriptor.accumulateConditional));
+        }
       }
       
       """
@@ -264,6 +264,7 @@ for (ushort n = \(startN); n < \(endN); n += 8) {
       """
       
       // Load the left-hand side.
+      \(allocateLHS(descriptor: iterationDesc))
       \(loadLHS(descriptor: iterationDesc))
       
       // Declare the remainder of the row/column dimension.
@@ -274,9 +275,9 @@ for (ushort n = \(startN); n < \(endN); n += 8) {
       // Load the right-hand side.
       \(loadRHS(descriptor: iterationDesc))
       \(declareRHSLocation())
-      threadgroup_barrier(mem_flags::mem_threadgroup);
       
-      // Inner loop over D (the accumulation dimension).
+      // Inner loop over D, the accumulation dimension.
+      threadgroup_barrier(mem_flags::mem_threadgroup);
       \(multiplyAB(
           startN: "0",
           endN: "N_remainder_padded",
@@ -295,7 +296,7 @@ for (ushort n = \(startN); n < \(endN); n += 8) {
     if cacheA {
       fatalError("Not implemented.")
     } else {
-      descriptor.accumulateConditional = "false"
+      descriptor.accumulateConditional = "true"
       descriptor.registerOffset = "0"
       
       // Future optimization: shorten the last loop iteration, if doing so
