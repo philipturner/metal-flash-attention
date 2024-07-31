@@ -116,17 +116,13 @@ struct GEMMKernelDescriptor {
   var blockDimensions: (M: UInt16, N: UInt16, K: UInt16)?
   
   var memoryPrecisions: (
-    A: GEMMOperandPrecision, B: GEMMOperandPrecision, C: GEMMOperandPrecision)?
+    A: GEMMOperandPrecision, 
+    B: GEMMOperandPrecision,
+    C: GEMMOperandPrecision,
+    bias: GEMMOperandPrecision)?
   
   /// The device to create the kernel on.
   var device: MTLDevice?
-  
-  /// Customize the code that generates leading dimensions.
-  ///
-  /// This is a modification to the unified GEMM kernel, added to make it
-  /// easier to test an attention variant. It does not belong in the upstream
-  /// kernel itself; it would just be technical debt.
-  var leadingDimensions: (A: String, B: String)?
   
   /// Optional. The layout of elements in threadgroup memory.
   ///
@@ -179,7 +175,10 @@ struct GEMMKernelDescriptor {
   ///     regB is FP32
   /// ```
   var registerPrecisions: (
-    A: GEMMOperandPrecision, B: GEMMOperandPrecision, C: GEMMOperandPrecision)?
+    A: GEMMOperandPrecision, 
+    B: GEMMOperandPrecision,
+    C: GEMMOperandPrecision,
+    bias: GEMMOperandPrecision)?
   
   /// Required. The array of SIMDs to divide the threadgroup into.
   ///
@@ -189,18 +188,24 @@ struct GEMMKernelDescriptor {
   var splits: (M: UInt16, N: UInt16)?
   
   /// Required. Whether each of the inputs deviates from row-major order.
-  var transposeState: (A: Bool, B: Bool)?
+  ///
+  /// ## Modifications for Batching / Fused Bias
+  ///
+  /// Bias:
+  /// - `false` transpose means each C column adds a unique bias vector element.
+  /// - `true` transpose means each C row adds a unique bias vector element.
+  var transposeState: (A: Bool, B: Bool, bias: Bool)?
 }
 
 struct GEMMKernelKey: Equatable, Hashable {
   var blockDimensions: SIMD3<UInt16>
-  var memoryPrecisions: SIMD3<UInt16>
+  var memoryPrecisions: SIMD4<UInt16>
   var paddedBlockDimensions: SIMD8<UInt16>
   var preferAsyncLoad: UInt8
   var preferAsyncStore: UInt8
-  var registerPrecisions: SIMD3<UInt16>
+  var registerPrecisions: SIMD4<UInt16>
   var splits: SIMD2<UInt16>
-  var transposeState: SIMD2<UInt8>
+  var transposeState: SIMD3<UInt8>
   
   init(copying source: GEMMKernelDescriptor) {
     blockDimensions = Self.createBlockDimensions(source.blockDimensions)
@@ -253,30 +258,36 @@ struct GEMMKernelKey: Equatable, Hashable {
   @_transparent // performance in -Ounchecked
   static func createPrecisions(
     _ input: (
-      GEMMOperandPrecision, GEMMOperandPrecision, GEMMOperandPrecision)?
-  ) -> SIMD3<UInt16> {
+      GEMMOperandPrecision, GEMMOperandPrecision,
+      GEMMOperandPrecision, GEMMOperandPrecision)?
+  ) -> SIMD4<UInt16> {
     if let input {
-      return SIMD3(input.0.rawValue, input.1.rawValue, input.2.rawValue)
+      return SIMD4(
+        input.0.rawValue, input.1.rawValue,
+        input.2.rawValue, input.3.rawValue)
     } else {
-      return SIMD3(repeating: .max)
+      return SIMD4(repeating: .max)
     }
   }
   
   @_transparent // performance in -Ounchecked
   static func createTransposeState(
-    _ input: (Bool, Bool)?
-  ) -> SIMD2<UInt8> {
+    _ input: (Bool, Bool, Bool)?
+  ) -> SIMD3<UInt8> {
     if let input {
-      return SIMD2(input.0 ? 1 : 0,
-                   input.1 ? 1 : 0)
+      return SIMD3(input.0 ? 1 : 0,
+                   input.1 ? 1 : 0,
+                   input.2 ? 1 : 0)
     } else {
-      return SIMD2(repeating: .max)
+      return SIMD3(repeating: .max)
     }
   }
 }
 
 extension GEMMKernelDescriptor: Hashable, Equatable {
-  static func == (lhs: GEMMKernelDescriptor, rhs: GEMMKernelDescriptor) -> Bool {
+  static func == (
+    lhs: GEMMKernelDescriptor, rhs: GEMMKernelDescriptor
+  ) -> Bool {
     let lhsKey = GEMMKernelKey(copying: lhs)
     let rhsKey = GEMMKernelKey(copying: rhs)
     return lhsKey == rhsKey

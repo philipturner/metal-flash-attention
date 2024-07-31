@@ -11,7 +11,7 @@ import QuartzCore
 // Test the correctness of the GEMM kernel, in edge cases where the matrix
 // size is indivisible by the block size.
 
-#if false
+#if true
 func executeScript() {
   print("Hello, console.")
   
@@ -43,10 +43,12 @@ func executeScript() {
     let memoryPrecisions = (
       A: randomPrecision(),
       B: randomPrecision(),
-      C: randomPrecision())
+      C: randomPrecision(),
+      bias: randomPrecision())
     let transposeState = (
       A: Bool.random(),
-      B: Bool.random())
+      B: Bool.random(),
+      bias: Bool.random())
     
     // Run a test.
     var gemmDesc = GEMMDescriptor()
@@ -246,7 +248,8 @@ fileprivate func createTolerance(
   memoryPrecisions: (
     A: GEMMOperandPrecision,
     B: GEMMOperandPrecision,
-    C: GEMMOperandPrecision),
+    C: GEMMOperandPrecision,
+    bias: GEMMOperandPrecision),
   accumulationDimension: UInt32
 ) -> Float {
   let precisions = [
@@ -258,14 +261,19 @@ fileprivate func createTolerance(
   
   // FP16 tolerance.
   if memoryPrecisions.A == .FP16 ||
-      memoryPrecisions.B == .FP16 {
+      memoryPrecisions.B == .FP16 ||
+      memoryPrecisions.bias == .FP16 {
     tolerance = max(tolerance, 1e-5)
     tolerance = max(tolerance, 1e-3 / randomNoise)
   }
   if memoryPrecisions.C == .FP16 {
     tolerance = max(tolerance, 3e-4)
   }
-  if precisions.allSatisfy({ $0 == .FP16 }) {
+  
+  // registerPrecisions.C is FP16
+  if memoryPrecisions.A == .FP16 &&
+      memoryPrecisions.B == .FP16 &&
+      memoryPrecisions.C == .FP16 {
     tolerance = max(tolerance, 3e-3)
     tolerance = max(tolerance, 1e-5 * Float(accumulationDimension))
   }

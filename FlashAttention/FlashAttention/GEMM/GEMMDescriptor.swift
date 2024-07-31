@@ -33,16 +33,19 @@ struct GEMMDescriptor {
   var matrixDimensions: (M: UInt32, N: UInt32, K: UInt32)?
   
   var memoryPrecisions: (
-    A: GEMMOperandPrecision, B: GEMMOperandPrecision, C: GEMMOperandPrecision)?
+    A: GEMMOperandPrecision,
+    B: GEMMOperandPrecision,
+    C: GEMMOperandPrecision,
+    bias: GEMMOperandPrecision)?
   
-  var transposeState: (A: Bool, B: Bool)?
+  var transposeState: (A: Bool, B: Bool, bias: Bool)?
 }
 
 struct GEMMKey: Equatable, Hashable {
   var batchDimension: Int
   var matrixDimensions: SIMD3<UInt32>
-  var memoryPrecisions: SIMD3<UInt16>
-  var transposeState: SIMD2<UInt8>
+  var memoryPrecisions: SIMD4<UInt16>
+  var transposeState: SIMD3<UInt8>
  
   init(copying source: GEMMDescriptor) {
     batchDimension = source.batchDimension
@@ -180,6 +183,7 @@ extension GEMMKernelDescriptor {
     var registerPrecisionA = memoryPrecisions.A
     var registerPrecisionB = memoryPrecisions.B
     var registerPrecisionC = GEMMOperandPrecision.FP32
+    var registerPrecisionBias = memoryPrecisions.bias
     if memoryPrecisions.A == .FP16,
        memoryPrecisions.B == .FP16,
        memoryPrecisions.C == .FP16 {
@@ -191,6 +195,9 @@ extension GEMMKernelDescriptor {
       }
       if memoryPrecisions.B == .BF16 {
         registerPrecisionB = .FP32
+      }
+      if memoryPrecisions.bias == .BF16 {
+        registerPrecisionBias = .FP32
       }
     }
     
@@ -204,7 +211,8 @@ extension GEMMKernelDescriptor {
     self.registerPrecisions = (
       registerPrecisionA,
       registerPrecisionB,
-      registerPrecisionC)
+      registerPrecisionC,
+      registerPrecisionBias)
     if !mtlDevice.supportsFamily(.apple9) {
       self.splits = (2, 2)
     } else {
@@ -281,15 +289,15 @@ extension GEMMKernelDescriptor {
         // - (memA, memB, memC) = (FP16, FP32, FP32)
         // - (memA, memB, memC) = (FP16, FP32, FP16)
         switch transposeState {
-        case (false, false):
+        case (false, false, _):
           self.paddedBlockDimensions = ((48, 24), (24, 48), (48, 48))
-        case (false, true):
+        case (false, true, _):
           let paddedBK = (memoryPrecisions.B == .FP32) ? UInt16(28) : 24
           self.paddedBlockDimensions = ((48, 24), (paddedBK, 48), (48, 48))
-        case (true, false):
+        case (true, false, _):
           let paddedAM = (memoryPrecisions.A == .FP32) ? UInt16(52) : 56
           self.paddedBlockDimensions = ((paddedAM, 24), (24, 48), (48, 48))
-        case (true, true):
+        case (true, true, _):
           let paddedAM = (memoryPrecisions.A == .FP32) ? UInt16(52) : 56
           self.paddedBlockDimensions = ((paddedAM, 24), (24, 48), (48, 48))
         }
