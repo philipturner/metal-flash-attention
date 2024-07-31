@@ -180,6 +180,7 @@ constant uint K [[function_constant(2)]];
 // Whether each matrix is transposed.
 constant bool A_trans = \(transposeState.A);
 constant bool B_trans = \(transposeState.B);
+constant bool bias_trans = \(transposeState.bias);
 
 // Define the memory layout of the matrix block.
 constant ushort M_group = \(blockDimensions.M);
@@ -213,12 +214,14 @@ constant ushort N_shift = (N < N_group) ? 0 : \(registerN) - N_remainder;
     let memoryNameA = memoryPrecisions.A.name
     let memoryNameB = memoryPrecisions.B.name
     let memoryNameC = memoryPrecisions.C.name
+    let memoryNameBias = memoryPrecisions.bias.name
     
     // Allocate thread memory, using the 'register precision'. This memory
     // is allocated by embedding the precision into the assembly code.
     let registerNameA = registerPrecisions.A.name
     let registerNameB = registerPrecisions.B.name
     let registerNameC = registerPrecisions.C.name
+    let registerNameBias = registerPrecisions.bias.name
     
     // Add the utility functions.
     source += """
@@ -355,6 +358,7 @@ METAL_FUNC void multiply_accumulate(
 kernel void gemm(device \(memoryNameA) *A [[buffer(0)]],
                  device \(memoryNameB) *B [[buffer(1)]],
                  device \(memoryNameC) *C [[buffer(2)]],
+                 device \(memoryNameBias) *bias [[buffer(3)]],
                  
                  threadgroup uchar *threadgroup_block [[threadgroup(0)]],
                  
@@ -393,6 +397,33 @@ kernel void gemm(device \(memoryNameA) *A [[buffer(0)]],
   }
 
 """
+    }
+    
+    // Load the bias into threadgroup memory.
+    do {
+      source += """
+      
+      if (sidx == 0) {
+        uint2 bias_offset(bias_trans ? M_offset : N_offset, 0);
+        auto bias_src = 
+        simdgroup_matrix_storage<\(memoryNameBias)>::apply_offset(
+          bias, 0, bias_offset, false);
+        auto bias_dst = (threadgroup \(memoryNameBias)*)(threadgroup_block);
+        
+        ushort bias_tile_dimension = bias_trans
+        ? min(uint(M_group), M - M_offset)
+        : min(uint(N_group), N - N_offset);
+      
+        // Issue an async copy.
+        simdgroup_event event;
+        event.async_copy(
+          bias_dst, 1, ushort2(bias_tile_dimension, 1),
+          bias_src, 1, ushort2(bias_tile_dimension, 1));
+        simdgroup_event::wait(1, &event);
+      }
+      threadgroup_barrier(mem_flags::mem_threadgroup);
+      
+      """
     }
     
     // Add the setup of the accumulator.
@@ -461,7 +492,7 @@ kernel void gemm(device \(memoryNameA) *A [[buffer(0)]],
         A, \(leadingDimensionA), A_offset, A_trans);
       auto B_src = simdgroup_matrix_storage<\(memoryNameB)>::apply_offset(
         B, \(leadingDimensionB), B_offset, B_trans);
-
+      
       ushort M_tile_dimension = min(uint(M_group), M - M_offset);
       ushort N_tile_dimension = min(uint(N_group), N - N_offset);
       ushort K_tile_dimension = min(uint(K_group), K - k);

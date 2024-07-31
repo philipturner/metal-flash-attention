@@ -69,13 +69,16 @@ func runCorrectnessTest(descriptor: GEMMDescriptor) {
   
   let checkpoint0 = CACurrentMediaTime()
   
-  // Set the outputs.
+  // Set the inputs.
   var operandA = [Float](
     repeating: .zero,
     count: Int(matrixDimensions.M * matrixDimensions.K))
   var operandB = [Float](
     repeating: .zero,
     count: Int(matrixDimensions.K * matrixDimensions.N))
+  var operandBias = [Float](
+    repeating: .zero,
+    count: Int(transposeState.bias ? matrixDimensions.M : matrixDimensions.N))
   
   // Normalize so that every dot product approaches 1.
   let normalizationFactor = 1 / Float(matrixDimensions.K).squareRoot()
@@ -88,6 +91,10 @@ func runCorrectnessTest(descriptor: GEMMDescriptor) {
     let randomNumber = Float.random(in: 0..<1)
     operandB[elementID] = randomNumber * normalizationFactor
   }
+  for elementID in operandBias.indices {
+    let randomNumber = Float.random(in: 0..<1)
+    operandBias[elementID] = randomNumber * normalizationFactor
+  }
   
   // Create the buffers.
   var gpuOperandC = [Float](
@@ -96,6 +103,8 @@ func runCorrectnessTest(descriptor: GEMMDescriptor) {
   let bufferA = MTLContext.global.createBuffer(operandA, memoryPrecisions.A)
   let bufferB = MTLContext.global.createBuffer(operandB, memoryPrecisions.B)
   let bufferC = MTLContext.global.createBuffer(gpuOperandC, memoryPrecisions.C)
+  let bufferBias = MTLContext.global
+    .createBuffer(operandBias, memoryPrecisions.bias)
   
   let checkpoint1 = CACurrentMediaTime()
   
@@ -115,6 +124,7 @@ func runCorrectnessTest(descriptor: GEMMDescriptor) {
     encoder.setBuffer(bufferA, offset: 0, index: 0)
     encoder.setBuffer(bufferB, offset: 0, index: 1)
     encoder.setBuffer(bufferC, offset: 0, index: 2)
+    encoder.setBuffer(bufferBias, offset: 0, index: 3)
     
     func ceilDivide(_ target: UInt32, _ granularity: UInt16) -> Int {
       (Int(target) + Int(granularity) - 1) / Int(granularity)
