@@ -115,7 +115,7 @@ func executeScript() {
   
   // My workspace. Edit this code to run actual tests.
   do {
-    let transposeBias: Bool = false
+    let transposeBias: Bool = true
     let transposeStates: [(Bool, Bool, Bool)] = [
       (false, false, transposeBias),
       (false, true, transposeBias),
