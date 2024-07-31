@@ -39,6 +39,8 @@ struct GEMMDescriptor {
     bias: GEMMOperandPrecision)?
   
   var transposeState: (A: Bool, B: Bool, bias: Bool)?
+  
+  var useBias: Bool?
 }
 
 struct GEMMKey: Equatable, Hashable {
@@ -46,12 +48,14 @@ struct GEMMKey: Equatable, Hashable {
   var matrixDimensions: SIMD3<UInt32>
   var memoryPrecisions: SIMD4<UInt16>
   var transposeState: SIMD3<UInt8>
+  var useBias: UInt8
  
   init(copying source: GEMMDescriptor) {
     batchDimension = source.batchDimension
     matrixDimensions = Self.createMatrixDimensions(source.matrixDimensions)
     memoryPrecisions = GEMMKernelKey.createPrecisions(source.memoryPrecisions)
     transposeState = GEMMKernelKey.createTransposeState(source.transposeState)
+    useBias = GEMMKernelKey.createBoolean(source.useBias)
   }
   
   @_transparent // performance in -Ounchecked
@@ -96,7 +100,8 @@ extension GEMMKernelDescriptor {
   init(descriptor: GEMMDescriptor) {
     guard let matrixDimensions = descriptor.matrixDimensions,
           let memoryPrecisions = descriptor.memoryPrecisions,
-          let transposeState = descriptor.transposeState else {
+          let transposeState = descriptor.transposeState,
+          let useBias = descriptor.useBias else {
       fatalError("Descriptor was incomplete.")
     }
     
@@ -219,6 +224,7 @@ extension GEMMKernelDescriptor {
       self.splits = (1, 1)
     }
     self.transposeState = transposeState
+    self.useBias = useBias
     
     // Set the properties that deal with block size.
     setBlockDimensions(

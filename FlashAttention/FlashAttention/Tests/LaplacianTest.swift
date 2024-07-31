@@ -10,14 +10,14 @@ import Metal
 // Tests the performance of large matrix multiplications, using the
 // second-order Laplacian in direct matrix form.
 
-#if false
+#if true
 func executeScript() {
   print("Hello, console.")
   
   struct TestDescriptor {
     var precision: GEMMOperandPrecision?
     var problemSize: Int?
-    var transposeState: (Bool, Bool)?
+    var transposeState: (Bool, Bool, Bool)?
   }
   func runTest(descriptor: TestDescriptor) {
     guard let precision = descriptor.precision,
@@ -30,8 +30,9 @@ func executeScript() {
     var gemmDesc = GEMMDescriptor()
     let n = UInt32(problemSize)
     gemmDesc.matrixDimensions = (M: n, N: n, K: n)
-    gemmDesc.memoryPrecisions = (precision, precision, precision)
+    gemmDesc.memoryPrecisions = (precision, precision, precision, precision)
     gemmDesc.transposeState = descriptor.transposeState
+    gemmDesc.useBias = true
     
     // Test the kernel.
     let statistic = profileProblemSize(descriptor: gemmDesc)
@@ -50,9 +51,14 @@ func executeScript() {
       print("A  ", terminator: " ")
     }
     if transposeState.1 {
-      print("B^T", terminator: " | ")
+      print("B^T", terminator: " ")
     } else {
-      print("B  ", terminator: " | ")
+      print("B  ", terminator: " ")
+    }
+    if transposeState.2 {
+      print("bias^T", terminator: " | ")
+    } else {
+      print("bias  ", terminator: " | ")
     }
     
     for laneID in [Int(1), Int(0)] {
@@ -87,10 +93,11 @@ func executeScript() {
       143, 144, 145,
       151, 152, 153,
     ]
-    let transposeStates: [(Bool, Bool)] = [
-      (false, false),
-      (false, true),
-      (true, false),
+    let transposeStates: [(Bool, Bool, Bool)] = [
+      (false, false, false),
+      (false, false, true),
+      (false, true, false),
+      (true, false, false),
     ]
     
     print()
@@ -108,17 +115,18 @@ func executeScript() {
   
   // My workspace. Edit this code to run actual tests.
   do {
-    let transposeStates: [(Bool, Bool)] = [
-      (false, false),
-      (false, true),
-      (true, false),
-      (true, true),
+    let transposeBias: Bool = false
+    let transposeStates: [(Bool, Bool, Bool)] = [
+      (false, false, transposeBias),
+      (false, true, transposeBias),
+      (true, false, transposeBias),
+      (true, true, transposeBias),
     ]
     
     // Working on investigating BF16 performance with large matrices.
     print()
     print("Performance tests:")
-    for problemSize in 1488...1489 {
+    for problemSize in [1488, 1489] {
       for transposeState in transposeStates {
         var testDescriptor = TestDescriptor()
         testDescriptor.precision = .BF16
@@ -151,6 +159,7 @@ func profileProblemSize(
   var A = [Float](repeating: .zero, count: problemSize * problemSize)
   var B = [Float](repeating: .zero, count: problemSize * problemSize)
   var C = [Float](repeating: .zero, count: problemSize * problemSize)
+  var bias = [Float](repeating: .zero, count: problemSize)
   
   // Initialize A as the 2nd-order periodic Laplacian.
   for diagonalID in 0..<problemSize {
@@ -173,6 +182,12 @@ func profileProblemSize(
       let entry = Float.random(in: 0..<1)
       B[address] = entry
     }
+  }
+  
+  // Initialize bias to random numbers.
+  for elementID in 0..<problemSize {
+    let entry = Float.random(in: 0..<1)
+    bias[elementID] = entry
   }
   
   // Since the Laplacian is symmetric, we swap roles of the matrices to test
@@ -201,6 +216,8 @@ func profileProblemSize(
       .createBuffer(B, descriptor.memoryPrecisions!.B)
     let bufferC = MTLContext.global
       .createBuffer(C, descriptor.memoryPrecisions!.C)
+    let bufferBias = MTLContext.global
+      .createBuffer(bias, descriptor.memoryPrecisions!.bias)
     
     // Profile the latency of matrix multiplication.
     for _ in 0..<15 {
@@ -215,6 +232,9 @@ func profileProblemSize(
       encoder.setBuffer(bufferA, offset: 0, index: 0)
       encoder.setBuffer(bufferB, offset: 0, index: 1)
       encoder.setBuffer(bufferC, offset: 0, index: 2)
+      if descriptor.useBias! {
+        encoder.setBuffer(bufferBias, offset: 0, index: 3)
+      }
       for _ in 0..<duplicatedCommandCount {
         func ceilDivide(_ target: Int, _ granularity: UInt16) -> Int {
           (target + Int(granularity) - 1) / Int(granularity)
@@ -326,7 +346,14 @@ func profileProblemSize(
       }
       
       // Find the expected result.
-      let expected = leftSource - 2 * centerSource + rightSource
+      var expected = leftSource - 2 * centerSource + rightSource
+      if descriptor.useBias! {
+        if descriptor.transposeState!.A {
+          expected += bias[descriptor.transposeState!.bias ? n : m]
+        } else {
+          expected += bias[descriptor.transposeState!.bias ? m : n]
+        }
+      }
       
       // Find the actual result.
       var actual: Float

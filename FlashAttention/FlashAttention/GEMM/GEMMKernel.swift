@@ -29,7 +29,8 @@ struct GEMMKernel {
           let preferAsyncStore = descriptor.preferAsyncStore,
           let registerPrecisions = descriptor.registerPrecisions,
           let splits = descriptor.splits,
-          let transposeState = descriptor.transposeState else {
+          let transposeState = descriptor.transposeState,
+          let useBias = descriptor.useBias else {
       fatalError("Descriptor was incomplete: \(descriptor)")
     }
     self.blockDimensions = blockDimensions
@@ -144,6 +145,13 @@ using namespace metal;
     
     // Add the function constants.
     do {
+      func biasTranspose() -> String {
+        guard useBias else {
+          return ""
+        }
+        return "constant bool bias_trans = \(transposeState.bias);"
+      }
+      
       source += """
 
 // Dimensions of each matrix.
@@ -180,7 +188,7 @@ constant uint K [[function_constant(2)]];
 // Whether each matrix is transposed.
 constant bool A_trans = \(transposeState.A);
 constant bool B_trans = \(transposeState.B);
-constant bool bias_trans = \(transposeState.bias);
+\(biasTranspose())
 
 // Define the memory layout of the matrix block.
 constant ushort M_group = \(blockDimensions.M);
@@ -331,6 +339,13 @@ METAL_FUNC void multiply_accumulate(
       blockBytesC *= UInt16(memoryPrecisions.C.size)
       threadgroupMemoryAllocation = max(blockBytesA + blockBytesB, blockBytesC)
       
+      func biasArgument() -> String {
+        guard useBias else {
+          return ""
+        }
+        return "device \(memoryNameBias) *bias [[buffer(3)]],"
+      }
+      
       source += """
 
 // Metal function arguments.
@@ -358,7 +373,7 @@ METAL_FUNC void multiply_accumulate(
 kernel void gemm(device \(memoryNameA) *A [[buffer(0)]],
                  device \(memoryNameB) *B [[buffer(1)]],
                  device \(memoryNameC) *C [[buffer(2)]],
-                 device \(memoryNameBias) *bias [[buffer(3)]],
+                 \(biasArgument())
                  
                  threadgroup uchar *threadgroup_block [[threadgroup(0)]],
                  
@@ -399,9 +414,12 @@ kernel void gemm(device \(memoryNameA) *A [[buffer(0)]],
 """
     }
     
-    // Load the bias into threadgroup memory.
-    do {
-      source += """
+    // Load the bias and allocate the accumulator.
+    func loadBias() -> String {
+      guard useBias else {
+        return ""
+      }
+      return """
       
       if (sidx == 0) {
         uint2 bias_offset(bias_trans ? M_offset : N_offset, 0);
@@ -425,13 +443,11 @@ kernel void gemm(device \(memoryNameA) *A [[buffer(0)]],
       
       """
     }
-    
-    // Utility functions for initializing the accumulator.
-    func accumulatorSize() -> UInt16 {
-      (registerM / 8) * (registerN / 8)
-    }
     func declareBiasLocation() -> String {
-      """
+      guard useBias else {
+        return ""
+      }
+      return """
       
       ushort2 bias_block_offset(
         bias_trans ? offset_in_group.y : offset_in_group.x, 0);
@@ -441,6 +457,18 @@ kernel void gemm(device \(memoryNameA) *A [[buffer(0)]],
       
       """
     }
+    func accumulatorSize() -> UInt16 {
+      (registerM / 8) * (registerN / 8)
+    }
+    source += """
+    
+    \(loadBias())
+    \(declareBiasLocation())
+    simdgroup_matrix_storage<\(registerNameC)> C_sram[\(accumulatorSize())];
+        
+    """
+    
+    // Initialize the accumulator.
     func loadBiasLoop() -> String {
       var loadFunctionBias: String
       if memoryPrecisions.bias == .BF16, registerPrecisions.bias == .FP32 {
@@ -468,30 +496,45 @@ kernel void gemm(device \(memoryNameA) *A [[buffer(0)]],
         """
       }
     }
-    
-    // Add the setup of the accumulator.
-    source += """
-    
-    simdgroup_matrix_storage<\(registerNameC)> C_sram[\(accumulatorSize())];
-    \(declareBiasLocation())
-    
-    // Initialize the accumulator.
-    #pragma clang loop unroll(full)
-    for (ushort m = 0; m < \(registerM); m += 8) {
+    if useBias {
+      source += """
+      
+      // Initialize the accumulator.
       #pragma clang loop unroll(full)
-      for (ushort n = 0; n < \(registerN); n += 8) {
-        simdgroup_matrix_storage<\(registerNameBias)> bias;
-        \(loadBiasLoop())
-        
-        ushort2 origin(n, m);
-        auto C = get_sram(C_sram, \(registerN), origin);
-        vec<\(registerNameBias), 2> biasForm = *(bias.thread_elements());
-        auto accumulatorForm = vec<\(registerNameC), 2>(biasForm);
-        *C = simdgroup_matrix_storage<\(registerNameC)>(accumulatorForm);
+      for (ushort m = 0; m < \(registerM); m += 8) {
+        #pragma clang loop unroll(full)
+        for (ushort n = 0; n < \(registerN); n += 8) {
+          simdgroup_matrix_storage<\(registerNameBias)> bias;
+          \(loadBiasLoop())
+          
+          ushort2 origin(n, m);
+          auto C = get_sram(C_sram, \(registerN), origin);
+          vec<\(registerNameBias), 2> biasForm = *(bias.thread_elements());
+          auto accumulatorForm = vec<\(registerNameC), 2>(biasForm);
+          *C = simdgroup_matrix_storage<\(registerNameC)>(accumulatorForm);
+        }
       }
+      
+      // Add a barrier, because you've just accessed threadgroup memory.
+      threadgroup_barrier(mem_flags::mem_threadgroup);
+      
+      """
+    } else {
+      source += """
+      
+      // Initialize the accumulator.
+      #pragma clang loop unroll(full)
+      for (ushort m = 0; m < \(registerM); m += 8) {
+        #pragma clang loop unroll(full)
+        for (ushort n = 0; n < \(registerN); n += 8) {
+          ushort2 origin(n, m);
+          auto C = get_sram(C_sram, \(registerN), origin);
+          *C = simdgroup_matrix_storage<\(registerNameC)>(0);
+        }
+      }
+      
+      """
     }
-    
-    """
     
     // Add the matrix multiplication iterations.
     //

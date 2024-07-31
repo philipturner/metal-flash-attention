@@ -11,7 +11,7 @@ import QuartzCore
 // Test the correctness of the GEMM kernel, in edge cases where the matrix
 // size is indivisible by the block size.
 
-#if true
+#if false
 func executeScript() {
   print("Hello, console.")
   

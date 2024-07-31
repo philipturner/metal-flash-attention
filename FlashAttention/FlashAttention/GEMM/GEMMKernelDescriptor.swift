@@ -195,6 +195,8 @@ struct GEMMKernelDescriptor {
   /// - `false` transpose means each C column adds a unique bias vector element.
   /// - `true` transpose means each C row adds a unique bias vector element.
   var transposeState: (A: Bool, B: Bool, bias: Bool)?
+  
+  var useBias: Bool?
 }
 
 struct GEMMKernelKey: Equatable, Hashable {
@@ -206,6 +208,7 @@ struct GEMMKernelKey: Equatable, Hashable {
   var registerPrecisions: SIMD4<UInt16>
   var splits: SIMD2<UInt16>
   var transposeState: SIMD3<UInt8>
+  var useBias: UInt8
   
   init(copying source: GEMMKernelDescriptor) {
     blockDimensions = Self.createBlockDimensions(source.blockDimensions)
@@ -231,6 +234,7 @@ struct GEMMKernelKey: Equatable, Hashable {
       splits[1] = N
     }
     transposeState = Self.createTransposeState(source.transposeState)
+    useBias = Self.createBoolean(source.useBias)
   }
   
   @_transparent // performance in -Ounchecked
