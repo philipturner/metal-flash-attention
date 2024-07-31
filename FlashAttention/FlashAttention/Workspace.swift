@@ -12,7 +12,7 @@ import QuartzCore
 /// The contents of this function have no meaning, and ideally will be blank
 /// when the 'main' branch is in a stable state. Clients can utilize this
 /// function to script tests in their fork.
-
+#if false
 func executeScript() {
   // Automate the execution of the test suite.
   profileProblemSize(N: 10, D: 3)
@@ -474,3 +474,4 @@ func profileProblemSize(N: Int, D: Int) -> Int {
     return pipelineBackwardKeyValue.maxTotalThreadsPerThreadgroup
   }
 }
+#endif
