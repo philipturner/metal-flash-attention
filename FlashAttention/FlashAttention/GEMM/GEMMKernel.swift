@@ -405,10 +405,10 @@ kernel void gemm(device \(memoryNameA) *A [[buffer(0)]],
       
       if (sidx == 0) {
         uint2 bias_offset(bias_trans ? M_offset : N_offset, 0);
-        auto bias_src = 
-        simdgroup_matrix_storage<\(memoryNameBias)>::apply_offset(
-          bias, 0, bias_offset, false);
         auto bias_dst = (threadgroup \(memoryNameBias)*)(threadgroup_block);
+        auto bias_src =
+        simdgroup_matrix_storage<\(memoryNameBias)>::apply_offset(
+          bias, 0, bias_offset, /*transpose=*/false);
         
         ushort bias_tile_dimension = bias_trans
         ? min(uint(M_group), M - M_offset)
@@ -426,27 +426,72 @@ kernel void gemm(device \(memoryNameA) *A [[buffer(0)]],
       """
     }
     
-    // Add the setup of the accumulator.
-    do {
-      let arrayElementsC: UInt16 = (registerM / 8) * (registerN / 8)
+    // Utility functions for initializing the accumulator.
+    func accumulatorSize() -> UInt16 {
+      (registerM / 8) * (registerN / 8)
+    }
+    func declareBiasLocation() -> String {
+      """
       
-      source += """
-
-  simdgroup_matrix_storage<\(registerNameC)> C_sram[\(arrayElementsC)];
-  
-  // Initialize the accumulator.
-#pragma clang loop unroll(full)
-  for (ushort m = 0; m < \(registerM); m += 8) {
-#pragma clang loop unroll(full)
-    for (ushort n = 0; n < \(registerN); n += 8) {
-      ushort2 origin(n, m);
-      auto C = get_sram(C_sram, \(registerN), origin);
-      *C = simdgroup_matrix_storage<\(registerNameC)>(0);
+      ushort2 bias_block_offset(
+        bias_trans ? offset_in_group.y : offset_in_group.x, 0);
+      auto bias_block = (threadgroup \(memoryNameBias)*)(threadgroup_block);
+      bias_block = simdgroup_matrix_storage<\(memoryNameBias)>::apply_offset(
+        bias_block, 0, bias_block_offset, /*transpose=*/false);
+      
+      """
     }
-  }
-
-"""
+    func loadBiasLoop() -> String {
+      var loadFunctionBias: String
+      if memoryPrecisions.bias == .BF16, registerPrecisions.bias == .FP32 {
+        loadFunctionBias = "load_bfloat"
+      } else {
+        loadFunctionBias = "load"
+      }
+      
+      // Is the bias redundantly loaded every M or N iteration? Does the
+      // compiler recognize that we're loading from the same address in memory?
+      if transposeState.bias {
+        return """
+        
+        bias.\(loadFunctionBias)(
+          bias_block, 0, ushort2(m, 0), /*transpose=*/false);
+        bias.thread_elements()[0][1] = bias.thread_elements()[0][0];
+        
+        """
+      } else {
+        return """
+        
+        bias.\(loadFunctionBias)(
+          bias_block, 0, ushort2(n, 0), /*transpose=*/false);
+        
+        """
+      }
     }
+    
+    // Add the setup of the accumulator.
+    source += """
+    
+    simdgroup_matrix_storage<\(registerNameC)> C_sram[\(accumulatorSize())];
+    \(declareBiasLocation())
+    
+    // Initialize the accumulator.
+    #pragma clang loop unroll(full)
+    for (ushort m = 0; m < \(registerM); m += 8) {
+      #pragma clang loop unroll(full)
+      for (ushort n = 0; n < \(registerN); n += 8) {
+        simdgroup_matrix_storage<\(registerNameBias)> bias;
+        \(loadBiasLoop())
+        
+        ushort2 origin(n, m);
+        auto C = get_sram(C_sram, \(registerN), origin);
+        vec<\(registerNameBias), 2> biasForm = *(bias.thread_elements());
+        auto accumulatorForm = vec<\(registerNameC), 2>(biasForm);
+        *C = simdgroup_matrix_storage<\(registerNameC)>(accumulatorForm);
+      }
+    }
+    
+    """
     
     // Add the matrix multiplication iterations.
     //
@@ -511,7 +556,7 @@ kernel void gemm(device \(memoryNameA) *A [[buffer(0)]],
       simdgroup_event::wait(2, events);
     }
     threadgroup_barrier(mem_flags::mem_threadgroup);
-
+    
     ushort2 A_block_offset(morton_offset.x, offset_in_group.y);
     ushort2 B_block_offset(offset_in_group.x, morton_offset.y);
     auto A_block_src = simdgroup_matrix_storage<\(memoryNameA)>::apply_offset(

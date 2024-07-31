@@ -183,8 +183,15 @@ func runCorrectnessTest(descriptor: GEMMDescriptor) {
     count: Int(matrixDimensions.M * matrixDimensions.N))
   for m in 0..<matrixDimensions.M {
     for n in 0..<matrixDimensions.N {
-      var dotProduct: Float = .zero
+      // Initialize with the bias value.
+      var dotProduct: Float
+      if transposeState.bias {
+        dotProduct = operandBias[Int(m)]
+      } else {
+        dotProduct = operandBias[Int(n)]
+      }
       
+      // Execute the dot product.
       for k in 0..<matrixDimensions.K {
         var addressA: UInt32
         var addressB: UInt32
@@ -204,6 +211,7 @@ func runCorrectnessTest(descriptor: GEMMDescriptor) {
         dotProduct += valueA * valueB
       }
       
+      // Store the result to memory.
       let addressC = m * matrixDimensions.N + n
       cpuOperandC[Int(addressC)] = dotProduct
     }
@@ -271,8 +279,7 @@ fileprivate func createTolerance(
   
   // FP16 tolerance.
   if memoryPrecisions.A == .FP16 ||
-      memoryPrecisions.B == .FP16 ||
-      memoryPrecisions.bias == .FP16 {
+      memoryPrecisions.B == .FP16 {
     tolerance = max(tolerance, 1e-5)
     tolerance = max(tolerance, 1e-3 / randomNoise)
   }
@@ -297,6 +304,17 @@ fileprivate func createTolerance(
     }
   }
   
+  // List the precisions involved in the bias rounding event.
+  // convert bias -> accumulator
+  let biasPrecisions = [memoryPrecisions.C, memoryPrecisions.bias]
+  if biasPrecisions.contains(.BF16) {
+    tolerance += Float.exp2(-8.0)
+  } else if biasPrecisions.contains(.FP16) {
+    tolerance += Float.exp2(-10.0)
+  } else {
+    tolerance += Float.exp2(-23.0)
+  }
+
   return tolerance
 }
 #endif
