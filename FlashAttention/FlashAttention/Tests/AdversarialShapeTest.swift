@@ -49,12 +49,14 @@ func executeScript() {
       A: Bool.random(),
       B: Bool.random(),
       bias: Bool.random())
+    let useBias = Float.random(in: 0..<1) < 0.70
     
     // Run a test.
     var gemmDesc = GEMMDescriptor()
     gemmDesc.matrixDimensions = matrixDimensions
     gemmDesc.memoryPrecisions = memoryPrecisions
     gemmDesc.transposeState = transposeState
+    gemmDesc.useBias = useBias
     runCorrectnessTest(descriptor: gemmDesc)
   }
 }
@@ -185,10 +187,14 @@ func runCorrectnessTest(descriptor: GEMMDescriptor) {
     for n in 0..<matrixDimensions.N {
       // Initialize with the bias value.
       var dotProduct: Float
-      if transposeState.bias {
-        dotProduct = operandBias[Int(m)]
+      if descriptor.useBias! {
+        if transposeState.bias {
+          dotProduct = operandBias[Int(m)]
+        } else {
+          dotProduct = operandBias[Int(n)]
+        }
       } else {
-        dotProduct = operandBias[Int(n)]
+        dotProduct = .zero
       }
       
       // Execute the dot product.

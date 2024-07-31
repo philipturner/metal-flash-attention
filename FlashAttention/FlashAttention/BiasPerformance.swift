@@ -85,6 +85,58 @@
 //  problemSize = 1537 | A   B^T bias^T |  832 threads/core | 7381 GFLOPS
 //  problemSize = 1537 | A^T B   bias^T |  832 threads/core | 8084 GFLOPS
 //  problemSize = 1537 | A^T B^T bias^T |  896 threads/core | 7824 GFLOPS
+//
+// After Allowing No-Async-Copy Path
+//
+//  problemSize =  511 | A   B   bias   | 1024 threads/core | 4453 GFLOPS
+//  problemSize =  511 | A   B^T bias   |  896 threads/core | 4661 GFLOPS
+//  problemSize =  511 | A^T B   bias   |  896 threads/core | 4355 GFLOPS
+//  problemSize =  511 | A^T B^T bias   | 1024 threads/core | 4305 GFLOPS
+//  problemSize =  512 | A   B   bias   | 1024 threads/core | 6303 GFLOPS
+//  problemSize =  512 | A   B^T bias   | 1024 threads/core | 5872 GFLOPS
+//  problemSize =  512 | A^T B   bias   | 1024 threads/core | 6135 GFLOPS
+//  problemSize =  512 | A^T B^T bias   | 1024 threads/core | 4434 GFLOPS
+//  problemSize =  513 | A   B   bias   | 1024 threads/core | 3932 GFLOPS
+//  problemSize =  513 | A   B^T bias   | 1024 threads/core | 3774 GFLOPS
+//  problemSize =  513 | A^T B   bias   | 1024 threads/core | 4191 GFLOPS
+//  problemSize =  513 | A^T B^T bias   | 1024 threads/core | 4008 GFLOPS
+//  problemSize = 1535 | A   B   bias   |  768 threads/core | 8332 GFLOPS
+//  problemSize = 1535 | A   B^T bias   |  768 threads/core | 7891 GFLOPS
+//  problemSize = 1535 | A^T B   bias   |  768 threads/core | 8397 GFLOPS
+//  problemSize = 1535 | A^T B^T bias   |  768 threads/core | 8455 GFLOPS
+//  problemSize = 1536 | A   B   bias   |  768 threads/core | 8434 GFLOPS
+//  problemSize = 1536 | A   B^T bias   |  768 threads/core | 8487 GFLOPS
+//  problemSize = 1536 | A^T B   bias   |  832 threads/core | 8499 GFLOPS
+//  problemSize = 1536 | A^T B^T bias   |  832 threads/core | 8574 GFLOPS
+//  problemSize = 1537 | A   B   bias   |  832 threads/core | 7859 GFLOPS
+//  problemSize = 1537 | A   B^T bias   |  832 threads/core | 7383 GFLOPS
+//  problemSize = 1537 | A^T B   bias   |  832 threads/core | 8096 GFLOPS
+//  problemSize = 1537 | A^T B^T bias   |  896 threads/core | 7875 GFLOPS
+//
+//  problemSize =  511 | A   B   bias^T | 1024 threads/core | 5540 GFLOPS
+//  problemSize =  511 | A   B^T bias^T |  896 threads/core | 4704 GFLOPS
+//  problemSize =  511 | A^T B   bias^T | 1024 threads/core | 5350 GFLOPS
+//  problemSize =  511 | A^T B^T bias^T | 1024 threads/core | 5399 GFLOPS
+//  problemSize =  512 | A   B   bias^T | 1024 threads/core | 6441 GFLOPS
+//  problemSize =  512 | A   B^T bias^T | 1024 threads/core | 5850 GFLOPS
+//  problemSize =  512 | A^T B   bias^T | 1024 threads/core | 6123 GFLOPS
+//  problemSize =  512 | A^T B^T bias^T | 1024 threads/core | 5724 GFLOPS
+//  problemSize =  513 | A   B   bias^T | 1024 threads/core | 4010 GFLOPS
+//  problemSize =  513 | A   B^T bias^T | 1024 threads/core | 3806 GFLOPS
+//  problemSize =  513 | A^T B   bias^T | 1024 threads/core | 4120 GFLOPS
+//  problemSize =  513 | A^T B^T bias^T | 1024 threads/core | 3952 GFLOPS
+//  problemSize = 1535 | A   B   bias^T |  768 threads/core | 8357 GFLOPS
+//  problemSize = 1535 | A   B^T bias^T |  768 threads/core | 7898 GFLOPS
+//  problemSize = 1535 | A^T B   bias^T |  768 threads/core | 8401 GFLOPS
+//  problemSize = 1535 | A^T B^T bias^T |  768 threads/core | 8408 GFLOPS
+//  problemSize = 1536 | A   B   bias^T |  832 threads/core | 8418 GFLOPS
+//  problemSize = 1536 | A   B^T bias^T |  832 threads/core | 8475 GFLOPS
+//  problemSize = 1536 | A^T B   bias^T |  832 threads/core | 8513 GFLOPS
+//  problemSize = 1536 | A^T B^T bias^T |  832 threads/core | 8530 GFLOPS
+//  problemSize = 1537 | A   B   bias^T |  832 threads/core | 7822 GFLOPS
+//  problemSize = 1537 | A   B^T bias^T |  832 threads/core | 7368 GFLOPS
+//  problemSize = 1537 | A^T B   bias^T |  832 threads/core | 8086 GFLOPS
+//  problemSize = 1537 | A^T B^T bias^T |  896 threads/core | 7819 GFLOPS
 
 // MARK: - M1 Max, FP16xFP16->FP16
 //
@@ -166,6 +218,58 @@
 //  problemSize = 1537 | A   B^T bias^T | 1024 threads/core | 8874 GFLOPS
 //  problemSize = 1537 | A^T B   bias^T | 1024 threads/core | 8866 GFLOPS
 //  problemSize = 1537 | A^T B^T bias^T | 1024 threads/core | 8726 GFLOPS
+//
+// After Allowing No-Async-Copy Path
+//
+//  problemSize =  511 | A   B   bias   | 1024 threads/core | 5246 GFLOPS
+//  problemSize =  511 | A   B^T bias   | 1024 threads/core | 6799 GFLOPS
+//  problemSize =  511 | A^T B   bias   | 1024 threads/core | 6902 GFLOPS
+//  problemSize =  511 | A^T B^T bias   | 1024 threads/core | 6616 GFLOPS
+//  problemSize =  512 | A   B   bias   | 1024 threads/core | 5635 GFLOPS
+//  problemSize =  512 | A   B^T bias   | 1024 threads/core | 4225 GFLOPS
+//  problemSize =  512 | A^T B   bias   | 1024 threads/core | 4288 GFLOPS
+//  problemSize =  512 | A^T B^T bias   | 1024 threads/core | 7211 GFLOPS
+//  problemSize =  513 | A   B   bias   | 1024 threads/core | 6028 GFLOPS
+//  problemSize =  513 | A   B^T bias   | 1024 threads/core | 5637 GFLOPS
+//  problemSize =  513 | A^T B   bias   | 1024 threads/core | 6339 GFLOPS
+//  problemSize =  513 | A^T B^T bias   | 1024 threads/core | 6155 GFLOPS
+//  problemSize = 1535 | A   B   bias   | 1024 threads/core | 9414 GFLOPS
+//  problemSize = 1535 | A   B^T bias   | 1024 threads/core | 9395 GFLOPS
+//  problemSize = 1535 | A^T B   bias   | 1024 threads/core | 9554 GFLOPS
+//  problemSize = 1535 | A^T B^T bias   | 1024 threads/core | 9543 GFLOPS
+//  problemSize = 1536 | A   B   bias   | 1024 threads/core | 9467 GFLOPS
+//  problemSize = 1536 | A   B^T bias   | 1024 threads/core | 9415 GFLOPS
+//  problemSize = 1536 | A^T B   bias   | 1024 threads/core | 9603 GFLOPS
+//  problemSize = 1536 | A^T B^T bias   | 1024 threads/core | 9591 GFLOPS
+//  problemSize = 1537 | A   B   bias   | 1024 threads/core | 8884 GFLOPS
+//  problemSize = 1537 | A   B^T bias   | 1024 threads/core | 8834 GFLOPS
+//  problemSize = 1537 | A^T B   bias   | 1024 threads/core | 8847 GFLOPS
+//  problemSize = 1537 | A^T B^T bias   | 1024 threads/core | 8734 GFLOPS
+//
+//  problemSize =  511 | A   B   bias^T | 1024 threads/core | 5174 GFLOPS
+//  problemSize =  511 | A   B^T bias^T | 1024 threads/core | 6797 GFLOPS
+//  problemSize =  511 | A^T B   bias^T | 1024 threads/core | 5430 GFLOPS
+//  problemSize =  511 | A^T B^T bias^T | 1024 threads/core | 6698 GFLOPS
+//  problemSize =  512 | A   B   bias^T | 1024 threads/core | 7042 GFLOPS
+//  problemSize =  512 | A   B^T bias^T | 1024 threads/core | 6810 GFLOPS
+//  problemSize =  512 | A^T B   bias^T | 1024 threads/core | 7074 GFLOPS
+//  problemSize =  512 | A^T B^T bias^T | 1024 threads/core | 7154 GFLOPS
+//  problemSize =  513 | A   B   bias^T | 1024 threads/core | 5971 GFLOPS
+//  problemSize =  513 | A   B^T bias^T | 1024 threads/core | 5605 GFLOPS
+//  problemSize =  513 | A^T B   bias^T | 1024 threads/core | 6086 GFLOPS
+//  problemSize =  513 | A^T B^T bias^T | 1024 threads/core | 4670 GFLOPS
+//  problemSize = 1535 | A   B   bias^T | 1024 threads/core | 9408 GFLOPS
+//  problemSize = 1535 | A   B^T bias^T | 1024 threads/core | 9445 GFLOPS
+//  problemSize = 1535 | A^T B   bias^T | 1024 threads/core | 9555 GFLOPS
+//  problemSize = 1535 | A^T B^T bias^T | 1024 threads/core | 9597 GFLOPS
+//  problemSize = 1536 | A   B   bias^T | 1024 threads/core | 9445 GFLOPS
+//  problemSize = 1536 | A   B^T bias^T | 1024 threads/core | 9410 GFLOPS
+//  problemSize = 1536 | A^T B   bias^T | 1024 threads/core | 9584 GFLOPS
+//  problemSize = 1536 | A^T B^T bias^T | 1024 threads/core | 9639 GFLOPS
+//  problemSize = 1537 | A   B   bias^T | 1024 threads/core | 8908 GFLOPS
+//  problemSize = 1537 | A   B^T bias^T | 1024 threads/core | 8875 GFLOPS
+//  problemSize = 1537 | A^T B   bias^T | 1024 threads/core | 8865 GFLOPS
+//  problemSize = 1537 | A^T B^T bias^T | 1024 threads/core | 8696 GFLOPS
 
 // MARK: - M1 Max, BF16xBF16->BF16
 //
@@ -247,6 +351,58 @@
 //  problemSize = 1537 | A   B^T bias^T |  832 threads/core | 8298 GFLOPS
 //  problemSize = 1537 | A^T B   bias^T |  832 threads/core | 8345 GFLOPS
 //  problemSize = 1537 | A^T B^T bias^T |  832 threads/core | 8452 GFLOPS
+//
+// After Allowing No-Async-Copy Path
+//
+//  problemSize =  511 | A   B   bias   | 1024 threads/core | 6197 GFLOPS
+//  problemSize =  511 | A   B^T bias   |  896 threads/core | 5346 GFLOPS
+//  problemSize =  511 | A^T B   bias   |  896 threads/core | 5444 GFLOPS
+//  problemSize =  511 | A^T B^T bias   | 1024 threads/core | 5077 GFLOPS
+//  problemSize =  512 | A   B   bias   | 1024 threads/core | 6346 GFLOPS
+//  problemSize =  512 | A   B^T bias   | 1024 threads/core | 6611 GFLOPS
+//  problemSize =  512 | A^T B   bias   |  896 threads/core | 5582 GFLOPS
+//  problemSize =  512 | A^T B^T bias   | 1024 threads/core | 6606 GFLOPS
+//  problemSize =  513 | A   B   bias   | 1024 threads/core | 4803 GFLOPS
+//  problemSize =  513 | A   B^T bias   | 1024 threads/core | 4500 GFLOPS
+//  problemSize =  513 | A^T B   bias   | 1024 threads/core | 4920 GFLOPS
+//  problemSize =  513 | A^T B^T bias   | 1024 threads/core | 4381 GFLOPS
+//  problemSize = 1535 | A   B   bias   |  832 threads/core | 8597 GFLOPS
+//  problemSize = 1535 | A   B^T bias   |  832 threads/core | 8833 GFLOPS
+//  problemSize = 1535 | A^T B   bias   |  832 threads/core | 8862 GFLOPS
+//  problemSize = 1535 | A^T B^T bias   |  832 threads/core | 9124 GFLOPS
+//  problemSize = 1536 | A   B   bias   |  832 threads/core | 8652 GFLOPS
+//  problemSize = 1536 | A   B^T bias   |  832 threads/core | 8851 GFLOPS
+//  problemSize = 1536 | A^T B   bias   |  832 threads/core | 8906 GFLOPS
+//  problemSize = 1536 | A^T B^T bias   |  832 threads/core | 9185 GFLOPS
+//  problemSize = 1537 | A   B   bias   |  832 threads/core | 8158 GFLOPS
+//  problemSize = 1537 | A   B^T bias   |  832 threads/core | 8387 GFLOPS
+//  problemSize = 1537 | A^T B   bias   |  832 threads/core | 8371 GFLOPS
+//  problemSize = 1537 | A^T B^T bias   |  832 threads/core | 8661 GFLOPS
+//
+//  problemSize =  511 | A   B   bias^T |  896 threads/core | 5331 GFLOPS
+//  problemSize =  511 | A   B^T bias^T |  896 threads/core | 5396 GFLOPS
+//  problemSize =  511 | A^T B   bias^T |  896 threads/core | 4603 GFLOPS
+//  problemSize =  511 | A^T B^T bias^T | 1024 threads/core | 6748 GFLOPS
+//  problemSize =  512 | A   B   bias^T |  896 threads/core | 5805 GFLOPS
+//  problemSize =  512 | A   B^T bias^T | 1024 threads/core | 6645 GFLOPS
+//  problemSize =  512 | A^T B   bias^T |  896 threads/core | 5750 GFLOPS
+//  problemSize =  512 | A^T B^T bias^T | 1024 threads/core | 6667 GFLOPS
+//  problemSize =  513 | A   B   bias^T | 1024 threads/core | 4698 GFLOPS
+//  problemSize =  513 | A   B^T bias^T | 1024 threads/core | 4106 GFLOPS
+//  problemSize =  513 | A^T B   bias^T | 1024 threads/core | 4902 GFLOPS
+//  problemSize =  513 | A^T B^T bias^T | 1024 threads/core | 4479 GFLOPS
+//  problemSize = 1535 | A   B   bias^T |  832 threads/core | 8610 GFLOPS
+//  problemSize = 1535 | A   B^T bias^T |  832 threads/core | 8852 GFLOPS
+//  problemSize = 1535 | A^T B   bias^T |  832 threads/core | 8903 GFLOPS
+//  problemSize = 1535 | A^T B^T bias^T |  832 threads/core | 9143 GFLOPS
+//  problemSize = 1536 | A   B   bias^T |  832 threads/core | 8650 GFLOPS
+//  problemSize = 1536 | A   B^T bias^T |  832 threads/core | 8882 GFLOPS
+//  problemSize = 1536 | A^T B   bias^T |  832 threads/core | 8924 GFLOPS
+//  problemSize = 1536 | A^T B^T bias^T |  832 threads/core | 9181 GFLOPS
+//  problemSize = 1537 | A   B   bias^T |  832 threads/core | 7952 GFLOPS
+//  problemSize = 1537 | A   B^T bias^T |  832 threads/core | 8313 GFLOPS
+//  problemSize = 1537 | A^T B   bias^T |  832 threads/core | 8358 GFLOPS
+//  problemSize = 1537 | A^T B^T bias^T |  832 threads/core | 8442 GFLOPS
 
 // MARK: - M4, FP32xFP32->FP32
 //
@@ -328,6 +484,58 @@
 //  problemSize = 1025 | A   B^T bias^T | 1024 threads/core | 2662 GFLOPS
 //  problemSize = 1025 | A^T B   bias^T | 1024 threads/core | 2860 GFLOPS
 //  problemSize = 1025 | A^T B^T bias^T | 1024 threads/core | 2802 GFLOPS
+//
+// After Allowing No-Async-Copy Path
+//
+//  problemSize =  511 | A   B   bias   | 1024 threads/core | 2719 GFLOPS
+//  problemSize =  511 | A   B^T bias   | 1024 threads/core | 2692 GFLOPS
+//  problemSize =  511 | A^T B   bias   | 1024 threads/core | 2698 GFLOPS
+//  problemSize =  511 | A^T B^T bias   | 1024 threads/core | 2651 GFLOPS
+//  problemSize =  512 | A   B   bias   | 1024 threads/core | 2774 GFLOPS
+//  problemSize =  512 | A   B^T bias   | 1024 threads/core | 2810 GFLOPS
+//  problemSize =  512 | A^T B   bias   | 1024 threads/core | 2732 GFLOPS
+//  problemSize =  512 | A^T B^T bias   | 1024 threads/core | 2686 GFLOPS
+//  problemSize =  513 | A   B   bias   | 1024 threads/core | 2378 GFLOPS
+//  problemSize =  513 | A   B^T bias   | 1024 threads/core | 2353 GFLOPS
+//  problemSize =  513 | A^T B   bias   | 1024 threads/core | 2346 GFLOPS
+//  problemSize =  513 | A^T B^T bias   | 1024 threads/core | 2342 GFLOPS
+//  problemSize = 1023 | A   B   bias   | 1024 threads/core | 3073 GFLOPS
+//  problemSize = 1023 | A   B^T bias   | 1024 threads/core | 2779 GFLOPS
+//  problemSize = 1023 | A^T B   bias   | 1024 threads/core | 3021 GFLOPS
+//  problemSize = 1023 | A^T B^T bias   | 1024 threads/core | 2966 GFLOPS
+//  problemSize = 1024 | A   B   bias   | 1024 threads/core | 3076 GFLOPS
+//  problemSize = 1024 | A   B^T bias   | 1024 threads/core | 3056 GFLOPS
+//  problemSize = 1024 | A^T B   bias   | 1024 threads/core | 3002 GFLOPS
+//  problemSize = 1024 | A^T B^T bias   | 1024 threads/core | 2947 GFLOPS
+//  problemSize = 1025 | A   B   bias   | 1024 threads/core | 2879 GFLOPS
+//  problemSize = 1025 | A   B^T bias   | 1024 threads/core | 2639 GFLOPS
+//  problemSize = 1025 | A^T B   bias   | 1024 threads/core | 2855 GFLOPS
+//  problemSize = 1025 | A^T B^T bias   | 1024 threads/core | 2833 GFLOPS
+//
+//  problemSize =  511 | A   B   bias^T | 1024 threads/core | 2712 GFLOPS
+//  problemSize =  511 | A   B^T bias^T | 1024 threads/core | 2680 GFLOPS
+//  problemSize =  511 | A^T B   bias^T | 1024 threads/core | 2710 GFLOPS
+//  problemSize =  511 | A^T B^T bias^T | 1024 threads/core | 2653 GFLOPS
+//  problemSize =  512 | A   B   bias^T | 1024 threads/core | 2772 GFLOPS
+//  problemSize =  512 | A   B^T bias^T | 1024 threads/core | 2773 GFLOPS
+//  problemSize =  512 | A^T B   bias^T | 1024 threads/core | 2753 GFLOPS
+//  problemSize =  512 | A^T B^T bias^T | 1024 threads/core | 2705 GFLOPS
+//  problemSize =  513 | A   B   bias^T | 1024 threads/core | 2386 GFLOPS
+//  problemSize =  513 | A   B^T bias^T | 1024 threads/core | 2361 GFLOPS
+//  problemSize =  513 | A^T B   bias^T | 1024 threads/core | 2375 GFLOPS
+//  problemSize =  513 | A^T B^T bias^T | 1024 threads/core | 2330 GFLOPS
+//  problemSize = 1023 | A   B   bias^T | 1024 threads/core | 3064 GFLOPS
+//  problemSize = 1023 | A   B^T bias^T | 1024 threads/core | 2801 GFLOPS
+//  problemSize = 1023 | A^T B   bias^T | 1024 threads/core | 3051 GFLOPS
+//  problemSize = 1023 | A^T B^T bias^T | 1024 threads/core | 2971 GFLOPS
+//  problemSize = 1024 | A   B   bias^T | 1024 threads/core | 3074 GFLOPS
+//  problemSize = 1024 | A   B^T bias^T | 1024 threads/core | 3049 GFLOPS
+//  problemSize = 1024 | A^T B   bias^T | 1024 threads/core | 3068 GFLOPS
+//  problemSize = 1024 | A^T B^T bias^T | 1024 threads/core | 2988 GFLOPS
+//  problemSize = 1025 | A   B   bias^T | 1024 threads/core | 2892 GFLOPS
+//  problemSize = 1025 | A   B^T bias^T | 1024 threads/core | 2633 GFLOPS
+//  problemSize = 1025 | A^T B   bias^T | 1024 threads/core | 2888 GFLOPS
+//  problemSize = 1025 | A^T B^T bias^T | 1024 threads/core | 2806 GFLOPS
 
 // MARK: - M4, FP16xFP16->FP16
 //
@@ -409,6 +617,58 @@
 //  problemSize = 1025 | A   B^T bias^T | 1024 threads/core | 3157 GFLOPS
 //  problemSize = 1025 | A^T B   bias^T | 1024 threads/core | 3177 GFLOPS
 //  problemSize = 1025 | A^T B^T bias^T | 1024 threads/core | 3142 GFLOPS
+//
+// After Allowing No-Async-Copy Path
+//
+//  problemSize =  511 | A   B   bias   | 1024 threads/core | 2950 GFLOPS
+//  problemSize =  511 | A   B^T bias   | 1024 threads/core | 2971 GFLOPS
+//  problemSize =  511 | A^T B   bias   | 1024 threads/core | 2920 GFLOPS
+//  problemSize =  511 | A^T B^T bias   | 1024 threads/core | 2894 GFLOPS
+//  problemSize =  512 | A   B   bias   | 1024 threads/core | 3063 GFLOPS
+//  problemSize =  512 | A   B^T bias   | 1024 threads/core | 3048 GFLOPS
+//  problemSize =  512 | A^T B   bias   | 1024 threads/core | 3029 GFLOPS
+//  problemSize =  512 | A^T B^T bias   | 1024 threads/core | 3052 GFLOPS
+//  problemSize =  513 | A   B   bias   | 1024 threads/core | 2629 GFLOPS
+//  problemSize =  513 | A   B^T bias   | 1024 threads/core | 2640 GFLOPS
+//  problemSize =  513 | A^T B   bias   | 1024 threads/core | 2550 GFLOPS
+//  problemSize =  513 | A^T B^T bias   | 1024 threads/core | 2581 GFLOPS
+//  problemSize = 1023 | A   B   bias   | 1024 threads/core | 3397 GFLOPS
+//  problemSize = 1023 | A   B^T bias   | 1024 threads/core | 3339 GFLOPS
+//  problemSize = 1023 | A^T B   bias   | 1024 threads/core | 3384 GFLOPS
+//  problemSize = 1023 | A^T B^T bias   | 1024 threads/core | 3319 GFLOPS
+//  problemSize = 1024 | A   B   bias   | 1024 threads/core | 3403 GFLOPS
+//  problemSize = 1024 | A   B^T bias   | 1024 threads/core | 3405 GFLOPS
+//  problemSize = 1024 | A^T B   bias   | 1024 threads/core | 3385 GFLOPS
+//  problemSize = 1024 | A^T B^T bias   | 1024 threads/core | 3337 GFLOPS
+//  problemSize = 1025 | A   B   bias   | 1024 threads/core | 3218 GFLOPS
+//  problemSize = 1025 | A   B^T bias   | 1024 threads/core | 3151 GFLOPS
+//  problemSize = 1025 | A^T B   bias   | 1024 threads/core | 3200 GFLOPS
+//  problemSize = 1025 | A^T B^T bias   | 1024 threads/core | 3138 GFLOPS
+//
+//  problemSize =  511 | A   B   bias^T | 1024 threads/core | 2901 GFLOPS
+//  problemSize =  511 | A   B^T bias^T | 1024 threads/core | 2984 GFLOPS
+//  problemSize =  511 | A^T B   bias^T | 1024 threads/core | 2960 GFLOPS
+//  problemSize =  511 | A^T B^T bias^T | 1024 threads/core | 2899 GFLOPS
+//  problemSize =  512 | A   B   bias^T | 1024 threads/core | 3079 GFLOPS
+//  problemSize =  512 | A   B^T bias^T | 1024 threads/core | 3067 GFLOPS
+//  problemSize =  512 | A^T B   bias^T | 1024 threads/core | 3014 GFLOPS
+//  problemSize =  512 | A^T B^T bias^T | 1024 threads/core | 3008 GFLOPS
+//  problemSize =  513 | A   B   bias^T | 1024 threads/core | 2654 GFLOPS
+//  problemSize =  513 | A   B^T bias^T | 1024 threads/core | 2575 GFLOPS
+//  problemSize =  513 | A^T B   bias^T | 1024 threads/core | 2562 GFLOPS
+//  problemSize =  513 | A^T B^T bias^T | 1024 threads/core | 2531 GFLOPS
+//  problemSize = 1023 | A   B   bias^T | 1024 threads/core | 3410 GFLOPS
+//  problemSize = 1023 | A   B^T bias^T | 1024 threads/core | 3319 GFLOPS
+//  problemSize = 1023 | A^T B   bias^T | 1024 threads/core | 3389 GFLOPS
+//  problemSize = 1023 | A^T B^T bias^T | 1024 threads/core | 3309 GFLOPS
+//  problemSize = 1024 | A   B   bias^T | 1024 threads/core | 3400 GFLOPS
+//  problemSize = 1024 | A   B^T bias^T | 1024 threads/core | 3409 GFLOPS
+//  problemSize = 1024 | A^T B   bias^T | 1024 threads/core | 3412 GFLOPS
+//  problemSize = 1024 | A^T B^T bias^T | 1024 threads/core | 3363 GFLOPS
+//  problemSize = 1025 | A   B   bias^T | 1024 threads/core | 3223 GFLOPS
+//  problemSize = 1025 | A   B^T bias^T | 1024 threads/core | 3140 GFLOPS
+//  problemSize = 1025 | A^T B   bias^T | 1024 threads/core | 3197 GFLOPS
+//  problemSize = 1025 | A^T B^T bias^T | 1024 threads/core | 3128 GFLOPS
 
 // MARK: - M4, BF16xBF16->BF16
 //
@@ -490,3 +750,55 @@
 //  problemSize = 1025 | A   B^T bias^T | 1024 threads/core | 3097 GFLOPS
 //  problemSize = 1025 | A^T B   bias^T | 1024 threads/core | 3143 GFLOPS
 //  problemSize = 1025 | A^T B^T bias^T | 1024 threads/core | 3068 GFLOPS
+//
+// After Allowing No-Async-Copy Path
+//
+//  problemSize =  511 | A   B   bias   | 1024 threads/core | 2905 GFLOPS
+//  problemSize =  511 | A   B^T bias   | 1024 threads/core | 2897 GFLOPS
+//  problemSize =  511 | A^T B   bias   | 1024 threads/core | 2906 GFLOPS
+//  problemSize =  511 | A^T B^T bias   | 1024 threads/core | 2841 GFLOPS
+//  problemSize =  512 | A   B   bias   | 1024 threads/core | 3012 GFLOPS
+//  problemSize =  512 | A   B^T bias   | 1024 threads/core | 3064 GFLOPS
+//  problemSize =  512 | A^T B   bias   | 1024 threads/core | 2909 GFLOPS
+//  problemSize =  512 | A^T B^T bias   | 1024 threads/core | 2899 GFLOPS
+//  problemSize =  513 | A   B   bias   | 1024 threads/core | 2569 GFLOPS
+//  problemSize =  513 | A   B^T bias   | 1024 threads/core | 2559 GFLOPS
+//  problemSize =  513 | A^T B   bias   | 1024 threads/core | 2547 GFLOPS
+//  problemSize =  513 | A^T B^T bias   | 1024 threads/core | 2520 GFLOPS
+//  problemSize = 1023 | A   B   bias   | 1024 threads/core | 3341 GFLOPS
+//  problemSize = 1023 | A   B^T bias   | 1024 threads/core | 3291 GFLOPS
+//  problemSize = 1023 | A^T B   bias   | 1024 threads/core | 3308 GFLOPS
+//  problemSize = 1023 | A^T B^T bias   | 1024 threads/core | 3251 GFLOPS
+//  problemSize = 1024 | A   B   bias   | 1024 threads/core | 3316 GFLOPS
+//  problemSize = 1024 | A   B^T bias   | 1024 threads/core | 3331 GFLOPS
+//  problemSize = 1024 | A^T B   bias   | 1024 threads/core | 3285 GFLOPS
+//  problemSize = 1024 | A^T B^T bias   | 1024 threads/core | 3241 GFLOPS
+//  problemSize = 1025 | A   B   bias   | 1024 threads/core | 3162 GFLOPS
+//  problemSize = 1025 | A   B^T bias   | 1024 threads/core | 3106 GFLOPS
+//  problemSize = 1025 | A^T B   bias   | 1024 threads/core | 3130 GFLOPS
+//  problemSize = 1025 | A^T B^T bias   | 1024 threads/core | 3077 GFLOPS
+//
+//  problemSize =  511 | A   B   bias^T | 1024 threads/core | 2904 GFLOPS
+//  problemSize =  511 | A   B^T bias^T | 1024 threads/core | 2818 GFLOPS
+//  problemSize =  511 | A^T B   bias^T | 1024 threads/core | 2860 GFLOPS
+//  problemSize =  511 | A^T B^T bias^T | 1024 threads/core | 2840 GFLOPS
+//  problemSize =  512 | A   B   bias^T | 1024 threads/core | 2987 GFLOPS
+//  problemSize =  512 | A   B^T bias^T | 1024 threads/core | 2984 GFLOPS
+//  problemSize =  512 | A^T B   bias^T | 1024 threads/core | 2953 GFLOPS
+//  problemSize =  512 | A^T B^T bias^T | 1024 threads/core | 2903 GFLOPS
+//  problemSize =  513 | A   B   bias^T | 1024 threads/core | 2538 GFLOPS
+//  problemSize =  513 | A   B^T bias^T | 1024 threads/core | 2526 GFLOPS
+//  problemSize =  513 | A^T B   bias^T | 1024 threads/core | 2486 GFLOPS
+//  problemSize =  513 | A^T B^T bias^T | 1024 threads/core | 2458 GFLOPS
+//  problemSize = 1023 | A   B   bias^T | 1024 threads/core | 3343 GFLOPS
+//  problemSize = 1023 | A   B^T bias^T | 1024 threads/core | 3272 GFLOPS
+//  problemSize = 1023 | A^T B   bias^T | 1024 threads/core | 3329 GFLOPS
+//  problemSize = 1023 | A^T B^T bias^T | 1024 threads/core | 3247 GFLOPS
+//  problemSize = 1024 | A   B   bias^T | 1024 threads/core | 3280 GFLOPS
+//  problemSize = 1024 | A   B^T bias^T | 1024 threads/core | 3299 GFLOPS
+//  problemSize = 1024 | A^T B   bias^T | 1024 threads/core | 3308 GFLOPS
+//  problemSize = 1024 | A^T B^T bias^T | 1024 threads/core | 3247 GFLOPS
+//  problemSize = 1025 | A   B   bias^T | 1024 threads/core | 3168 GFLOPS
+//  problemSize = 1025 | A   B^T bias^T | 1024 threads/core | 3089 GFLOPS
+//  problemSize = 1025 | A^T B   bias^T | 1024 threads/core | 3150 GFLOPS
+//  problemSize = 1025 | A^T B^T bias^T | 1024 threads/core | 3075 GFLOPS

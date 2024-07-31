@@ -114,8 +114,7 @@ func executeScript() {
   }
   
   // My workspace. Edit this code to run actual tests.
-  do {
-    let transposeBias: Bool = false
+  for transposeBias in [false, true] {
     let transposeStates: [(Bool, Bool, Bool)] = [
       (false, false, transposeBias),
       (false, true, transposeBias),
@@ -207,8 +206,8 @@ func executeScript() {
     
     // Working on investigating BF16 performance with large matrices.
     print()
-    print("Performance tests:")
-    for problemSize in [1488, 1489] {
+//    print("Performance tests:")
+    for problemSize in [511, 512, 513, 1535, 1536, 1537] {
       for transposeState in transposeStates {
         var testDescriptor = TestDescriptor()
         testDescriptor.precision = .BF16
