@@ -414,19 +414,36 @@ kernel void gemm(device \(memoryNameA) *A [[buffer(0)]],
 """
     }
     
-    // Utilities for loading bias and allocating the accumulator.
-    func loadBias() -> String {
-      guard useBias else {
-        return ""
+    // MARK: - Utilities for loading the bias.
+    
+    enum AddressSpace {
+      case device
+      case threadgroup
+      
+      var keyword: String {
+        switch self {
+        case .device: return "device"
+        case .threadgroup: return "threadgroup"
+        }
       }
-      return """
+      
+      var offsetType: String {
+        switch self {
+        case .device: return "uint"
+        case .threadgroup: return "ushort"
+        }
+      }
+    }
+    
+    func loadBias() -> String {
+      """
       
       if (sidx == 0) {
         uint2 bias_offset(bias_trans ? M_offset : N_offset, 0);
         auto bias_dst = (threadgroup \(memoryNameBias)*)(threadgroup_block);
         auto bias_src =
         simdgroup_matrix_storage<\(memoryNameBias)>::apply_offset(
-          bias, 0, bias_offset, /*transpose=*/false);
+          bias, 0, bias_offset);
         
         ushort bias_tile_dimension = bias_trans
         ? min(uint(M_group), M - M_offset)
@@ -443,27 +460,56 @@ kernel void gemm(device \(memoryNameA) *A [[buffer(0)]],
       
       """
     }
-    func declareBiasLocation() -> String {
-      guard useBias else {
-        return ""
+    
+    func declareBiasLocation(addressSpace: AddressSpace) -> String {
+      func createBiasOffsetX() -> String {
+        if addressSpace == .threadgroup {
+          if transposeState.bias {
+            return "ushort(offset_in_group.y)"
+          } else {
+            return "ushort(offset_in_group.x)"
+          }
+        } else {
+          if transposeState.bias {
+            return "uint(M_offset + offset_in_group.y)"
+          } else {
+            return "uint(N_offset + offset_in_group.x)"
+          }
+        }
       }
+      
+      if addressSpace == .threadgroup {
+        return """
+        
+        ushort2 bias_block_offset(\(createBiasOffsetX()), 0);
+        auto bias_src = (threadgroup \(memoryNameBias)*)(threadgroup_block);
+        bias_src = simdgroup_matrix_storage<\(memoryNameBias)>::apply_offset(
+          bias_src, 0, bias_block_offset);
+        
+        """
+      } else {
+        return """
+        
+        uint2 bias_offset(\(createBiasOffsetX()), 0);
+        auto bias_src =
+        simdgroup_matrix_storage<\(memoryNameBias)>::apply_offset(
+          bias, 0, bias_offset);
+        
+        """
+      }
+    }
+    
+    // MARK: - Utilities for initializing the accumulator.
+    
+    func allocateAccumulator() -> String {
+      let arraySize = (registerM / 8) * (registerN / 8)
       return """
       
-      ushort2 bias_block_offset(
-        bias_trans ? offset_in_group.y : offset_in_group.x, 0);
-      auto bias_block = (threadgroup \(memoryNameBias)*)(threadgroup_block);
-      bias_block = simdgroup_matrix_storage<\(memoryNameBias)>::apply_offset(
-        bias_block, 0, bias_block_offset, /*transpose=*/false);
+      simdgroup_matrix_storage<\(registerNameC)> C_sram[\(arraySize)];
       
       """
     }
-    func accumulatorSize() -> UInt16 {
-      (registerM / 8) * (registerN / 8)
-    }
     
-    
-    
-    // Utilities for filling the accumulator's entries.
     func zeroInitializeAccumulator() -> String {
       """
       
@@ -479,35 +525,43 @@ kernel void gemm(device \(memoryNameA) *A [[buffer(0)]],
       
       """
     }
+    
     func loadBiasLoop() -> String {
-      guard useBias else {
-        return zeroInitializeAccumulator()
+      func createLoadFunction() -> String {
+        if memoryPrecisions.bias == .BF16, registerPrecisions.bias == .FP32 {
+          return "load_bfloat"
+        } else {
+          return "load"
+        }
       }
       
-      var loadFunctionBias: String
-      if memoryPrecisions.bias == .BF16, registerPrecisions.bias == .FP32 {
-        loadFunctionBias = "load_bfloat"
-      } else {
-        loadFunctionBias = "load"
+      func createInnerLoop() -> String {
+        """
+        
+        vec<\(registerNameBias), 2> biasForm = *(bias.thread_elements());
+        auto accumulatorForm = vec<\(registerNameC), 2>(biasForm);
+        
+        ushort2 origin(n, m);
+        auto C = get_sram(C_sram, \(registerN), origin);
+        *C = simdgroup_matrix_storage<\(registerNameC)>(accumulatorForm);
+        
+        """
       }
       
+      // Branch over whether the bias is transposed.
       if transposeState.bias {
         return """
         
         #pragma clang loop unroll(full)
         for (ushort m = 0; m < \(registerM); m += 8) {
           simdgroup_matrix_storage<\(registerNameBias)> bias;
-          bias.\(loadFunctionBias)(
-            bias_block, 0, ushort2(m, 0), /*transpose=*/false);
+          bias.\(createLoadFunction())(
+            bias_src, 0, ushort2(m, 0));
           bias.thread_elements()[0][1] = bias.thread_elements()[0][0];
-          vec<\(registerNameBias), 2> biasForm = *(bias.thread_elements());
-          auto accumulatorForm = vec<\(registerNameC), 2>(biasForm);
           
           #pragma clang loop unroll(full)
           for (ushort n = 0; n < \(registerN); n += 8) {
-            ushort2 origin(n, m);
-            auto C = get_sram(C_sram, \(registerN), origin);
-            *C = simdgroup_matrix_storage<\(registerNameC)>(accumulatorForm);
+            \(createInnerLoop())
           }
         }
         
@@ -518,49 +572,56 @@ kernel void gemm(device \(memoryNameA) *A [[buffer(0)]],
         #pragma clang loop unroll(full)
         for (ushort n = 0; n < \(registerN); n += 8) {
           simdgroup_matrix_storage<\(registerNameBias)> bias;
-          bias.\(loadFunctionBias)(
-            bias_block, 0, ushort2(n, 0), /*transpose=*/false);
-          vec<\(registerNameBias), 2> biasForm = *(bias.thread_elements());
-          auto accumulatorForm = vec<\(registerNameC), 2>(biasForm);
+          bias.\(createLoadFunction())(
+            bias_src, 0, ushort2(n, 0));
           
           #pragma clang loop unroll(full)
           for (ushort m = 0; m < \(registerM); m += 8) {
-            ushort2 origin(n, m);
-            auto C = get_sram(C_sram, \(registerN), origin);
-            *C = simdgroup_matrix_storage<\(registerNameC)>(accumulatorForm);
+            \(createInnerLoop())
           }
         }
         
         """
       }
     }
-    func accumulatorBarrier() -> String {
-      guard useBias else {
-        return ""
+    
+    // MARK: - Set up the accumulator.
+    
+    if useBias {
+      // Take advantage of the origin shift, and omit async copies on M3
+      // when possible.
+      var condition: String
+      if preferAsyncStore {
+        condition = "false"
+      } else {
+        condition = "(M >= M_group) && (N >= N_group)"
       }
-      return """
       
-      // Add a barrier, because you've just accessed threadgroup memory.
-      threadgroup_barrier(mem_flags::mem_threadgroup);
+      source += """
+      
+      \(allocateAccumulator())
+      if (\(condition)) {
+        \(declareBiasLocation(addressSpace: .device))
+        \(loadBiasLoop())
+      } else {
+        \(loadBias())
+        \(declareBiasLocation(addressSpace: .threadgroup))
+        \(loadBiasLoop())
+        
+        // Add a barrier, because you accessed the entries from threadgroup
+        // memory.
+        threadgroup_barrier(mem_flags::mem_threadgroup);
+      }
+      
+      """
+    } else {
+      source += """
+      
+      \(allocateAccumulator())
+      \(zeroInitializeAccumulator())
       
       """
     }
-    
-    // TODO: Take advantage of the origin shift. If "prefer async store" is
-    // true, load directly from device memory. Use the same condition as
-    // when storing C.
-    
-    // Set up the accumulator.
-    source += """
-    
-    \(loadBias())
-    \(declareBiasLocation())
-    simdgroup_matrix_storage<\(registerNameC)> C_sram[\(accumulatorSize())];
-    
-    \(loadBiasLoop())
-    \(accumulatorBarrier())
-    
-    """
     
     // Add the matrix multiplication iterations.
     //

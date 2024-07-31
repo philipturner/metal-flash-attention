@@ -31,7 +31,7 @@
 		98DA5B422C2CA75D000F4E06 /* DerivativeSoftmax.swift in Sources */ = {isa = PBXBuildFile; fileRef = 98DA5B412C2CA75D000F4E06 /* DerivativeSoftmax.swift */; };
 		98DA5B442C2DB893000F4E06 /* DerivativeSoftmaxTest.swift in Sources */ = {isa = PBXBuildFile; fileRef = 98DA5B432C2DB893000F4E06 /* DerivativeSoftmaxTest.swift */; };
 		98DA5B4A2C2EF788000F4E06 /* AttentionDescriptor.swift in Sources */ = {isa = PBXBuildFile; fileRef = 98DA5B492C2EF788000F4E06 /* AttentionDescriptor.swift */; };
-		98F04D9C2C5A70AD000B925E /* Bias_ExpectedPerformance.swift in Sources */ = {isa = PBXBuildFile; fileRef = 98F04D9B2C5A70AD000B925E /* Bias_ExpectedPerformance.swift */; };
+		98F04D9C2C5A70AD000B925E /* BiasPerformance.swift in Sources */ = {isa = PBXBuildFile; fileRef = 98F04D9B2C5A70AD000B925E /* BiasPerformance.swift */; };
 		98F950F92C49671600C370E4 /* StoreDerivativeSTest.swift in Sources */ = {isa = PBXBuildFile; fileRef = 98F950F82C49671600C370E4 /* StoreDerivativeSTest.swift */; };
 /* End PBXBuildFile section */
 
@@ -64,7 +64,7 @@
 		98DA5B432C2DB893000F4E06 /* DerivativeSoftmaxTest.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = DerivativeSoftmaxTest.swift; sourceTree = "<group>"; };
 		98DA5B472C2DE2DA000F4E06 /* AttentionKernel.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = AttentionKernel.swift; sourceTree = "<group>"; };
 		98DA5B492C2EF788000F4E06 /* AttentionDescriptor.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = AttentionDescriptor.swift; sourceTree = "<group>"; };
-		98F04D9B2C5A70AD000B925E /* Bias_ExpectedPerformance.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = Bias_ExpectedPerformance.swift; sourceTree = "<group>"; };
+		98F04D9B2C5A70AD000B925E /* BiasPerformance.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = BiasPerformance.swift; sourceTree = "<group>"; };
 		98F950F82C49671600C370E4 /* StoreDerivativeSTest.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = StoreDerivativeSTest.swift; sourceTree = "<group>"; };
 		98FB66E02C347CBA00C56CED /* AttentionKernel+InnerLoop.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = "AttentionKernel+InnerLoop.swift"; sourceTree = "<group>"; };
 /* End PBXFileReference section */
@@ -121,7 +121,7 @@
 				98DA5B3E2C2C5101000F4E06 /* Utillities */,
 				9881AA212C25C21F0056D05C /* Tests */,
 				9881A9F72C24C8230056D05C /* ContentView.swift */,
-				98F04D9B2C5A70AD000B925E /* Bias_ExpectedPerformance.swift */,
+				98F04D9B2C5A70AD000B925E /* BiasPerformance.swift */,
 				9881A9F52C24C8230056D05C /* FlashAttentionApp.swift */,
 				9881AA042C24C85E0056D05C /* Workspace.swift */,
 				9881A9FB2C24C8240056D05C /* FlashAttention.entitlements */,
@@ -261,7 +261,7 @@
 				9881AA052C24C85E0056D05C /* Workspace.swift in Sources */,
 				9881AA252C25FDC20056D05C /* AdversarialShapeTest.swift in Sources */,
 				9881A9F82C24C8230056D05C /* ContentView.swift in Sources */,
-				98F04D9C2C5A70AD000B925E /* Bias_ExpectedPerformance.swift in Sources */,
+				98F04D9C2C5A70AD000B925E /* BiasPerformance.swift in Sources */,
 				98DA5B4A2C2EF788000F4E06 /* AttentionDescriptor.swift in Sources */,
 				98DA5B422C2CA75D000F4E06 /* DerivativeSoftmax.swift in Sources */,
 				9881AA232C25C22B0056D05C /* LaplacianTest.swift in Sources */,

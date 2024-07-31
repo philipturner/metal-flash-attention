@@ -1,5 +1,5 @@
 //
-//  Bias_ExpectedPerformance.swift
+//  BiasPerformance.swift
 //  FlashAttention
 //
 //  Created by Philip Turner on 7/31/24.

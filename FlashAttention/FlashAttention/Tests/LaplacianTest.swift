@@ -115,13 +115,95 @@ func executeScript() {
   
   // My workspace. Edit this code to run actual tests.
   do {
-    let transposeBias: Bool = true
+    let transposeBias: Bool = false
     let transposeStates: [(Bool, Bool, Bool)] = [
       (false, false, transposeBias),
       (false, true, transposeBias),
       (true, false, transposeBias),
       (true, true, transposeBias),
     ]
+    
+    /*
+     M1 Max
+     
+     no bias
+     
+     problemSize = 1488 | A   B   bias   |  896 threads/core | 8368 GFLOPS
+     problemSize = 1488 | A   B^T bias   | 1024 threads/core | 8677 GFLOPS
+     problemSize = 1488 | A^T B   bias   | 1024 threads/core | 8791 GFLOPS
+     problemSize = 1488 | A^T B^T bias   | 1024 threads/core | 9022 GFLOPS
+     problemSize = 1489 | A   B   bias   |  768 threads/core | 8034 GFLOPS
+     problemSize = 1489 | A   B^T bias   |  832 threads/core | 8374 GFLOPS
+     problemSize = 1489 | A^T B   bias   |  832 threads/core | 8368 GFLOPS
+     problemSize = 1489 | A^T B^T bias   |  832 threads/core | 8637 GFLOPS
+     
+     bias, disallow device load
+     
+     problemSize = 1488 | A   B   bias   |  896 threads/core | 8352 GFLOPS
+     problemSize = 1488 | A   B^T bias   | 1024 threads/core | 8670 GFLOPS
+     problemSize = 1488 | A^T B   bias   | 1024 threads/core | 8798 GFLOPS
+     problemSize = 1488 | A^T B^T bias   | 1024 threads/core | 8985 GFLOPS
+     problemSize = 1489 | A   B   bias   |  832 threads/core | 7996 GFLOPS
+     problemSize = 1489 | A   B^T bias   |  832 threads/core | 8304 GFLOPS
+     problemSize = 1489 | A^T B   bias   |  832 threads/core | 8124 GFLOPS
+     problemSize = 1489 | A^T B^T bias   |  832 threads/core | 8637 GFLOPS
+     
+     bias, allow device load
+     
+     problemSize = 1488 | A   B   bias   |  896 threads/core | 8352 GFLOPS
+     problemSize = 1488 | A   B^T bias   | 1024 threads/core | 8633 GFLOPS
+     problemSize = 1488 | A^T B   bias   | 1024 threads/core | 8793 GFLOPS
+     problemSize = 1488 | A^T B^T bias   | 1024 threads/core | 8983 GFLOPS
+     problemSize = 1489 | A   B   bias   |  832 threads/core | 7989 GFLOPS
+     problemSize = 1489 | A   B^T bias   |  832 threads/core | 8312 GFLOPS
+     problemSize = 1489 | A^T B   bias   |  832 threads/core | 8136 GFLOPS
+     problemSize = 1489 | A^T B^T bias   |  832 threads/core | 8619 GFLOPS
+     
+     bias, always device load
+     
+     problemSize = 1488 | A   B   bias   |  896 threads/core | 8375 GFLOPS
+     problemSize = 1488 | A   B^T bias   | 1024 threads/core | 8632 GFLOPS
+     problemSize = 1488 | A^T B   bias   | 1024 threads/core | 8800 GFLOPS
+     problemSize = 1488 | A^T B^T bias   | 1024 threads/core | 9005 GFLOPS
+     problemSize = 1489 | A   B   bias   |  832 threads/core | 8007 GFLOPS
+     problemSize = 1489 | A   B^T bias   |  832 threads/core | 8323 GFLOPS
+     problemSize = 1489 | A^T B   bias   |  832 threads/core | 8187 GFLOPS
+     problemSize = 1489 | A^T B^T bias   |  832 threads/core | 8618 GFLOPS
+     
+     bias^T, disallow device load
+     
+     problemSize = 1488 | A   B   bias^T |  896 threads/core | 8324 GFLOPS
+     problemSize = 1488 | A   B^T bias^T | 1024 threads/core | 8660 GFLOPS
+     problemSize = 1488 | A^T B   bias^T | 1024 threads/core | 8805 GFLOPS
+     problemSize = 1488 | A^T B^T bias^T | 1024 threads/core | 9002 GFLOPS
+     problemSize = 1489 | A   B   bias^T |  832 threads/core | 8109 GFLOPS
+     problemSize = 1489 | A   B^T bias^T |  832 threads/core | 8353 GFLOPS
+     problemSize = 1489 | A^T B   bias^T |  832 threads/core | 8352 GFLOPS
+     problemSize = 1489 | A^T B^T bias^T |  832 threads/core | 8580 GFLOPS
+     
+     bias^T, allow device load
+     
+     problemSize = 1488 | A   B   bias^T |  896 threads/core | 8330 GFLOPS
+     problemSize = 1488 | A   B^T bias^T | 1024 threads/core | 8671 GFLOPS
+     problemSize = 1488 | A^T B   bias^T | 1024 threads/core | 8812 GFLOPS
+     problemSize = 1488 | A^T B^T bias^T | 1024 threads/core | 9005 GFLOPS
+     problemSize = 1489 | A   B   bias^T |  832 threads/core | 8099 GFLOPS
+     problemSize = 1489 | A   B^T bias^T |  832 threads/core | 8348 GFLOPS
+     problemSize = 1489 | A^T B   bias^T |  832 threads/core | 8367 GFLOPS
+     problemSize = 1489 | A^T B^T bias^T |  832 threads/core | 8643 GFLOPS
+     
+     bias^T, always device load
+     
+     problemSize = 1488 | A   B   bias^T |  896 threads/core | 8340 GFLOPS
+     problemSize = 1488 | A   B^T bias^T | 1024 threads/core | 8664 GFLOPS
+     problemSize = 1488 | A^T B   bias^T | 1024 threads/core | 8810 GFLOPS
+     problemSize = 1488 | A^T B^T bias^T | 1024 threads/core | 9024 GFLOPS
+     problemSize = 1489 | A   B   bias^T |  832 threads/core | 8118 GFLOPS
+     problemSize = 1489 | A   B^T bias^T |  832 threads/core | 8342 GFLOPS
+     problemSize = 1489 | A^T B   bias^T |  832 threads/core | 8376 GFLOPS
+     problemSize = 1489 | A^T B^T bias^T |  832 threads/core | 8473 GFLOPS
+     
+     */
     
     // Working on investigating BF16 performance with large matrices.
     print()
