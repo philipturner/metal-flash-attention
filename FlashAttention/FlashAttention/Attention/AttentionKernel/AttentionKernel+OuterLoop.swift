@@ -1,5 +1,5 @@
 //
-//  AttentionKernel+TraversalLoop.swift
+//  AttentionKernel+OuterLoop.swift
 //  FlashAttention
 //
 //  Created by Philip Turner on 7/2/24.
@@ -57,7 +57,7 @@
 //   initialize m[32]
 //   initialize l[32]
 //
-//   // Inner Loop
+//   // Outer Loop
 //   for c in 0..<C {
 //     repeat 4 times
 //       load Q[r][32]
@@ -85,7 +85,7 @@
 //     load O[r][32]
 //     D += dO * O
 //
-//   // Inner Loop
+//   // Outer Loop
 //   for c in 0..<C {
 //     repeat 4 times
 //       load Q[r][32]
@@ -113,7 +113,7 @@
 //   initialize dK[32][128]
 //   initialize dV[32][128]
 //
-//   // Inner Loop
+//   // Outer Loop
 //   for r in 0..<R {
 //     load L[r]
 //     load D[r]

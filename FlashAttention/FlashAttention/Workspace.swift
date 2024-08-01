@@ -33,9 +33,9 @@ func executeScript() {
   profileProblemSize(N: 384, D: 95)
   profileProblemSize(N: 777, D: 199)
   
-  #if true
+  #if false
   let N_array = [128, 160, 192]
-  let blockD_array = [32, 64, 128]
+  let blockD_array = [24] // [8, 16, 24, 32, 40, 48, 56, 64, 80, 96, 128]
   let D_array = [32, 48, 64, 80, 96, 128, 160, 192, 256]
   
   // Loop over the configurations.
@@ -154,8 +154,6 @@ func profileProblemSize(N: Int, D: Int, blockD: Int = 64) -> Int {
   // - Try an explicit register spilling mode, where async copies are used to
   //   minimize the overhead of paging. Use the output buffers as the scratch
   //   space.
-  //   - TODO: Restructure the outer-product loop to be similar to the
-  //     accumulate loop.
   //   - Implement the "future optimization" notes before running any
   //     benchmarks.
   //   - Then, investigate the remaining register pressure bottlenecks
@@ -205,6 +203,12 @@ func profileProblemSize(N: Int, D: Int, blockD: Int = 64) -> Int {
   let pipelineForward = createPipeline(kernel: kernelForward)
   let pipelineBackwardQuery = createPipeline(kernel: kernelBackwardQuery)
   let pipelineBackwardKeyValue = createPipeline(kernel: kernelBackwardKeyValue)
+  
+  
+  
+  
+  
+  
   
   let bufferQ = MTLContext.global.createBuffer(network.Q, .FP32)
   let bufferK = MTLContext.global.createBuffer(network.K, .FP32)

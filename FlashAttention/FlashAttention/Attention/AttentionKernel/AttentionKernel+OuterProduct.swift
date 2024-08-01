@@ -253,10 +253,10 @@ extension AttentionKernel {
     // Outer loop over the head dimension.
     var descriptor = LoopIterationDescriptor()
     descriptor.accumulateConditional = "true"
-    if cached(A) {
+    if true {
       let loopEnd = paddedHeadDimension
       let loopEndFloor = loopEnd - loopEnd % blockDimensions.head
-      descriptor.registerOffset = "d_outer"
+      descriptor.registerOffset = cached(A) ? "d_outer" : "0"
       
       // Add the first iterations.
       descriptor.registerSize = blockDimensions.head
@@ -265,7 +265,7 @@ extension AttentionKernel {
       \(allocateAccumulator())
       \(initializeAccumulator())
       
-      #pragma clang loop unroll(full)
+      #pragma clang loop unroll(\(cached(A) ? "full" : "disable"))
       for (
         ushort d_outer = 0;
         d_outer < \(loopEndFloor);
