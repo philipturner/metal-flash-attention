@@ -149,6 +149,16 @@ func profileProblemSize(N: Int, D: Int) -> Int {
   //   problem sizes, at least for FP32.
   // - Redefine "true" in backward key-value, to mean whether dQ is
   //   accumulated.
+  //
+  // Alternatively, try the route that uses GEMM. Keep an (ideally square)
+  // allocation in the L3 cache. The dQ and dK multiplications can use regular
+  // GEMM, lessening the impact of register spilling bottlenecks. A large
+  // traversal dimension like 96 would not be needed as much.
+  //
+  // One could also have an abbreviated forward pass that returns the dS matrix
+  // and L. Then, it reconstructs P to accumulate O / dV without register
+  // spilling or excessive rounding error. This will be a little more involved,
+  // so wait until the major bottlenecks in the backward pass are fixed.
   
   var networkDesc = NetworkDescriptor()
   networkDesc.N = N
