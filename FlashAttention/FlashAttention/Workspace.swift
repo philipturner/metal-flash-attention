@@ -15,27 +15,26 @@ import QuartzCore
 
 func executeScript() {
   // Automate the execution of the test suite.
-  profileProblemSize(N: 10, D: 3)
-  profileProblemSize(N: 10, D: 80)
-  profileProblemSize(N: 8, D: 2)
-  profileProblemSize(N: 9, D: 2)
-  profileProblemSize(N: 23, D: 2)
-  profileProblemSize(N: 24, D: 2)
-  profileProblemSize(N: 25, D: 2)
-  profileProblemSize(N: 192, D: 77)
-  profileProblemSize(N: 192, D: 80)
-  profileProblemSize(N: 93, D: 32)
-  profileProblemSize(N: 99, D: 35)
-  profileProblemSize(N: 64, D: 32)
-  profileProblemSize(N: 32, D: 64)
-  profileProblemSize(N: 4, D: 1)
-  profileProblemSize(N: 4, D: 2)
-  profileProblemSize(N: 384, D: 95)
-  profileProblemSize(N: 777, D: 199)
+//  profileProblemSize(N: 10, D: 3)
+//  profileProblemSize(N: 10, D: 80)
+//  profileProblemSize(N: 8, D: 2)
+//  profileProblemSize(N: 9, D: 2)
+//  profileProblemSize(N: 23, D: 2)
+//  profileProblemSize(N: 24, D: 2)
+//  profileProblemSize(N: 25, D: 2)
+//  profileProblemSize(N: 192, D: 77)
+//  profileProblemSize(N: 192, D: 80)
+//  profileProblemSize(N: 93, D: 32)
+//  profileProblemSize(N: 99, D: 35)
+//  profileProblemSize(N: 64, D: 32)
+//  profileProblemSize(N: 32, D: 64)
+//  profileProblemSize(N: 4, D: 1)
+//  profileProblemSize(N: 4, D: 2)
+//  profileProblemSize(N: 384, D: 95)
+//  profileProblemSize(N: 777, D: 199)
   
-  #if false
+  #if true
   let N_array = [128, 160, 192]
-  let blockD_array = [24] // [8, 16, 24, 32, 40, 48, 56, 64, 80, 96, 128]
   let D_array = [32, 48, 64, 80, 96, 128, 160, 192, 256]
   
   // Loop over the configurations.
@@ -44,18 +43,10 @@ func executeScript() {
     outputString += "\(N), "
     print("N =", N, terminator: ", ")
     
-    for blockD in blockD_array {
-      var sampleMinimum: Int = .max
-      var sampleMaximum: Int = .min
-      for D in D_array {
-        let metric = profileProblemSize(N: N, D: D, blockD: blockD)
-        print(metric, terminator: ", ")
-        
-        sampleMinimum = min(metric, sampleMinimum)
-        sampleMaximum = max(metric, sampleMaximum)
-        
-      }
-      outputString += "\(sampleMinimum), "
+    for D in D_array {
+      let metric = profileProblemSize(N: N, D: D)
+      outputString += "\(metric), "
+      print(metric, terminator: ", ")
     }
     
     outputString.removeLast(2)
@@ -149,32 +140,31 @@ func executeScript() {
 
 // Returns: Throughput in GINSTRS.
 @discardableResult
-func profileProblemSize(N: Int, D: Int, blockD: Int = 64) -> Int {
-  // Remaining optimizations:
-  // - Try an explicit register spilling mode, where async copies are used to
-  //   minimize the overhead of paging. Use the output buffers as the scratch
-  //   space.
-  //   - Implement the "future optimization" notes before running any
-  //     benchmarks.
-  //   - Then, investigate the remaining register pressure bottlenecks
-  //     (e.g. softmax).
-  // - Elide async copies on M3. Can the R edge (FWD, BWD dQ) and C edge
-  //   (BWD dK/dV) be masked out through alternative means?
+func profileProblemSize(N: Int, D: Int) -> Int {
+  // Try using atomics to accumulate dQ.
+  // - Use the backward query kernel to zero-out dQ.
+  // - Redistribute work between parallelization and traversal dimensions.
+  // - Store dQ to threadgroup memory before writing to device memory via
+  //   atomics. This step resolves the challenge of handling misaligned
+  //   problem sizes, at least for FP32.
   
   var networkDesc = NetworkDescriptor()
   networkDesc.N = N
   networkDesc.D = D
   let network = Network(descriptor: networkDesc)
   
-  let cacheAll: Bool = false
   var attentionDesc = AttentionDescriptor()
   attentionDesc.blockDimensions = (
-    parallelization: 32, traversal: 32, head: UInt16(blockD))
+    parallelization: 32,
+    traversal: 64,
+    head: 32)
+  attentionDesc.headDimension = UInt16(D)
+  
+  let cacheAll: Bool = false
   attentionDesc.cachedInputs = (
     Q: cacheAll, K: cacheAll, V: cacheAll, dO: cacheAll)
   attentionDesc.cachedOutputs = (
     dQ: cacheAll, dK: cacheAll, dV: cacheAll, O: cacheAll)
-  attentionDesc.headDimension = UInt16(D)
   attentionDesc.transposeState = (Q: false, K: false, V: false, O: false)
   
   attentionDesc.type = .forward(true)
@@ -203,12 +193,6 @@ func profileProblemSize(N: Int, D: Int, blockD: Int = 64) -> Int {
   let pipelineForward = createPipeline(kernel: kernelForward)
   let pipelineBackwardQuery = createPipeline(kernel: kernelBackwardQuery)
   let pipelineBackwardKeyValue = createPipeline(kernel: kernelBackwardKeyValue)
-  
-  
-  
-  
-  
-  
   
   let bufferQ = MTLContext.global.createBuffer(network.Q, .FP32)
   let bufferK = MTLContext.global.createBuffer(network.K, .FP32)
@@ -315,7 +299,7 @@ func profileProblemSize(N: Int, D: Int, blockD: Int = 64) -> Int {
     let start = commandBuffer.gpuStartTime
     let end = commandBuffer.gpuEndTime
     let latency = end - start
-    print("latency:", Int(latency * 1e6))
+    // print("latency:", Int(latency * 1e6))
     return latency
   }
   executeCommandBuffer(dispatchCount: 1)
@@ -474,7 +458,7 @@ func profileProblemSize(N: Int, D: Int, blockD: Int = 64) -> Int {
     //
     // WARNING: Change this code to match the kernel you're profiling.
     var operations: Int = .zero
-    operations += (4 * D + 5) * (N * N)
+    operations += (2 * D + 5) * (N * N)
     operations *= dispatchCount
     
     // Divide the work by the latency, resulting in throughput.
@@ -487,6 +471,7 @@ func profileProblemSize(N: Int, D: Int, blockD: Int = 64) -> Int {
   return maxGINSTRS
   #endif
   
+  #if true
   // WARNING: Change this to match the kernel being profiled.
   if N == 128 {
     return pipelineForward.maxTotalThreadsPerThreadgroup
@@ -495,4 +480,5 @@ func profileProblemSize(N: Int, D: Int, blockD: Int = 64) -> Int {
   } else {
     return pipelineBackwardKeyValue.maxTotalThreadsPerThreadgroup
   }
+  #endif
 }

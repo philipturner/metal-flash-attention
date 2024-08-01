@@ -218,10 +218,10 @@ extension AttentionKernel {
   
   func onlineSoftmax() -> String {
     """
-
+    
     // update 'm'
     float2 m_new_accumulator;
-#pragma clang loop unroll(full)
+    #pragma clang loop unroll(full)
     for (ushort c = 0; c < \(blockDimensions.traversal); c += 8) {
       auto S_elements = S_sram[c / 8].thread_elements();
       if (c == 0) {
@@ -244,7 +244,7 @@ extension AttentionKernel {
     
     // P = softmax(S * scaleFactor)
     simdgroup_matrix_storage<float> P_sram[\(blockDimensions.traversal) / 8];
-#pragma clang loop unroll(full)
+    #pragma clang loop unroll(full)
     for (ushort c = 0; c < \(blockDimensions.traversal); c += 8) {
       float2 S_elements = float2(*(S_sram[c / 8].thread_elements()));
       float2 P_elements = fast::exp2(S_elements * \(forwardScale) - m);
@@ -253,7 +253,7 @@ extension AttentionKernel {
     
     // update 'l'
     float2 l_new_accumulator;
-#pragma clang loop unroll(full)
+    #pragma clang loop unroll(full)
     for (ushort c = 0; c < \(blockDimensions.traversal); c += 8) {
       auto P_elements = P_sram[c / 8].thread_elements();
       if (c == 0) {
@@ -266,27 +266,27 @@ extension AttentionKernel {
     l_new += simd_shuffle_xor(l_new, 1);
     l_new += simd_shuffle_xor(l_new, 8);
     l = l * correction + l_new;
-
-"""
+    
+    """
   }
   
   func checkpointSoftmax() -> String {
     """
 
     simdgroup_matrix_storage<float> P_sram[\(blockDimensions.traversal) / 8];
-#pragma clang loop unroll(full)
+    #pragma clang loop unroll(full)
     for (ushort c = 0; c < \(blockDimensions.traversal); c += 8) {
       float2 S_elements = float2(*(S_sram[c / 8].thread_elements()));
       float2 P_elements = fast::exp2(S_elements * \(forwardScale) - L_term);
       *(P_sram[c / 8].thread_elements()) = P_elements;
     }
-
-"""
+    
+    """
   }
   
   func checkpointSoftmaxT() -> String {
     """
-
+    
     simdgroup_matrix_storage<float> PT_sram[\(blockDimensions.traversal) / 8];
     {
       \(loadTerm(name: "L"))
@@ -304,7 +304,7 @@ extension AttentionKernel {
         *(PT_sram[r / 8].thread_elements()) = PT_elements;
       }
     }
-
+    
     """
   }
 }
@@ -318,9 +318,9 @@ extension AttentionKernel {
   
   func derivativeSoftmax() -> String {
     """
-
+    
     simdgroup_matrix_storage<float> dS_sram[\(blockDimensions.traversal) / 8];
-#pragma clang loop unroll(full)
+    #pragma clang loop unroll(full)
     for (ushort c = 0; c < \(blockDimensions.traversal); c += 8) {
       float2 P_elements = float2(*(P_sram[c / 8].thread_elements()));
       float2 dP_elements = float2(*(dP_sram[c / 8].thread_elements()));
@@ -328,8 +328,8 @@ extension AttentionKernel {
       dS_elements *= P_elements;
       *(dS_sram[c / 8].thread_elements()) = dS_elements;
     }
-
-"""
+    
+    """
   }
   
   func derivativeSoftmaxT() -> String {

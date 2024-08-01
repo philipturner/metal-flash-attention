@@ -64,6 +64,19 @@ struct AttentionKernel {
       blockDimensions.parallelization * blockDimensions.head * 4,
       blockDimensions.traversal * blockDimensions.head * 4)
     
+    if case .backwardQuery = type {
+      // D[i] = dO * O
+      threadgroupMemoryAllocation = max(
+        threadgroupMemoryAllocation,
+        2 * blockDimensions.parallelization * 8 * 4)
+    }
+    if case .backwardKeyValue = type {
+      // load L[i] or D[i]
+      threadgroupMemoryAllocation = max(
+        threadgroupMemoryAllocation,
+        blockDimensions.traversal * 4)
+    }
+    
     // Add the contents of the headers.
     source += """
     

@@ -159,23 +159,23 @@ extension AttentionKernel {
     let PV = accumulate(descriptor: accumulateDesc)
     
     return """
-  
-  // Outer loop over the traversal dimension.
-  for (uint c = 0; c < C; c += 32) {
-    // S = Q * K^T
-    \(QKT)
     
-    // (m, l, P) = softmax(m, l, S * scaleFactor)
-    \(maskAttentionMatrixEdge())
-    \(onlineSoftmax())
+    // Outer loop over the traversal dimension.
+    for (uint c = 0; c < C; c += \(blockDimensions.traversal)) {
+      // S = Q * K^T
+      \(QKT)
+      
+      // (m, l, P) = softmax(m, l, S * scaleFactor)
+      \(maskAttentionMatrixEdge())
+      \(onlineSoftmax())
+      
+      // O *= correction
+      // O += P * V
+      // O /= l
+      \(PV)
+    }
     
-    // O *= correction
-    // O += P * V
-    // O /= l
-    \(PV)
-  }
-  
-"""
+    """
   }
   
   func loopBackwardQuery() -> String {
@@ -198,26 +198,26 @@ extension AttentionKernel {
     let dSK = accumulate(descriptor: accumulateDesc)
     
     return """
-  
-  // Outer loop over the traversal dimension.
-  for (uint c = 0; c < C; c += 32) {
-    // S = Q * K^T
-    \(QKT)
     
-    // P = softmax(S * scaleFactor)
-    \(checkpointSoftmax())
+    // Outer loop over the traversal dimension.
+    for (uint c = 0; c < C; c += \(blockDimensions.traversal)) {
+      // S = Q * K^T
+      \(QKT)
+      
+      // P = softmax(S * scaleFactor)
+      \(checkpointSoftmax())
+      
+      // dP = dO * V^T
+      \(dOVT)
+      
+      // dS = P * (dP - D) * scaleFactor
+      \(derivativeSoftmax())
+      
+      // dQ += dS * K
+      \(dSK)
+    }
     
-    // dP = dO * V^T
-    \(dOVT)
-    
-    // dS = P * (dP - D) * scaleFactor
-    \(derivativeSoftmax())
-    
-    // dQ += dS * K
-    \(dSK)
-  }
-    
-"""
+    """
   }
   
   func loopBackwardKeyValue(computeDerivativeK: Bool) -> String {
@@ -253,7 +253,7 @@ extension AttentionKernel {
     return """
     
     // Outer loop over the traversal dimension.
-    for (uint r = 0; r < R; r += 32) {
+    for (uint r = 0; r < R; r += \(blockDimensions.traversal)) {
       // S^T = K * Q^T
       \(KQT)
       
