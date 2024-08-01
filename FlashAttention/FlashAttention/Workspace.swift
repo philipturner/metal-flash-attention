@@ -147,6 +147,8 @@ func profileProblemSize(N: Int, D: Int) -> Int {
   // - Store dQ to threadgroup memory before writing to device memory via
   //   atomics. This step resolves the challenge of handling misaligned
   //   problem sizes, at least for FP32.
+  // - Redefine "true" in backward key-value, to mean whether dQ is
+  //   accumulated.
   
   var networkDesc = NetworkDescriptor()
   networkDesc.N = N
