@@ -66,11 +66,11 @@ float2 D_term_accumulator(0);
     
     ushort D_src_dimension = \(headDimension) % 8;
     ushort D_dst_dimension = 8;
-    ushort R_src_dimension = min(
+    ushort R_dimension = min(
       uint(\(blockDimensions.parallelization)),
       uint(\(parallelizationDimension) - \(parallelizationOffset)));
-    ushort2 tile_src(D_src_dimension, R_src_dimension);
-    ushort2 tile_dst(D_dst_dimension, R_src_dimension);
+    ushort2 tile_src(D_src_dimension, R_dimension);
+    ushort2 tile_dst(D_dst_dimension, R_dimension);
     
     // Issue two async copies.
     simdgroup_event events[2];
@@ -140,9 +140,9 @@ D_term *= \(backwardScale);
       ushort R_src_dimension = min(
         uint(\(blockDimensions.traversal)),
         uint(\(traversalDimension) - \(traversalOffset)));
-      ushort R_src_dimension = min(
-        uint(\(blockDimensions.traversal)),
-        uint(\(paddedTraversalDimension) - \(traversalOffset)));
+      ushort R_dst_dimension = max(
+        ushort(\(paddedTraversalBlockDimension)),
+        ushort(R_src_dimension));
       
       // Issue an async copy.
       simdgroup_event event;
@@ -166,13 +166,14 @@ D_term *= \(backwardScale);
 extension AttentionKernel {
   // Prevent the zero padding from changing the values of 'm' and 'l'.
   func maskAlongColumns() -> String {
-    """
+    let blockDim = blockDimensions.traversal
+    let remainder = "(\(traversalDimension) % \(blockDim))"
+    let remainderFloor = "(\(remainder) - (\(remainder) % 8))";
     
-    if ((C % \(blockDimensions.traversal) != 0) &&
-        (c + \(blockDimensions.traversal) > C)) {
-      const ushort remainder32 = uint(C % \(blockDimensions.traversal));
-      const ushort remainder32_floor = remainder32 - ushort(remainder32 % 8);
-      
+    return """
+    
+    if ((\(remainder) != 0) &&
+        (\(traversalOffset) + \(blockDim) > \(traversalDimension))) {
       // Prevent the value from becoming -INF during the FMA before the
       // exponentiation. If the multiplication during FMA returns -INF,
       // subtracting a positive 'm' value will turn it into zero. We don't want
@@ -182,17 +183,13 @@ extension AttentionKernel {
       
 #pragma clang loop unroll(full)
       for (ushort index = 0; index < 2; ++index) {
-        if (morton_offset.x + index >= remainder32 - remainder32_floor) {
-          auto S_elements = S_sram[remainder32_floor / 8].thread_elements();
+        if (morton_offset.x + index >= \(remainder) - \(remainderFloor)) {
+          auto S_elements = S_sram[\(remainderFloor) / 8].thread_elements();
           (*S_elements)[index] = mask_value;
         }
       }
 #pragma clang loop unroll(full)
-      for (
-        ushort c = remainder32_floor + 8;
-        c < \(blockDimensions.traversal);
-        c += 8
-      ) {
+      for (ushort c = \(remainderFloor) + 8; c < \(blockDim); c += 8) {
         auto S_elements = S_sram[c / 8].thread_elements();
         *S_elements = mask_value;
       }

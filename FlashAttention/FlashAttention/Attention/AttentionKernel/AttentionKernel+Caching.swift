@@ -9,8 +9,6 @@
 // parallelization x head
 
 extension AttentionKernel {
-  
-  
   func load(name: String) -> String {
     func loadBlock(registerSize: UInt16) -> String {
       """

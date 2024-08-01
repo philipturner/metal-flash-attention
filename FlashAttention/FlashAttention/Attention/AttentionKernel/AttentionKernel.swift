@@ -219,7 +219,7 @@ extension AttentionKernel {
     }
   }
   
-  var paddedTraversalDimension: String {
+  var paddedTraversalBlockDimension: String {
     let blockDim = blockDimensions.traversal
     let remainder = "\(traversalDimension) % \(blockDim)"
     
