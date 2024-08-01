@@ -44,8 +44,8 @@ extension AttentionKernel {
       """
       
       #pragma clang loop unroll(full)
-      for (ushort n = 0; n < \(blockDimensions.traversal); n += 8) {
-        \(C)_sram[n / 8] = simdgroup_matrix_storage<float>(0);
+      for (ushort c = 0; c < \(blockDimensions.traversal); c += 8) {
+        \(C)_sram[c / 8] = simdgroup_matrix_storage<float>(0);
       }
       
       """
@@ -74,7 +74,7 @@ extension AttentionKernel {
       }
       return """
       
-      // Find where the \(A) data will be read from.
+      // Where the \(A) data will be read from.
       ushort2 \(A)_block_offset(morton_offset.x, morton_offset.y + sidx * 8);
       auto \(A)_block = (threadgroup float*)(threadgroup_block);
       \(A)_block = simdgroup_matrix_storage<float>::apply_offset(
@@ -135,7 +135,7 @@ extension AttentionKernel {
     func declareRHSLocation() -> String {
       """
       
-      // Find where the \(B) data will be read from.
+      // Where the \(B) data will be read from.
       ushort2 \(B)_block_offset(morton_offset.x, morton_offset.y);
       auto \(B)T_block = (threadgroup float*)(threadgroup_block);
       \(B)T_block = simdgroup_matrix_storage<float>::apply_offset(
@@ -212,7 +212,7 @@ extension AttentionKernel {
       """
     }
     
-    // MARK: - Loop Over Head Dimension
+    // MARK: - Outer Loop over Head Dimension
     
     struct LoopIterationDescriptor {
       // Whether to accumulate in the SIMD matmul.
@@ -235,7 +235,6 @@ extension AttentionKernel {
       \(declareRHSLocation())
       threadgroup_barrier(mem_flags::mem_threadgroup);
       
-      // Run the matrix multiplication.
       \(multiplyAB(
           traversalStart: "0",
           traversalEnd: paddedTraversalBlockDimension,
@@ -251,13 +250,7 @@ extension AttentionKernel {
       """
     }
     
-    var output = """
-    
-    \(allocateAccumulator())
-    \(initializeAccumulator())
-    
-    """
-    
+    // Outer loop over the head dimension.
     var descriptor = LoopIterationDescriptor()
     descriptor.accumulateConditional = "true"
     if cached(A) {
@@ -267,7 +260,10 @@ extension AttentionKernel {
       
       // Add the first iterations.
       descriptor.registerSize = blockDimensions.head
-      output += """
+      var output = """
+      
+      \(allocateAccumulator())
+      \(initializeAccumulator())
       
       #pragma clang loop unroll(full)
       for (
@@ -290,13 +286,18 @@ extension AttentionKernel {
         }
         """
       }
+      
+      return output
     } else {
       descriptor.registerOffset = "0"
       
       // Future optimization: shorten the last loop iteration, if doing so
       // doesn't increase the register pressure.
       descriptor.registerSize = blockDimensions.head
-      output += """
+      return """
+      
+      \(allocateAccumulator())
+      \(initializeAccumulator())
       
       #pragma clang loop unroll(disable)
       for (
@@ -309,6 +310,5 @@ extension AttentionKernel {
       
       """
     }
-    return output
   }
 }

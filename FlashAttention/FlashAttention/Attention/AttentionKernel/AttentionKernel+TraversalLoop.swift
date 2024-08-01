@@ -1,5 +1,5 @@
 //
-//  AttentionKernel+InnerLoop.swift
+//  AttentionKernel+TraversalLoop.swift
 //  FlashAttention
 //
 //  Created by Philip Turner on 7/2/24.
@@ -143,7 +143,7 @@
 // MARK: - Implementation
 
 extension AttentionKernel {
-  func createInnerLoopForward() -> String {
+  func loopForward() -> String {
     var outerProductDesc = AttentionOuterProductDescriptor()
     outerProductDesc.A = "Q"
     outerProductDesc.cacheA = cachedInputs.Q
@@ -173,7 +173,7 @@ extension AttentionKernel {
     
     return """
   
-  // Iterate over the columns.
+  // Outer loop over the traversal dimension.
   for (uint c = 0; c < C; c += 32) {
     // S = Q * K^T
     \(QKT)
@@ -191,7 +191,7 @@ extension AttentionKernel {
 """
   }
   
-  func createInnerLoopBackwardQuery() -> String {
+  func loopBackwardQuery() -> String {
     var outerProductDesc = AttentionOuterProductDescriptor()
     outerProductDesc.A = "Q"
     outerProductDesc.cacheA = cachedInputs.Q
@@ -232,7 +232,7 @@ extension AttentionKernel {
     
     return """
   
-  // Iterate over the columns.
+  // Outer loop over the traversal dimension.
   for (uint c = 0; c < C; c += 32) {
     // S = Q * K^T
     \(QKT)
@@ -253,7 +253,7 @@ extension AttentionKernel {
 """
   }
   
-  func createInnerLoopKeyValue(computeDerivativeK: Bool) -> String {
+  func loopBackwardKeyValue(computeDerivativeK: Bool) -> String {
     var outerProductDesc = AttentionOuterProductDescriptor()
     outerProductDesc.A = "K"
     outerProductDesc.cacheA = cachedInputs.K
@@ -310,7 +310,7 @@ extension AttentionKernel {
     
     return """
     
-    // Iterate over the rows.
+    // Outer loop over the traversal dimension.
     for (uint r = 0; r < R; r += 32) {
       // S^T = K * Q^T
       \(KQT)

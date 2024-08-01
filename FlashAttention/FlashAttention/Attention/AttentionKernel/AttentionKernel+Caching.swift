@@ -28,7 +28,7 @@ extension AttentionKernel {
 
 \(allocateCachedOperand(name: name))
 {
-  // Find where the \(name) data will be read from.
+  // Where the \(name) data will be read from.
   ushort2 \(name)_block_offset(morton_offset.x, morton_offset.y + sidx * 8);
   auto \(name)_block = (threadgroup float*)(threadgroup_block);
   \(name)_block = simdgroup_matrix_storage<float>::apply_offset(
@@ -101,7 +101,7 @@ extension AttentionKernel {
     return """
 
 {
-  // Find where the \(name) data will be written to.
+  // Where the \(name) data will be written to.
   ushort2 \(name)_block_offset(morton_offset.x, morton_offset.y + sidx * 8);
   auto \(name)_block = (threadgroup float*)(threadgroup_block);
   \(name)_block = simdgroup_matrix_storage<float>::apply_offset(

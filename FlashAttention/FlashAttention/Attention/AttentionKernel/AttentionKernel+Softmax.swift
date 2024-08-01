@@ -23,7 +23,7 @@ float2 D_term_accumulator(0);
   uint R_offset = min(R, \(parallelizationThreadOffset));
   uint2 offset_src(D_offset, R_offset);
   
-  // Find where the dO and O data will be read from.
+  // Where the dO and O data will be read from.
   auto dO_src = simdgroup_matrix_storage<float>::apply_offset(
     dO, \(leadingDimension("dO")), offset_src, \(transposed("dO")));
   auto O_src = simdgroup_matrix_storage<float>::apply_offset(
@@ -83,7 +83,7 @@ float2 D_term_accumulator(0);
     simdgroup_event::wait(2, events);
   }
 
-  // Find where the dO and O data will be read from.
+  // Where the dO and O data will be read from.
   ushort2 offset_src(morton_offset.x, morton_offset.y + sidx * 8);
   auto dO_block = (threadgroup float*)(threadgroup_block);
   auto O_block = (threadgroup float*)(threadgroup_block);
@@ -152,7 +152,7 @@ D_term *= \(backwardScale);
       simdgroup_event::wait(1, &event);
     }
     
-    // Find where the \(name) data will be read from.
+    // Where the \(name) data will be read from.
     auto \(name)_terms_block = (threadgroup float*)(threadgroup_block);
     \(name)_terms_block += morton_offset.x;
     threadgroup_barrier(mem_flags::mem_threadgroup);
