@@ -47,6 +47,15 @@ float2 D_term_accumulator(0);
 """
     
     if headDimension % 8 != 0 {
+      // Abbreviated block, only covers the last 8 elements.
+      func leadingBlockDimension(_ operand: String) -> UInt16 {
+        if transposed(operand) {
+          return blockSequenceLength(operand)
+        } else {
+          return 8
+        }
+      }
+      
       output += """
 
 {
@@ -82,13 +91,13 @@ float2 D_term_accumulator(0);
       O_src, \(leadingDimension("O")), tile_src, \(transposed("O")));
     simdgroup_event::wait(2, events);
   }
-
+  
   // Where the dO and O data will be read from.
   ushort2 offset_src(morton_offset.x, morton_offset.y + sidx * 8);
   auto dO_block = (threadgroup float*)(threadgroup_block);
   auto O_block = (threadgroup float*)(threadgroup_block);
   O_block += \(blockDimensions.parallelization * 8);
-
+  
   dO_block = simdgroup_matrix_storage<float>::apply_offset(
     dO_block, \(leadingBlockDimension("dO")), offset_src, \(transposed("dO")));
   O_block = simdgroup_matrix_storage<float>::apply_offset(

@@ -23,14 +23,15 @@
 // design choice before fine-tuning block sizes.
 
 struct AttentionKernel {
+  var blockDimensions: (
+    parallelization: UInt16,
+    traversal: UInt16,
+    head: UInt16)
   var cachedInputs: (Q: Bool, K: Bool, V: Bool, dO: Bool)
   var cachedOutputs: (dQ: Bool, dK: Bool, dV: Bool, O: Bool)
+  var headDimension: UInt16
   var transposeState: (Q: Bool, K: Bool, V: Bool, O: Bool)
   var type: AttentionKernelType
-  
-  var blockDimensions: (
-    parallelization: UInt16, traversal: UInt16, head: UInt16)
-  var headDimension: UInt16
   
   // The source code to compile.
   var source: String = ""
@@ -43,25 +44,22 @@ struct AttentionKernel {
   var threadgroupMemoryAllocation: UInt16
   
   init(descriptor: AttentionDescriptor) {
-    guard let cachedInputs = descriptor.cachedInputs,
+    guard let blockDimensions = descriptor.blockDimensions,
+          let cachedInputs = descriptor.cachedInputs,
           let cachedOutputs = descriptor.cachedOutputs,
-          let matrixDimensions = descriptor.matrixDimensions,
+          let headDimension = descriptor.headDimension,
           let transposeState = descriptor.transposeState,
           let type = descriptor.type else {
       fatalError("Descriptor was incomplete.")
     }
+    self.blockDimensions = blockDimensions
     self.cachedInputs = cachedInputs
     self.cachedOutputs = cachedOutputs
+    self.headDimension = headDimension
     self.transposeState = transposeState
     self.type = type
     
-    // Declare the block sizes.
-    blockDimensions = (parallelization: 32, traversal: 32, head: 64)
-    headDimension = matrixDimensions.D
-    do {
-      let simdsPerGroup = blockDimensions.parallelization / 8
-      threadgroupSize = 32 * simdsPerGroup
-    }
+    threadgroupSize = 32 * (blockDimensions.parallelization / 8)
     threadgroupMemoryAllocation = max(
       blockDimensions.parallelization * blockDimensions.head * 4,
       blockDimensions.traversal * blockDimensions.head * 4)

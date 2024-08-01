@@ -33,20 +33,16 @@ enum AttentionKernelType {
 }
 
 struct AttentionDescriptor {
+  var blockDimensions: (
+    parallelization: UInt16, traversal: UInt16, head: UInt16)?
+  
   /// Which inputs to cache in registers.
   var cachedInputs: (Q: Bool, K: Bool, V: Bool, dO: Bool)?
   
   /// Which outputs to cache in registers.
   var cachedOutputs: (dQ: Bool, dK: Bool, dV: Bool, O: Bool)?
   
-  /// The dimensions of the input and output matrices.
-  /// - Parameters R: Number of rows in the attention matrix.
-  /// - Parameters C: Number of columns in the attention matrix.
-  /// - Parameters D: Size of the head.
-  ///
-  /// NOTE: For now, the attention matrix must be square, to simplify the
-  /// implementation. I will revisit this later.
-  var matrixDimensions: (N: UInt32, D: UInt16)?
+  var headDimension: UInt16?
   
   /// Whether each operand is transposed in RAM.
   ///

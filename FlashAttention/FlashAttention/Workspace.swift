@@ -33,21 +33,34 @@ func executeScript() {
   profileProblemSize(N: 384, D: 95)
   profileProblemSize(N: 777, D: 199)
   
-  #if false
+  #if true
   let N_array = [128, 160, 192]
+  let blockD_array = [32, 64, 128]
   let D_array = [32, 48, 64, 80, 96, 128, 160, 192, 256]
+  
+  // Loop over the configurations.
   var outputString: String = ""
   for N in N_array {
-    print("N =", N, terminator: ", ")
     outputString += "\(N), "
-    for D in D_array {
-      let ginstrs = profileProblemSize(N: N, D: D)
-      print(ginstrs, terminator: ", ")
-      outputString += "\(ginstrs), "
+    print("N =", N, terminator: ", ")
+    
+    for blockD in blockD_array {
+      var sampleMinimum: Int = .max
+      var sampleMaximum: Int = .min
+      for D in D_array {
+        let metric = profileProblemSize(N: N, D: D, blockD: blockD)
+        print(metric, terminator: ", ")
+        
+        sampleMinimum = min(metric, sampleMinimum)
+        sampleMaximum = max(metric, sampleMaximum)
+        
+      }
+      outputString += "\(sampleMinimum), "
     }
+    
     outputString.removeLast(2)
-    print()
     outputString += "\n"
+    print()
   }
   print()
   print(outputString)
@@ -136,7 +149,7 @@ func executeScript() {
 
 // Returns: Throughput in GINSTRS.
 @discardableResult
-func profileProblemSize(N: Int, D: Int) -> Int {
+func profileProblemSize(N: Int, D: Int, blockD: Int = 64) -> Int {
   // Remaining optimizations:
   // - Try an explicit register spilling mode, where async copies are used to
   //   minimize the overhead of paging. Use the output buffers as the scratch
@@ -155,13 +168,15 @@ func profileProblemSize(N: Int, D: Int) -> Int {
   networkDesc.D = D
   let network = Network(descriptor: networkDesc)
   
-  let cacheAll: Bool = true
+  let cacheAll: Bool = false
   var attentionDesc = AttentionDescriptor()
+  attentionDesc.blockDimensions = (
+    parallelization: 32, traversal: 32, head: UInt16(blockD))
   attentionDesc.cachedInputs = (
     Q: cacheAll, K: cacheAll, V: cacheAll, dO: cacheAll)
   attentionDesc.cachedOutputs = (
     dQ: cacheAll, dK: cacheAll, dV: cacheAll, O: cacheAll)
-  attentionDesc.matrixDimensions = (N: UInt32(N), D: UInt16(D))
+  attentionDesc.headDimension = UInt16(D)
   attentionDesc.transposeState = (Q: false, K: false, V: false, O: false)
   
   attentionDesc.type = .forward(true)
@@ -176,9 +191,10 @@ func profileProblemSize(N: Int, D: Int) -> Int {
   func createPipeline(kernel: AttentionKernel) -> MTLComputePipelineState {
     // Set the function constants.
     let constants = MTLFunctionConstantValues()
-    var N = attentionDesc.matrixDimensions!.N
-    constants.setConstantValue(&N, type: .uint, index: 0)
-    constants.setConstantValue(&N, type: .uint, index: 1)
+    var R = UInt32(N)
+    var C = UInt32(N)
+    constants.setConstantValue(&R, type: .uint, index: 0)
+    constants.setConstantValue(&C, type: .uint, index: 1)
     
     let device = MTLContext.global.device
     let library = try! device.makeLibrary(source: kernel.source, options: nil)
