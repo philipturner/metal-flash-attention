@@ -150,7 +150,7 @@ D_term *= \(backwardScale);
         uint(\(blockDimensions.traversal)),
         uint(\(traversalDimension) - \(traversalOffset)));
       ushort R_dst_dimension = max(
-        ushort(\(paddedTraversalBlockDimension)),
+        ushort(\(paddedTraversalEdge)),
         ushort(R_src_dimension));
       
       // Issue an async copy.

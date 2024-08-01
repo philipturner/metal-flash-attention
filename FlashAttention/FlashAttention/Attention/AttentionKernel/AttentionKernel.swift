@@ -217,7 +217,7 @@ extension AttentionKernel {
     }
   }
   
-  var paddedTraversalBlockDimension: String {
+  var paddedTraversalEdge: String {
     let blockDim = blockDimensions.traversal
     let remainder = "\(traversalDimension) % \(blockDim)"
     
@@ -228,6 +228,19 @@ extension AttentionKernel {
   
   var paddedHeadDimension: UInt16 {
     (headDimension + 8 - 1) / 8 * 8
+  }
+  
+  var paddedHeadEdge: UInt16 {
+//    let loopEnd = paddedHeadDimension
+//    let loopEndFloor = loopEnd - loopEnd % blockDimensions.head
+//    return loopEnd - loopEndFloor
+    
+    let blockDim = blockDimensions.head
+    let remainder = (headDimension) % (blockDim)
+    
+    var output = (remainder) == 0 ? (blockDim) : (remainder)
+    output = (((output)) + 7) / 8 * 8
+    return output
   }
 }
 

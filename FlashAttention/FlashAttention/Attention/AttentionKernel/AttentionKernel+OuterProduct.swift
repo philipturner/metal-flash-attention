@@ -36,10 +36,6 @@ extension AttentionKernel {
       """
     }
     
-    // Future optimization: when the loop is unrolled, fuse the zero
-    // initialization with a non-accumulating SIMD matmul. This optimization
-    // may apply to the case where A isn't cached. Provided, it doesn't harm
-    // the register pressure.
     func initializeAccumulator() -> String {
       """
       
@@ -63,7 +59,7 @@ extension AttentionKernel {
       
       // Where the \(A) data will be written to.
       simdgroup_matrix_storage<float>
-      \(A)_sram[\(descriptor.registerSize) / 8];
+      \(A)_sram[\(blockDimensions.head) / 8];
       
       """
     }
@@ -102,7 +98,9 @@ extension AttentionKernel {
         ushort D_src_dimension = min(
           ushort(\(blockDimensions.head)),
           ushort(\(headDimension) - d_outer));
-        ushort D_dst_dimension = \(descriptor.registerSize);
+        ushort D_dst_dimension = max(
+          ushort(\(paddedHeadEdge)),
+          ushort(D_src_dimension));
         ushort R_dimension = min(
           uint(\(blockDimensions.parallelization)),
           uint(\(parallelizationDimension) - \(parallelizationOffset)));
@@ -121,9 +119,9 @@ extension AttentionKernel {
       
       // Inner loop over the head dimension.
       #pragma clang loop unroll(full)
-      for (ushort d = 0; d < \(descriptor.registerSize); d += 8) {
+      for (ushort d = 0; d < \(blockDimensions.head); d += 8) {
         ushort2 origin(d, 0);
-        \(A)_sram[(\(descriptor.registerOffset) + d) / 8].load(
+        \(A)_sram[d / 8].load(
           \(A)_block, \(leadingBlockDimension(A)), origin, \(transposed(A)));
       }
       
@@ -160,12 +158,14 @@ extension AttentionKernel {
         ushort D_src_dimension = min(
           ushort(\(blockDimensions.head)),
           ushort(\(headDimension) - d_outer));
-        ushort D_dst_dimension = \(descriptor.registerSize);
+        ushort D_dst_dimension = max(
+          ushort(\(paddedHeadEdge)),
+          ushort(D_src_dimension));
         ushort C_src_dimension = min(
           uint(\(blockDimensions.traversal)),
           uint(\(traversalDimension) - \(traversalOffset)));
         ushort C_dst_dimension = max(
-          ushort(\(paddedTraversalBlockDimension)),
+          ushort(\(paddedTraversalEdge)),
           ushort(C_src_dimension));
         ushort2 tile_src(D_src_dimension, C_src_dimension);
         ushort2 tile_dst(D_dst_dimension, C_dst_dimension);
@@ -180,45 +180,62 @@ extension AttentionKernel {
       """
     }
     
-    // MARK: - Matrix Multiplication
+    // MARK: - Loop
     
-    func multiplyAB(
+    struct LoopIterationDescriptor {
+      // Whether to accumulate in the SIMD matmul.
+      var accumulateConditional: String = ""
+      var registerOffset: String = ""
+    }
+    
+    func innerLoopTraversal(
       traversalStart: String,
       traversalEnd: String,
       descriptor: LoopIterationDescriptor
     ) -> String {
       """
       
-      // Inner loop over the head dimension.
       #pragma clang loop unroll(full)
-      for (ushort d = 0; d < \(descriptor.registerSize); d += 8) {
-        // Inner loop over the traversal dimension.
-        #pragma clang loop unroll(full)
-        for (ushort c = \(traversalStart); c < \(traversalEnd); c += 8) {
-          // Load the RHS from threadgroup memory.
-          ushort2 origin(c, d);
-          simdgroup_matrix_storage<float> \(B)T;
-          \(B)T.load(
-            \(B)T_block, \(leadingBlockDimension(B)),
-            origin, \(!transposed(B)));
-          
-          // Issue one SIMD matmul instruction.
-          \(C)_sram[c / 8].multiply(
-            \(A)_sram[(\(descriptor.registerOffset) + d) / 8],
-            \(B)T, \(descriptor.accumulateConditional));
-        }
+      for (ushort c = \(traversalStart); c < \(traversalEnd); c += 8) {
+        // Load the RHS from threadgroup memory.
+        ushort2 origin(c, d);
+        simdgroup_matrix_storage<float> \(B)T;
+        \(B)T.load(
+          \(B)T_block, \(leadingBlockDimension(B)),
+          origin, \(!transposed(B)));
+        
+        // Issue one SIMD matmul instruction.
+        \(C)_sram[c / 8].multiply(
+          \(A)_sram[(\(descriptor.registerOffset) + d) / 8],
+          \(B)T, \(descriptor.accumulateConditional));
       }
       
       """
     }
     
-    // MARK: - Outer Loop over Head Dimension
-    
-    struct LoopIterationDescriptor {
-      // Whether to accumulate in the SIMD matmul.
-      var accumulateConditional: String = ""
-      var registerOffset: String = ""
-      var registerSize: UInt16 = .zero
+    func innerLoopHead(
+      headStart: UInt16,
+      headEnd: UInt16,
+      descriptor: LoopIterationDescriptor
+    ) -> String {
+      """
+      
+      #pragma clang loop unroll(full)
+      for (ushort d = \(headStart); d < \(headEnd); d += 8) {
+        \(innerLoopTraversal(
+            traversalStart: "0",
+            traversalEnd: paddedTraversalEdge,
+            descriptor: iterationDesc))
+        if (\(traversalOffset) + \(blockDimensions.traversal)
+            < \(traversalDimension)) {
+          \(innerLoopTraversal(
+              traversalStart: paddedTraversalEdge,
+              traversalEnd: "\(blockDimensions.traversal)",
+              descriptor: iterationDesc))
+        }
+      }
+      
+      """
     }
     
     func loopIteration(
@@ -235,15 +252,14 @@ extension AttentionKernel {
       \(declareRHSLocation())
       threadgroup_barrier(mem_flags::mem_threadgroup);
       
-      \(multiplyAB(
-          traversalStart: "0",
-          traversalEnd: paddedTraversalBlockDimension,
+      \(innerLoopHead(
+          headStart: 0,
+          headEnd: paddedHeadEdge,
           descriptor: iterationDesc))
-      if (\(traversalOffset) + \(blockDimensions.traversal)
-          < \(traversalDimension)) {
-        \(multiplyAB(
-            traversalStart: paddedTraversalBlockDimension,
-            traversalEnd: "\(blockDimensions.traversal)",
+      if (d_outer + \(blockDimensions.head) < \(headDimension)) {
+        \(innerLoopHead(
+            headStart: paddedHeadEdge,
+            headEnd: blockDimensions.head,
             descriptor: iterationDesc))
       }
       
@@ -251,49 +267,46 @@ extension AttentionKernel {
     }
     
     // Outer loop over the head dimension.
-    var descriptor = LoopIterationDescriptor()
-    descriptor.accumulateConditional = "true"
-    if true {
+    var iterationDesc = LoopIterationDescriptor()
+    
+    if cached(A) {
       let loopEnd = paddedHeadDimension
       let loopEndFloor = loopEnd - loopEnd % blockDimensions.head
-      descriptor.registerOffset = cached(A) ? "d_outer" : "0"
+      iterationDesc.accumulateConditional = "((d_outer > 0) || (d > 0))"
+      iterationDesc.registerOffset = "d_outer"
       
       // Add the first iterations.
-      descriptor.registerSize = blockDimensions.head
       var output = """
       
       \(allocateAccumulator())
-      \(initializeAccumulator())
       
-      #pragma clang loop unroll(\(cached(A) ? "full" : "disable"))
+      #pragma clang loop unroll(full)
       for (
         ushort d_outer = 0;
         d_outer < \(loopEndFloor);
         d_outer += \(blockDimensions.head)
       ) {
-        \(loopIteration(descriptor: descriptor))
+        \(loopIteration(descriptor: iterationDesc))
       }
       
       """
       
       // Add the last iteration, if unaligned.
       if loopEndFloor < loopEnd {
-        descriptor.registerSize = loopEnd - loopEndFloor
         output += """
         {
           ushort d_outer = \(loopEndFloor);
-          \(loopIteration(descriptor: descriptor))
+          \(loopIteration(descriptor: iterationDesc))
         }
         """
       }
       
       return output
     } else {
-      descriptor.registerOffset = "0"
+      iterationDesc.accumulateConditional = "true"
+      iterationDesc.registerOffset = "0"
       
-      // Future optimization: shorten the last loop iteration, if doing so
-      // doesn't increase the register pressure.
-      descriptor.registerSize = blockDimensions.head
+      // Add all of the iterations.
       return """
       
       \(allocateAccumulator())
@@ -305,7 +318,7 @@ extension AttentionKernel {
         d_outer < \(headDimension);
         d_outer += \(blockDimensions.head)
       ) {
-        \(loopIteration(descriptor: descriptor))
+        \(loopIteration(descriptor: iterationDesc))
       }
       
       """
