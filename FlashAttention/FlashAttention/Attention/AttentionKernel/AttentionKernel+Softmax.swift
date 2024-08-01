@@ -165,7 +165,7 @@ D_term *= \(backwardScale);
 
 extension AttentionKernel {
   // Prevent the zero padding from changing the values of 'm' and 'l'.
-  func maskAlongColumns() -> String {
+  func maskAttentionMatrixEdge() -> String {
     let blockDim = blockDimensions.traversal
     let remainder = "(\(traversalDimension) % \(blockDim))"
     let remainderFloor = "(\(remainder) - (\(remainder) % 8))";
@@ -307,7 +307,7 @@ extension AttentionKernel {
     1 / Float(headDimension).squareRoot()
   }
   
-  func computeDerivativeSoftmax() -> String {
+  func derivativeSoftmax() -> String {
     """
 
     simdgroup_matrix_storage<float> dS_sram[\(blockDimensions.traversal) / 8];
@@ -323,7 +323,7 @@ extension AttentionKernel {
 """
   }
   
-  func computeDerivativeSoftmaxT() -> String {
+  func derivativeSoftmaxT() -> String {
     """
     
     simdgroup_matrix_storage<float> dST_sram[\(blockDimensions.traversal) / 8];

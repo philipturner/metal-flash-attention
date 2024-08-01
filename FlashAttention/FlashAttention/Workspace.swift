@@ -232,18 +232,20 @@ func profileProblemSize(N: Int, D: Int) -> Int {
     func dispatch(
       kernel: AttentionKernel,
       pipeline: MTLComputePipelineState,
-      along matrixSide: UInt16 // left (R/rows), top (C/columns)
+      along parallelizationDimension: Int
     ) {
       encoder.setComputePipelineState(pipeline)
       encoder.setThreadgroupMemoryLength(
         Int(kernel.threadgroupMemoryAllocation), index: 0)
       
+      let blockCount = ceilDivide(
+        parallelizationDimension, kernel.blockDimensions.parallelization)
       let gridSize = MTLSize(
-        width: ceilDivide(N, matrixSide),
+        width: blockCount, 
         height: 1,
         depth: 1)
       let groupSize = MTLSize(
-        width: Int(kernel.threadgroupSize),
+        width: Int(kernel.threadgroupSize), 
         height: 1,
         depth: 1)
       encoder.dispatchThreadgroups(
@@ -268,20 +270,20 @@ func profileProblemSize(N: Int, D: Int) -> Int {
         dispatch(
           kernel: kernelForward,
           pipeline: pipelineForward,
-          along: kernelForward.blockDimensions.R)
+          along: N)
       } else {
         dispatch(
           kernel: kernelForward,
           pipeline: pipelineForward,
-          along: kernelForward.blockDimensions.R)
+          along: N)
         dispatch(
           kernel: kernelBackwardQuery,
           pipeline: pipelineBackwardQuery,
-          along: kernelBackwardQuery.blockDimensions.R)
+          along: N)
         dispatch(
           kernel: kernelBackwardKeyValue,
           pipeline: pipelineBackwardKeyValue,
-          along: kernelBackwardKeyValue.blockDimensions.R)
+          along: N)
       }
     }
     

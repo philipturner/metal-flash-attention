@@ -66,42 +66,42 @@ struct AttentionKernel {
       blockDimensions.parallelization * blockDimensions.head * 4,
       blockDimensions.traversal * blockDimensions.head * 4)
     
-    // Inject the contents of the headers.
+    // Add the contents of the headers.
     source += """
-\(createMetalSimdgroupEvent())
-\(createMetalSimdgroupMatrixStorage())
-using namespace metal;
-
-// R = row dimension (output sequence)
-// C = column dimensin (input sequence)
-constant uint R [[function_constant(0)]];
-constant uint C [[function_constant(1)]];
-
-
-
-"""
     
-    // Add the contents of the functio.
-    source += createFunctionSignature(type: type)
-    source += createSetup(type: type)
+    \(createMetalSimdgroupEvent())
+    \(createMetalSimdgroupMatrixStorage())
+    using namespace metal;
+    
+    // R = row dimension (output sequence)
+    // C = column dimension (input sequence)
+    constant uint R [[function_constant(0)]];
+    constant uint C [[function_constant(1)]];
+    
+    """
+    
+    // Add the contents of the function.
+    source += createFunctionSignature()
+    source += createSetup()
+    
     switch type {
     case .forward:
-      source += createInnerLoopForward()
+      source += loopForward()
     case .backwardQuery(let computeDerivativeQ):
       if computeDerivativeQ {
-        source += createInnerLoopBackwardQuery()
+        source += loopBackwardQuery()
       }
     case .backwardKeyValue(let computeDerivativeK):
-      source += createInnerLoopKeyValue(
+      source += loopBackwardKeyValue(
         computeDerivativeK: computeDerivativeK)
     }
     
     source += createCleanup(type: type)
     source += """
-
-}
-
-"""
+    
+    }
+    
+    """
   }
 }
 
@@ -237,7 +237,7 @@ extension AttentionKernel {
 // MARK: - Function Signature
 
 extension AttentionKernel {
-  func createFunctionSignature(type: AttentionKernelType) -> String {
+  func createFunctionSignature() -> String {
     // Data structure that holds the precision and buffer index.
     struct AttentionOperand {
       var precision: GEMMOperandPrecision

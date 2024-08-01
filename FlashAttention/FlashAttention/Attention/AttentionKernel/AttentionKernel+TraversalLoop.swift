@@ -146,30 +146,17 @@ extension AttentionKernel {
   func loopForward() -> String {
     var outerProductDesc = AttentionOuterProductDescriptor()
     outerProductDesc.A = "Q"
-    outerProductDesc.cacheA = cachedInputs.Q
     outerProductDesc.B = "K"
     outerProductDesc.C = "S"
-    outerProductDesc.transposeState = (
-      A: transposeState.Q, B: transposeState.K)
-    outerProductDesc.leadingDimensions = (
-      A: leadingDimensions.Q, B: leadingDimensions.K)
-    outerProductDesc.matrixDimensions = (M: "R", N: "C")
-    outerProductDesc.matrixOffset = (M: "gid * 32", N: "c")
     let QKT = outerProduct(descriptor: outerProductDesc)
     
     var accumulateDesc = AttentionAccumulateDescriptor()
     accumulateDesc.A = "P"
     accumulateDesc.B = "V"
     accumulateDesc.C = "O"
-    accumulateDesc.cacheC = cachedOutputs.O
-    accumulateDesc.transposeState = (
-      B: transposeState.V, C: transposeState.O)
-    accumulateDesc.leadingDimensions = (
-      B: leadingDimensions.V, C: leadingDimensions.O)
-    accumulateDesc.matrixDimensions = (M: "R", K: "C")
-    accumulateDesc.matrixOffset = (M: "gid * 32", K: "c")
-    accumulateDesc.everyIterationFactor = "correction"
-    accumulateDesc.lastIterationFactor = "1 / l"
+    accumulateDesc.everyIterationScale = "correction"
+    accumulateDesc.lastIterationScale = "fast::divide(1, l)"
+    let PV = accumulate(descriptor: accumulateDesc)
     
     return """
   
@@ -179,13 +166,13 @@ extension AttentionKernel {
     \(QKT)
     
     // (m, l, P) = softmax(m, l, S * scaleFactor)
-    \(maskAlongColumns(sram: "S_sram"))
+    \(maskAttentionMatrixEdge())
     \(onlineSoftmax())
     
     // O *= correction
     // O += P * V
     // O /= l
-    \(accumulate(descriptor: accumulateDesc))
+    \(PV)
   }
   
 """
@@ -194,41 +181,21 @@ extension AttentionKernel {
   func loopBackwardQuery() -> String {
     var outerProductDesc = AttentionOuterProductDescriptor()
     outerProductDesc.A = "Q"
-    outerProductDesc.cacheA = cachedInputs.Q
     outerProductDesc.B = "K"
     outerProductDesc.C = "S"
-    outerProductDesc.transposeState = (
-      A: transposeState.Q, B: transposeState.K)
-    outerProductDesc.leadingDimensions = (
-      A: leadingDimensions.Q, B: leadingDimensions.K)
-    outerProductDesc.matrixDimensions = (M: "R", N: "C")
-    outerProductDesc.matrixOffset = (M: "gid * 32", N: "c")
     let QKT = outerProduct(descriptor: outerProductDesc)
     
     outerProductDesc = AttentionOuterProductDescriptor()
     outerProductDesc.A = "dO"
-    outerProductDesc.cacheA = cachedInputs.dO
     outerProductDesc.B = "V"
     outerProductDesc.C = "dP"
-    outerProductDesc.transposeState = (
-      A: transposeState.O, B: transposeState.V)
-    outerProductDesc.leadingDimensions = (
-      A: leadingDimensions.O, B: leadingDimensions.V)
-    outerProductDesc.matrixDimensions = (M: "R", N: "C")
-    outerProductDesc.matrixOffset = (M: "gid * 32", N: "c")
     let dOVT = outerProduct(descriptor: outerProductDesc)
     
     var accumulateDesc = AttentionAccumulateDescriptor()
     accumulateDesc.A = "dS"
     accumulateDesc.B = "K"
     accumulateDesc.C = "dQ"
-    accumulateDesc.cacheC = cachedOutputs.dQ
-    accumulateDesc.transposeState = (
-      B: transposeState.K, C: transposeState.Q)
-    accumulateDesc.leadingDimensions = (
-      B: leadingDimensions.K, C: leadingDimensions.Q)
-    accumulateDesc.matrixDimensions = (M: "R", K: "C")
-    accumulateDesc.matrixOffset = (M: "gid * 32", K: "c")
+    let dSK = accumulate(descriptor: accumulateDesc)
     
     return """
   
@@ -244,10 +211,10 @@ extension AttentionKernel {
     \(dOVT)
     
     // dS = P * (dP - D) * scaleFactor
-    \(computeDerivativeSoftmax())
+    \(derivativeSoftmax())
     
     // dQ += dS * K
-    \(accumulate(descriptor: accumulateDesc))
+    \(dSK)
   }
     
 """
@@ -256,56 +223,31 @@ extension AttentionKernel {
   func loopBackwardKeyValue(computeDerivativeK: Bool) -> String {
     var outerProductDesc = AttentionOuterProductDescriptor()
     outerProductDesc.A = "K"
-    outerProductDesc.cacheA = cachedInputs.K
     outerProductDesc.B = "Q"
     outerProductDesc.C = "ST"
-    outerProductDesc.transposeState = (
-      A: transposeState.K, B: transposeState.Q)
-    outerProductDesc.leadingDimensions = (
-      A: leadingDimensions.K, B: leadingDimensions.Q)
-    outerProductDesc.matrixDimensions = (M: "C", N: "R")
-    outerProductDesc.matrixOffset = (M: "gid * 32", N: "r")
     let KQT = outerProduct(descriptor: outerProductDesc)
     
     var accumulateDesc = AttentionAccumulateDescriptor()
     accumulateDesc.A = "PT"
     accumulateDesc.B = "dO"
     accumulateDesc.C = "dV"
-    accumulateDesc.cacheC = cachedOutputs.dV
-    accumulateDesc.transposeState = (
-      B: transposeState.O, C: transposeState.V)
-    accumulateDesc.leadingDimensions = (
-      B: leadingDimensions.O, C: leadingDimensions.V)
-    accumulateDesc.matrixDimensions = (M: "C", K: "R")
-    accumulateDesc.matrixOffset = (M: "gid * 32", K: "r")
+    let PTdO = accumulate(descriptor: accumulateDesc)
     
     outerProductDesc = AttentionOuterProductDescriptor()
     outerProductDesc.A = "V"
-    outerProductDesc.cacheA = cachedInputs.V
     outerProductDesc.B = "dO"
     outerProductDesc.C = "dPT"
-    outerProductDesc.transposeState = (
-      A: transposeState.V, B: transposeState.O)
-    outerProductDesc.leadingDimensions = (
-      A: leadingDimensions.V, B: leadingDimensions.O)
-    outerProductDesc.matrixDimensions = (M: "C", N: "R")
-    outerProductDesc.matrixOffset = (M: "gid * 32", N: "r")
     let VdOT = outerProduct(descriptor: outerProductDesc)
     
-    var dSTQ: String = ""
+    var dSTQ: String
     if computeDerivativeK {
       var accumulateDesc = AttentionAccumulateDescriptor()
       accumulateDesc.A = "dST"
       accumulateDesc.B = "Q"
       accumulateDesc.C = "dK"
-      accumulateDesc.cacheC = cachedOutputs.dK
-      accumulateDesc.transposeState = (
-        B: transposeState.Q, C: transposeState.K)
-      accumulateDesc.leadingDimensions = (
-        B: leadingDimensions.Q, C: leadingDimensions.K)
-      accumulateDesc.matrixDimensions = (M: "C", K: "R")
-      accumulateDesc.matrixOffset = (M: "gid * 32", K: "r")
       dSTQ = accumulate(descriptor: accumulateDesc)
+    } else {
+      dSTQ = ""
     }
     
     return """
@@ -319,13 +261,13 @@ extension AttentionKernel {
       \(checkpointSoftmaxT())
       
       // dV += P^T * dO
-      \(accumulate(descriptor: accumulateDesc))
+      \(PTdO)
       
       // dP^T = V * dO^T
       \(VdOT)
       
       // dS^T = P^T * (dP^T - D) * scaleFactor
-      \(computeDerivativeSoftmaxT())
+      \(derivativeSoftmaxT())
       
       // dK += dS^T * Q
       \(dSTQ)
