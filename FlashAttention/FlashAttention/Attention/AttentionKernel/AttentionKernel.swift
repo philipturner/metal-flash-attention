@@ -84,18 +84,7 @@ struct AttentionKernel {
     \(createMetalSimdgroupMatrixStorage())
     using namespace metal;
     
-    // R = row dimension (output sequence)
-    // C = column dimension (input sequence)
-    constant uint R [[function_constant(0)]];
-    constant uint C [[function_constant(1)]];
     
-    // The subregion of the attention matrix to compute.
-    struct Arguments {
-      uint R_start;
-      uint R_end;
-      uint C_start;
-      uint C_end;
-    };
     
     """
     
@@ -317,9 +306,23 @@ extension AttentionKernel {
     // Generate the full signature.
     return """
     
+    // R = row dimension (output sequence)
+    // C = column dimension (input sequence)
+    constant uint R [[function_constant(0)]];
+    constant uint C [[function_constant(1)]];
+    
+    // The subregion of the attention matrix to compute.
+    struct Arguments {
+      uint R_start;
+      uint R_end;
+      uint C_start;
+      uint C_end;
+    };
+    
     // Declare the function.
     kernel void attention(
       \(createBufferBindings())
+      // TODO: Arguments at buffer index 30.
       threadgroup uchar *threadgroup_block [[threadgroup(0)]],
       
       uint gid [[threadgroup_position_in_grid]],

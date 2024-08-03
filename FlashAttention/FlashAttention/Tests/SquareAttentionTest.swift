@@ -10,7 +10,7 @@ import Metal
 // Test the performance of the attention kernel, using single-headed attention
 // over a square attention matrix.
 
-#if true
+#if false
 func executeScript() {
   // Automate the execution of the test suite.
   profileProblemSize(N: 10, D: 3)

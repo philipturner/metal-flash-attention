@@ -11,7 +11,7 @@ import QuartzCore
 // Test the correctness of the GEMM kernel, in edge cases where the matrix
 // size is indivisible by the block size.
 
-#if false
+#if true
 func executeScript() {
   print("Hello, console.")
   
@@ -67,13 +67,16 @@ func runCorrectnessTest(descriptor: GEMMDescriptor) {
   
   let checkpoint0 = CACurrentMediaTime()
   
-  // Set the outputs.
+  // Set the inputs.
   var operandA = [Float](
     repeating: .zero,
     count: Int(matrixDimensions.M * matrixDimensions.K))
   var operandB = [Float](
     repeating: .zero,
     count: Int(matrixDimensions.K * matrixDimensions.N))
+  var operandPreviousC = [Float](
+    repeating: .zero,
+    count: Int(matrixDimensions.M * matrixDimensions.N))
   
   // Normalize so that every dot product approaches 1.
   let normalizationFactor = 1 / Float(matrixDimensions.K).squareRoot()
@@ -86,14 +89,16 @@ func runCorrectnessTest(descriptor: GEMMDescriptor) {
     let randomNumber = Float.random(in: 0..<1)
     operandB[elementID] = randomNumber * normalizationFactor
   }
+  for elementID in operandPreviousC.indices {
+    let randomNumber = Float.random(in: 0..<1)
+    operandPreviousC[elementID] = 0 * randomNumber * normalizationFactor
+  }
   
   // Create the buffers.
-  var gpuOperandC = [Float](
-    repeating: .zero,
-    count: Int(matrixDimensions.M * matrixDimensions.N))
   let bufferA = MTLContext.global.createBuffer(operandA, memoryPrecisions.A)
   let bufferB = MTLContext.global.createBuffer(operandB, memoryPrecisions.B)
-  let bufferC = MTLContext.global.createBuffer(gpuOperandC, memoryPrecisions.C)
+  let bufferC = MTLContext.global.createBuffer(
+    operandPreviousC, memoryPrecisions.C)
   
   let checkpoint1 = CACurrentMediaTime()
   
@@ -113,6 +118,16 @@ func runCorrectnessTest(descriptor: GEMMDescriptor) {
     encoder.setBuffer(bufferA, offset: 0, index: 0)
     encoder.setBuffer(bufferB, offset: 0, index: 1)
     encoder.setBuffer(bufferC, offset: 0, index: 2)
+    
+    func setArguments(accumulateC: Bool) {
+      struct Arguments {
+        var accumulateC: Bool
+      }
+      var arguments = Arguments(accumulateC: accumulateC)
+      encoder.setBytes(
+        &arguments, length: MemoryLayout<Arguments>.stride, index: 30)
+    }
+    setArguments(accumulateC: false)
     
     func ceilDivide(_ target: UInt32, _ granularity: UInt16) -> Int {
       (Int(target) + Int(granularity) - 1) / Int(granularity)
@@ -134,6 +149,9 @@ func runCorrectnessTest(descriptor: GEMMDescriptor) {
   }
   
   // Copy the GPU output to an array.
+  var gpuOperandC = [Float](
+    repeating: .zero,
+    count: Int(matrixDimensions.M * matrixDimensions.N))
   do {
     let sourcePointer = bufferC.contents()
     for m in 0..<matrixDimensions.M {
@@ -173,6 +191,9 @@ func runCorrectnessTest(descriptor: GEMMDescriptor) {
     for n in 0..<matrixDimensions.N {
       var dotProduct: Float = .zero
       
+      let addressC: UInt32 = m * matrixDimensions.N + n
+      dotProduct = operandPreviousC[Int(addressC)]
+      
       for k in 0..<matrixDimensions.K {
         var addressA: UInt32
         var addressB: UInt32
@@ -192,7 +213,6 @@ func runCorrectnessTest(descriptor: GEMMDescriptor) {
         dotProduct += valueA * valueB
       }
       
-      let addressC = m * matrixDimensions.N + n
       cpuOperandC[Int(addressC)] = dotProduct
     }
   }
