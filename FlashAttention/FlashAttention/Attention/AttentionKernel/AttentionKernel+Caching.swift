@@ -201,8 +201,15 @@ extension AttentionKernel {
         """
       }
       
-      // One could optimize this by recycling dO (if it's cached).
-      output += computeDTerm()
+      output += """
+      
+      float D_term;
+      \(computeDTerm())
+      if (\(parallelizationThreadOffset) < R) {
+        D_terms[\(parallelizationThreadOffset)] = D_term;
+      }
+      
+      """
       
     case .backwardKeyValue(let computeDerivativeK):
       if cachedInputs.K {
@@ -248,13 +255,6 @@ extension AttentionKernel {
       if computeDerivativeQ, cachedOutputs.dQ {
         output += store(name: "dQ")
       }
-      output += """
-      
-      if (\(parallelizationThreadOffset) < R) {
-        D_terms[\(parallelizationThreadOffset)] = D_term;
-      }
-      
-      """
       
     case .backwardKeyValue(let computeDerivativeK):
       if computeDerivativeK, cachedOutputs.dK {

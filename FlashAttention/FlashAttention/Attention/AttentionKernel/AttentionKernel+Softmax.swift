@@ -11,42 +11,78 @@
 
 extension AttentionKernel {
   func computeDTerm() -> String {
-    let loopEndFloor = headDimension - headDimension % 8
-    
-    var output = """
+    func bulkContributions(truncatedHeadDimension: UInt16) -> String {
+      // Recycle most of the cached values for dO.
+      func declareDerivativeOLocation() -> String {
+        if cached("dO") {
+          return ""
+        } else {
+          return """
+          
+          // Where the dO data will be read from.
+          auto dO_src = simdgroup_matrix_storage<float>::apply_offset(
+            dO, \(leadingDimension("dO")), offset_src, \(transposed("dO")));
+          
+          """
+        }
+      }
+      func loadDerivativeO() -> String {
+        if cached("dO") {
+          return """
+          
+          auto dO = dO_sram[d / 8];
+          
+          """
+        } else {
+          return """
+          
+          simdgroup_matrix_storage<float> dO;
+          dO.load(
+            dO_src, \(leadingDimension("dO")),
+            ushort2(d, 0), \(transposed("dO")));
+          
+          """
+        }
+      }
+      
+      return """
+      
+      // Threads outside of the matrix along the row dimension,
+      // have their origin shifted in-bounds.
+      uint D_offset = morton_offset.x;
+      uint R_offset = min(R, \(parallelizationThreadOffset));
+      uint2 offset_src(D_offset, R_offset);
+      
+      \(declareDerivativeOLocation())
+      
+      // Where the O data will be read from.
+      auto O_src = simdgroup_matrix_storage<float>::apply_offset(
+        O, \(leadingDimension("O")), offset_src, \(transposed("O")));
+      
+      // Going to use async copy to handle the matrix edge.
+      #pragma clang loop unroll(disable)
+      for (ushort d = 0; d < \(truncatedHeadDimension); d += 8) {
+        \(loadDerivativeO())
+        
+        simdgroup_matrix_storage<float> O;
+        O.load(
+          O_src, \(leadingDimension("O")),
+          ushort2(d, 0), \(transposed("O")));
+        
+        // Perform the pointwise multiplication.
+        float2 dO_value = *(dO.thread_elements());
+        float2 O_value = *(O.thread_elements());
+        D_term_accumulator += dO_value * O_value;
+      }
 
-float2 D_term_accumulator(0);
-{
-  // Threads outside of the matrix along the row dimension, have their origin
-  // shifted in-bounds.
-  uint D_offset = morton_offset.x;
-  uint R_offset = min(R, \(parallelizationThreadOffset));
-  uint2 offset_src(D_offset, R_offset);
-  
-  // Where the dO and O data will be read from.
-  auto dO_src = simdgroup_matrix_storage<float>::apply_offset(
-    dO, \(leadingDimension("dO")), offset_src, \(transposed("dO")));
-  auto O_src = simdgroup_matrix_storage<float>::apply_offset(
-    O, \(leadingDimension("O")), offset_src, \(transposed("O")));
-  
-  // Going to use async copy to handle the matrix edge.
-#pragma clang loop unroll(disable)
-  for (ushort d = 0; d < \(loopEndFloor); d += 8) {
-    ushort2 origin(d, 0);
-    simdgroup_matrix_storage<float> dO;
-    simdgroup_matrix_storage<float> O;
-    dO.load(dO_src, \(leadingDimension("dO")), origin, \(transposed("dO")));
-    O.load(O_src, \(leadingDimension("O")), origin, \(transposed("O")));
+      """
+    }
     
-    // Perform the pointwise multiplication.
-    float2 dO_value = *(dO.thread_elements());
-    float2 O_value = *(O.thread_elements());
-    D_term_accumulator += dO_value * O_value;
-  }
-}
-"""
-    
-    if headDimension % 8 != 0 {
+    func edgeContributions(truncatedHeadDimension: UInt16) -> String {
+      guard headDimension % 8 != 0 else {
+        return ""
+      }
+      
       // Abbreviated block, only covers the last 8 elements.
       func leadingBlockDimension(_ operand: String) -> UInt16 {
         if transposed(operand) {
@@ -56,81 +92,89 @@ float2 D_term_accumulator(0);
         }
       }
       
-      output += """
-
-{
-  threadgroup_barrier(mem_flags::mem_threadgroup);
-  if (sidx == 0) {
-    uint D_offset = \(loopEndFloor);
-    uint R_offset = \(parallelizationOffset);
-    uint2 offset_src(D_offset, R_offset);
-    
-    auto dO_src = simdgroup_matrix_storage<float>::apply_offset(
-      dO, \(leadingDimension("dO")), offset_src, \(transposed("dO")));
-    auto O_src = simdgroup_matrix_storage<float>::apply_offset(
-      O, \(leadingDimension("O")), offset_src, \(transposed("O")));
-    auto dO_dst = (threadgroup float*)(threadgroup_block);
-    auto O_dst = (threadgroup float*)(threadgroup_block);
-    O_dst += \(blockDimensions.parallelization * 8);
-    
-    ushort D_src_dimension = \(headDimension) % 8;
-    ushort D_dst_dimension = 8;
-    ushort R_dimension = min(
-      uint(\(blockDimensions.parallelization)),
-      uint(\(parallelizationDimension) - \(parallelizationOffset)));
-    ushort2 tile_src(D_src_dimension, R_dimension);
-    ushort2 tile_dst(D_dst_dimension, R_dimension);
-    
-    // Issue two async copies.
-    simdgroup_event events[2];
-    events[0].async_copy(
-      dO_dst, \(leadingBlockDimension("dO")), tile_dst,
-      dO_src, \(leadingDimension("dO")), tile_src, \(transposed("dO")));
-    events[1].async_copy(
-      O_dst, \(leadingBlockDimension("O")), tile_dst,
-      O_src, \(leadingDimension("O")), tile_src, \(transposed("O")));
-    simdgroup_event::wait(2, events);
-  }
-  
-  // Where the dO and O data will be read from.
-  ushort2 offset_src(morton_offset.x, morton_offset.y + sidx * 8);
-  auto dO_block = (threadgroup float*)(threadgroup_block);
-  auto O_block = (threadgroup float*)(threadgroup_block);
-  O_block += \(blockDimensions.parallelization * 8);
-  
-  dO_block = simdgroup_matrix_storage<float>::apply_offset(
-    dO_block, \(leadingBlockDimension("dO")), offset_src, \(transposed("dO")));
-  O_block = simdgroup_matrix_storage<float>::apply_offset(
-    O_block, \(leadingBlockDimension("O")), offset_src, \(transposed("O")));
-  threadgroup_barrier(mem_flags::mem_threadgroup);
-  
-  // Load the zero-padded edge data.
-  ushort2 origin(0, 0);
-  simdgroup_matrix_storage<float> dO;
-  simdgroup_matrix_storage<float> O;
-  dO.load(
-    dO_block, \(leadingBlockDimension("dO")), origin, \(transposed("dO")));
-  O.load(
-    O_block, \(leadingBlockDimension("O")), origin, \(transposed("O")));
-  
-  // Perform the pointwise multiplication.
-  float2 dO_value = *(dO.thread_elements());
-  float2 O_value = *(O.thread_elements());
-  D_term_accumulator += dO_value * O_value;
-}
-"""
+      return """
+      
+      threadgroup_barrier(mem_flags::mem_threadgroup);
+      if (sidx == 0) {
+        uint D_offset = \(truncatedHeadDimension);
+        uint R_offset = \(parallelizationOffset);
+        uint2 offset_src(D_offset, R_offset);
+        
+        auto dO_src = simdgroup_matrix_storage<float>::apply_offset(
+          dO, \(leadingDimension("dO")), offset_src, \(transposed("dO")));
+        auto O_src = simdgroup_matrix_storage<float>::apply_offset(
+          O, \(leadingDimension("O")), offset_src, \(transposed("O")));
+        auto dO_dst = (threadgroup float*)(threadgroup_block);
+        auto O_dst = (threadgroup float*)(threadgroup_block);
+        O_dst += \(blockDimensions.parallelization * 8);
+        
+        ushort D_src_dimension = \(headDimension) % 8;
+        ushort D_dst_dimension = 8;
+        ushort R_dimension = min(
+          uint(\(blockDimensions.parallelization)),
+          uint(\(parallelizationDimension) - \(parallelizationOffset)));
+        ushort2 tile_src(D_src_dimension, R_dimension);
+        ushort2 tile_dst(D_dst_dimension, R_dimension);
+        
+        // Issue two async copies.
+        simdgroup_event events[2];
+        events[0].async_copy(
+          dO_dst, \(leadingBlockDimension("dO")), tile_dst,
+          dO_src, \(leadingDimension("dO")), tile_src, \(transposed("dO")));
+        events[1].async_copy(
+          O_dst, \(leadingBlockDimension("O")), tile_dst,
+          O_src, \(leadingDimension("O")), tile_src, \(transposed("O")));
+        simdgroup_event::wait(2, events);
+      }
+      
+      // Where the dO and O data will be read from.
+      ushort2 offset_src(morton_offset.x, morton_offset.y + sidx * 8);
+      auto dO_block = (threadgroup float*)(threadgroup_block);
+      auto O_block = (threadgroup float*)(threadgroup_block);
+      O_block += \(blockDimensions.parallelization * 8);
+      
+      dO_block = simdgroup_matrix_storage<float>::apply_offset(
+        dO_block, \(leadingBlockDimension("dO")),
+        offset_src, \(transposed("dO")));
+      O_block = simdgroup_matrix_storage<float>::apply_offset(
+        O_block, \(leadingBlockDimension("O")),
+        offset_src, \(transposed("O")));
+      threadgroup_barrier(mem_flags::mem_threadgroup);
+      
+      // Load the zero-padded edge data.
+      ushort2 origin(0, 0);
+      simdgroup_matrix_storage<float> dO;
+      simdgroup_matrix_storage<float> O;
+      dO.load(
+        dO_block, \(leadingBlockDimension("dO")), origin, \(transposed("dO")));
+      O.load(
+        O_block, \(leadingBlockDimension("O")), origin, \(transposed("O")));
+      
+      // Perform the pointwise multiplication.
+      float2 dO_value = *(dO.thread_elements());
+      float2 O_value = *(O.thread_elements());
+      D_term_accumulator += dO_value * O_value;
+      
+      """
     }
     
-    output += """
-
-float D_term = D_term_accumulator[0] + D_term_accumulator[1];
-D_term += simd_shuffle_xor(D_term, 1);
-D_term += simd_shuffle_xor(D_term, 8);
-D_term *= \(backwardScale);
-
-"""
+    let loopEndFloor = headDimension - headDimension % 8
+    return """
     
-    return output
+    float2 D_term_accumulator(0);
+    {
+      \(bulkContributions(truncatedHeadDimension: loopEndFloor))
+    }
+    {
+      \(edgeContributions(truncatedHeadDimension: loopEndFloor))
+    }
+    
+    D_term = D_term_accumulator[0] + D_term_accumulator[1];
+    D_term += simd_shuffle_xor(D_term, 1);
+    D_term += simd_shuffle_xor(D_term, 8);
+    D_term *= \(backwardScale);
+    
+    """
   }
   
   // Load a term when parallelizing over columns.

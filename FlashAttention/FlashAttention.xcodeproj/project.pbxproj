@@ -28,15 +28,11 @@
 		98DA5B322C29F04A000F4E06 /* Numerics in Frameworks */ = {isa = PBXBuildFile; productRef = 98DA5B312C29F04A000F4E06 /* Numerics */; };
 		98DA5B342C29F04A000F4E06 /* RealModule in Frameworks */ = {isa = PBXBuildFile; productRef = 98DA5B332C29F04A000F4E06 /* RealModule */; };
 		98DA5B362C2AFD65000F4E06 /* Network.swift in Sources */ = {isa = PBXBuildFile; fileRef = 98DA5B352C2AFD65000F4E06 /* Network.swift */; };
-		98DA5B382C2AFF9E000F4E06 /* FiniteDifferencingTest.swift in Sources */ = {isa = PBXBuildFile; fileRef = 98DA5B372C2AFF9E000F4E06 /* FiniteDifferencingTest.swift */; };
-		98DA5B3A2C2B3A6D000F4E06 /* Softmax.swift in Sources */ = {isa = PBXBuildFile; fileRef = 98DA5B392C2B3A6D000F4E06 /* Softmax.swift */; };
 		98DA5B3D2C2C5086000F4E06 /* MTLContext.swift in Sources */ = {isa = PBXBuildFile; fileRef = 98DA5B3C2C2C5086000F4E06 /* MTLContext.swift */; };
-		98DA5B402C2C91BF000F4E06 /* SoftmaxTest.swift in Sources */ = {isa = PBXBuildFile; fileRef = 98DA5B3F2C2C91BF000F4E06 /* SoftmaxTest.swift */; };
-		98DA5B422C2CA75D000F4E06 /* DerivativeSoftmax.swift in Sources */ = {isa = PBXBuildFile; fileRef = 98DA5B412C2CA75D000F4E06 /* DerivativeSoftmax.swift */; };
-		98DA5B442C2DB893000F4E06 /* DerivativeSoftmaxTest.swift in Sources */ = {isa = PBXBuildFile; fileRef = 98DA5B432C2DB893000F4E06 /* DerivativeSoftmaxTest.swift */; };
 		98DA5B482C2DE2DA000F4E06 /* AttentionKernel.swift in Sources */ = {isa = PBXBuildFile; fileRef = 98DA5B472C2DE2DA000F4E06 /* AttentionKernel.swift */; };
 		98DA5B4A2C2EF788000F4E06 /* AttentionDescriptor.swift in Sources */ = {isa = PBXBuildFile; fileRef = 98DA5B492C2EF788000F4E06 /* AttentionDescriptor.swift */; };
-		98F950F92C49671600C370E4 /* StoreDerivativeSTest.swift in Sources */ = {isa = PBXBuildFile; fileRef = 98F950F82C49671600C370E4 /* StoreDerivativeSTest.swift */; };
+		98FB0AB82C5E71FF0069ABA0 /* AttentionOperand.swift in Sources */ = {isa = PBXBuildFile; fileRef = 98FB0AB72C5E71FF0069ABA0 /* AttentionOperand.swift */; };
+		98FB0ABA2C5E7F850069ABA0 /* SquareAttentionTest.swift in Sources */ = {isa = PBXBuildFile; fileRef = 98FB0AB92C5E7F850069ABA0 /* SquareAttentionTest.swift */; };
 		98FB66E12C347CBA00C56CED /* AttentionKernel+OuterLoop.swift in Sources */ = {isa = PBXBuildFile; fileRef = 98FB66E02C347CBA00C56CED /* AttentionKernel+OuterLoop.swift */; };
 /* End PBXBuildFile section */
 
@@ -70,6 +66,8 @@
 		98DA5B472C2DE2DA000F4E06 /* AttentionKernel.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = AttentionKernel.swift; sourceTree = "<group>"; };
 		98DA5B492C2EF788000F4E06 /* AttentionDescriptor.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = AttentionDescriptor.swift; sourceTree = "<group>"; };
 		98F950F82C49671600C370E4 /* StoreDerivativeSTest.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = StoreDerivativeSTest.swift; sourceTree = "<group>"; };
+		98FB0AB72C5E71FF0069ABA0 /* AttentionOperand.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = AttentionOperand.swift; sourceTree = "<group>"; };
+		98FB0AB92C5E7F850069ABA0 /* SquareAttentionTest.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = SquareAttentionTest.swift; sourceTree = "<group>"; };
 		98FB66E02C347CBA00C56CED /* AttentionKernel+OuterLoop.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = "AttentionKernel+OuterLoop.swift"; sourceTree = "<group>"; };
 /* End PBXFileReference section */
 
@@ -120,6 +118,7 @@
 		9881A9F42C24C8230056D05C /* FlashAttention */ = {
 			isa = PBXGroup;
 			children = (
+				98FB0AB62C5E714F0069ABA0 /* Archive */,
 				98DA5B3B2C2B3A81000F4E06 /* Attention */,
 				9881AA122C25AEA80056D05C /* GEMM */,
 				98DA5B3E2C2C5101000F4E06 /* Utillities */,
@@ -150,11 +149,8 @@
 			isa = PBXGroup;
 			children = (
 				9881AA242C25FDC20056D05C /* AdversarialShapeTest.swift */,
-				98DA5B432C2DB893000F4E06 /* DerivativeSoftmaxTest.swift */,
-				98DA5B372C2AFF9E000F4E06 /* FiniteDifferencingTest.swift */,
 				9881AA222C25C22B0056D05C /* LaplacianTest.swift */,
-				98DA5B3F2C2C91BF000F4E06 /* SoftmaxTest.swift */,
-				98F950F82C49671600C370E4 /* StoreDerivativeSTest.swift */,
+				98FB0AB92C5E7F850069ABA0 /* SquareAttentionTest.swift */,
 			);
 			path = Tests;
 			sourceTree = "<group>";
@@ -164,9 +160,8 @@
 			children = (
 				9827D79B2C4ABC4900649C7B /* AttentionKernel */,
 				98DA5B492C2EF788000F4E06 /* AttentionDescriptor.swift */,
-				98DA5B412C2CA75D000F4E06 /* DerivativeSoftmax.swift */,
+				98FB0AB72C5E71FF0069ABA0 /* AttentionOperand.swift */,
 				98DA5B352C2AFD65000F4E06 /* Network.swift */,
-				98DA5B392C2B3A6D000F4E06 /* Softmax.swift */,
 			);
 			path = Attention;
 			sourceTree = "<group>";
@@ -177,6 +172,19 @@
 				98DA5B3C2C2C5086000F4E06 /* MTLContext.swift */,
 			);
 			path = Utillities;
+			sourceTree = "<group>";
+		};
+		98FB0AB62C5E714F0069ABA0 /* Archive */ = {
+			isa = PBXGroup;
+			children = (
+				98DA5B412C2CA75D000F4E06 /* DerivativeSoftmax.swift */,
+				98DA5B432C2DB893000F4E06 /* DerivativeSoftmaxTest.swift */,
+				98DA5B372C2AFF9E000F4E06 /* FiniteDifferencingTest.swift */,
+				98DA5B392C2B3A6D000F4E06 /* Softmax.swift */,
+				98DA5B3F2C2C91BF000F4E06 /* SoftmaxTest.swift */,
+				98F950F82C49671600C370E4 /* StoreDerivativeSTest.swift */,
+			);
+			path = Archive;
 			sourceTree = "<group>";
 		};
 /* End PBXGroup section */
@@ -260,7 +268,6 @@
 				982EBD602C5954D600AB4E00 /* AttentionKernel+OuterProduct.swift in Sources */,
 				9881AA182C25B0440056D05C /* GEMMHeaders.swift in Sources */,
 				9882512E2C4E9F890047052E /* AttentionKernel+Caching.swift in Sources */,
-				98DA5B382C2AFF9E000F4E06 /* FiniteDifferencingTest.swift in Sources */,
 				9881AA202C25B26D0056D05C /* ShaderCache.swift in Sources */,
 				98DA5B482C2DE2DA000F4E06 /* AttentionKernel.swift in Sources */,
 				9881AA1A2C25B0F70056D05C /* GEMMDescriptor.swift in Sources */,
@@ -269,20 +276,17 @@
 				9881A9F82C24C8230056D05C /* ContentView.swift in Sources */,
 				98DA5B4A2C2EF788000F4E06 /* AttentionDescriptor.swift in Sources */,
 				98FB66E12C347CBA00C56CED /* AttentionKernel+OuterLoop.swift in Sources */,
-				98DA5B422C2CA75D000F4E06 /* DerivativeSoftmax.swift in Sources */,
+				98FB0AB82C5E71FF0069ABA0 /* AttentionOperand.swift in Sources */,
 				9881AA232C25C22B0056D05C /* LaplacianTest.swift in Sources */,
 				9881AA1C2C25B11C0056D05C /* CoreCount.swift in Sources */,
-				98DA5B442C2DB893000F4E06 /* DerivativeSoftmaxTest.swift in Sources */,
+				98FB0ABA2C5E7F850069ABA0 /* SquareAttentionTest.swift in Sources */,
 				9827D7A52C4ABF0F00649C7B /* AttentionKernel+Accumulate.swift in Sources */,
 				9881A9F62C24C8230056D05C /* FlashAttentionApp.swift in Sources */,
-				98F950F92C49671600C370E4 /* StoreDerivativeSTest.swift in Sources */,
-				98DA5B402C2C91BF000F4E06 /* SoftmaxTest.swift in Sources */,
 				9881AA1E2C25B1ED0056D05C /* GEMMKernel.swift in Sources */,
 				9827D7A72C4AC05C00649C7B /* AttentionKernel+Softmax.swift in Sources */,
 				9881AA142C25AED50056D05C /* GEMMKernelDescriptor.swift in Sources */,
 				98DA5B3D2C2C5086000F4E06 /* MTLContext.swift in Sources */,
 				9881AA162C25AEF10056D05C /* GEMMOperandPrecision.swift in Sources */,
-				98DA5B3A2C2B3A6D000F4E06 /* Softmax.swift in Sources */,
 			);
 			runOnlyForDeploymentPostprocessing = 0;
 		};

@@ -89,6 +89,14 @@ struct AttentionKernel {
     constant uint R [[function_constant(0)]];
     constant uint C [[function_constant(1)]];
     
+    // The subregion of the attention matrix to compute.
+    struct Arguments {
+      uint R_start;
+      uint R_end;
+      uint C_start;
+      uint C_end;
+    };
+    
     """
     
     // Add the contents of the function.
@@ -205,11 +213,11 @@ extension AttentionKernel {
   }
   
   var parallelizationOffset: String {
-    "gid * \(blockDimensions.parallelization)"
+    "parallelization_group_offset"
   }
   
   var parallelizationThreadOffset: String {
-    "\(parallelizationOffset) + sidx * 8 + morton_offset.y"
+    "parallelization_thread_offset"
   }
   
   var traversalDimension: String {
@@ -244,10 +252,6 @@ extension AttentionKernel {
   }
   
   var paddedHeadEdge: UInt16 {
-//    let loopEnd = paddedHeadDimension
-//    let loopEndFloor = loopEnd - loopEnd % blockDimensions.head
-//    return loopEnd - loopEndFloor
-    
     let blockDim = blockDimensions.head
     let remainder = (headDimension) % (blockDim)
     
@@ -257,91 +261,57 @@ extension AttentionKernel {
   }
 }
 
-
 // MARK: - Function Signature
 
 extension AttentionKernel {
   func createFunctionSignature() -> String {
-    // Data structure that holds the precision and buffer index.
-    struct AttentionOperand {
-      var precision: GEMMOperandPrecision
-      var bufferBinding: Int
-    }
-    
-    // Index the operands available during the forward pass.
-    var operandsMap: [String: AttentionOperand] = [:]
-    operandsMap["Q"] = AttentionOperand(
-      precision: .FP32, bufferBinding: 0)
-    operandsMap["K"] = AttentionOperand(
-      precision: .FP32, bufferBinding: 1)
-    operandsMap["V"] = AttentionOperand(
-      precision: .FP32, bufferBinding: 2)
-    operandsMap["O"] = AttentionOperand(
-      precision: .FP32, bufferBinding: 3)
-    operandsMap["L_terms"] = AttentionOperand(
-      precision: .FP32, bufferBinding: 4)
-    
-    // Index the operands available during the backward pass.
-    operandsMap["dO"] = AttentionOperand(
-      precision: .FP32, bufferBinding: 5)
-    operandsMap["D_terms"] = AttentionOperand(
-      precision: .FP32, bufferBinding: 6)
-    operandsMap["dV"] = AttentionOperand(
-      precision: .FP32, bufferBinding: 7)
-    operandsMap["dK"] = AttentionOperand(
-      precision: .FP32, bufferBinding: 8)
-    operandsMap["dQ"] = AttentionOperand(
-      precision: .FP32, bufferBinding: 9)
-    
-    // Select the operands used by this variant.
-    var operandKeys: [String]
+    // What operands does the kernel use?
+    var operands: [AttentionOperand] = [
+      .LTerms, .DTerms,
+    ]
     switch type {
-    case .forward(let computeL):
-      operandKeys = [
-        "Q", "K", "V", "O"
-      ]
-      if computeL {
-        operandKeys.append("L_terms")
-      }
+    case .forward:
+      operands += [.Q, .K, .V, .O]
     case .backwardQuery(let computeDerivativeQ):
+      operands += [.O, .dO]
       if computeDerivativeQ {
-        operandKeys = [
-          "Q", "K", "V", "O",
-          "L_terms", "dO", "D_terms", "dQ"
-        ]
-      } else {
-        operandKeys = [
-          "O", "dO", "D_terms"
-        ]
+        operands += [.Q, .K, .V, .dQ]
       }
     case .backwardKeyValue(let computeDerivativeK):
-      operandKeys = [
-        "Q", "K", "V",
-        "L_terms", "dO", "D_terms", "dV"
-      ]
+      operands += [.Q, .K, .V, .dO, .dV]
       if computeDerivativeK {
-        operandKeys.append("dK")
+        operands += [.dK]
       }
     }
+    operands.sort {
+      $0.bufferBinding! < $1.bufferBinding!
+    }
     
-    // Generate the code that specifies the inputs and outputs.
-    func createBufferBindings(
-      keys: [String],
-      map: [String: AttentionOperand]
-    ) -> String {
+    // Declare the buffer binding for each operand.
+    func createBufferBindings() -> String {
       var output: String = ""
-      for key in operandKeys {
-        let operand = operandsMap[key]!
-        
-        var line = "  "
-        line += "device "
-        line += operand.precision.name + " "
-        line += "*" + key + " "
-        line += "[[buffer(\(operand.bufferBinding))]]"
-        line += ",\n"
-        output += line
+      for key in operands {
+        var line = "device float* \(key.name) "
+        line += "[[buffer(\(key.bufferBinding!))]],"
+        output += "  " + line + "\n"
       }
       return output
+    }
+    
+    // Declare the memory offsets.
+    func declareOffsets() -> String {
+      """
+      
+      // Base address for async copies.
+      uint parallelization_group_offset = gid;
+      parallelization_group_offset *= \(blockDimensions.parallelization);
+      
+      // Base address for directly accessing RAM.
+      ushort2 morton_offset = morton_order(lane_id);
+      uint parallelization_thread_offset = parallelization_group_offset;
+      parallelization_thread_offset += sidx * 8 + morton_offset.y;
+      
+      """
     }
     
     // Generate the full signature.
@@ -349,15 +319,14 @@ extension AttentionKernel {
     
     // Declare the function.
     kernel void attention(
-      \(createBufferBindings(keys: operandKeys, map: operandsMap))
-      
+      \(createBufferBindings())
       threadgroup uchar *threadgroup_block [[threadgroup(0)]],
       
       uint gid [[threadgroup_position_in_grid]],
       ushort sidx [[simdgroup_index_in_threadgroup]],
       ushort lane_id [[thread_index_in_simdgroup]]
     ) {
-      ushort2 morton_offset = morton_order(lane_id);
+      \(declareOffsets())
     
     """
   }
