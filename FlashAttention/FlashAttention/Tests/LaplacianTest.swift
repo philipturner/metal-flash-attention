@@ -213,6 +213,23 @@ func profileProblemSize(
     let bufferC = MTLContext.global
       .createBuffer(previousOperandC, descriptor.memoryPrecisions!.C)
     
+    // load  = directAccessCondition,
+    // store = false
+//      problemSize = 1488 | A   B   |  832 threads/core | 8175 GFLOPS
+//      problemSize = 1488 | A   B^T | 1024 threads/core | 8712 GFLOPS
+//      problemSize = 1488 | A^T B   | 1024 threads/core | 8818 GFLOPS
+//      problemSize = 1488 | A^T B^T | 1024 threads/core | 8972 GFLOPS
+//      problemSize = 1489 | A   B   |  768 threads/core | 7888 GFLOPS
+//      problemSize = 1489 | A   B^T |  768 threads/core | 8256 GFLOPS
+//      problemSize = 1489 | A^T B   |  768 threads/core | 8026 GFLOPS
+//      problemSize = 1489 | A^T B^T |  832 threads/core | 8463 GFLOPS
+    //
+    // load  = directAccessCondition
+    // store = directAccessCondition &&
+    //
+    // load  = directAccessCondition 
+    // store = directAccessCondition
+    
     // Profile the latency of matrix multiplication.
     for _ in 0..<1 { // 15
       let duplicatedCommandCount: Int = 1 // 20

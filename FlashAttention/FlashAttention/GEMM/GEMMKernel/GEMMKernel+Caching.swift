@@ -121,7 +121,9 @@ if (\(directAccessCondition)) {
 //
 // Either 'false' or
 // 'directAccessCondition && (M_shift == 0) && (N_shift == 0)'.
-if (false) {
+if (\(directAccessCondition) &&
+    (gid.y * M_group < M_edge) &&
+    (gid.x * N_group < N_edge)) {
   // Fast path for matrices that qualify.
   uint2 C_offset(N_offset + offset_in_group.x,
                  M_offset + offset_in_group.y);
