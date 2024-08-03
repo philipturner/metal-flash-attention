@@ -215,24 +215,40 @@ func profileProblemSize(
     
     // load  = directAccessCondition,
     // store = false
-//      problemSize = 1488 | A   B   |  832 threads/core | 8175 GFLOPS
-//      problemSize = 1488 | A   B^T | 1024 threads/core | 8712 GFLOPS
-//      problemSize = 1488 | A^T B   | 1024 threads/core | 8818 GFLOPS
-//      problemSize = 1488 | A^T B^T | 1024 threads/core | 8972 GFLOPS
-//      problemSize = 1489 | A   B   |  768 threads/core | 7888 GFLOPS
-//      problemSize = 1489 | A   B^T |  768 threads/core | 8256 GFLOPS
-//      problemSize = 1489 | A^T B   |  768 threads/core | 8026 GFLOPS
-//      problemSize = 1489 | A^T B^T |  832 threads/core | 8463 GFLOPS
+    //  problemSize = 1488 | A   B   |  832 threads/core | 8175 GFLOPS
+    //  problemSize = 1488 | A   B^T | 1024 threads/core | 8712 GFLOPS
+    //  problemSize = 1488 | A^T B   | 1024 threads/core | 8818 GFLOPS
+    //  problemSize = 1488 | A^T B^T | 1024 threads/core | 8972 GFLOPS
+    //  problemSize = 1489 | A   B   |  768 threads/core | 7888 GFLOPS
+    //  problemSize = 1489 | A   B^T |  768 threads/core | 8256 GFLOPS
+    //  problemSize = 1489 | A^T B   |  768 threads/core | 8026 GFLOPS
+    //  problemSize = 1489 | A^T B^T |  832 threads/core | 8463 GFLOPS
     //
     // load  = directAccessCondition
-    // store = directAccessCondition &&
+    // store = directAccessCondition && (gid.y * M_group < M_edge) && (gid.x * N_group < N_edge)
+    //  problemSize = 1488 | A   B   |  832 threads/core | 8186 GFLOPS
+    //  problemSize = 1488 | A   B^T | 1024 threads/core | 8709 GFLOPS
+    //  problemSize = 1488 | A^T B   | 1024 threads/core | 8808 GFLOPS
+    //  problemSize = 1488 | A^T B^T | 1024 threads/core | 8984 GFLOPS
+    //  problemSize = 1489 | A   B   |  768 threads/core | 7902 GFLOPS
+    //  problemSize = 1489 | A   B^T |  768 threads/core | 8249 GFLOPS
+    //  problemSize = 1489 | A^T B   |  768 threads/core | 8034 GFLOPS
+    //  problemSize = 1489 | A^T B^T |  832 threads/core | 8469 GFLOPS
     //
-    // load  = directAccessCondition 
-    // store = directAccessCondition
+    // load  = directAccessCondition && (gid.y * M_group < M_edge) && (gid.x * N_group < N_edge)
+    // store = directAccessCondition && (gid.y * M_group < M_edge) && (gid.x * N_group < N_edge)
+    //  problemSize = 1488 | A   B   |  832 threads/core | 8181 GFLOPS
+    //  problemSize = 1488 | A   B^T | 1024 threads/core | 8710 GFLOPS
+    //  problemSize = 1488 | A^T B   | 1024 threads/core | 8806 GFLOPS
+    //  problemSize = 1488 | A^T B^T | 1024 threads/core | 8979 GFLOPS
+    //  problemSize = 1489 | A   B   |  768 threads/core | 7892 GFLOPS
+    //  problemSize = 1489 | A   B^T |  768 threads/core | 8242 GFLOPS
+    //  problemSize = 1489 | A^T B   |  768 threads/core | 8034 GFLOPS
+    //  problemSize = 1489 | A^T B^T |  832 threads/core | 8461 GFLOPS
     
     // Profile the latency of matrix multiplication.
-    for _ in 0..<1 { // 15
-      let duplicatedCommandCount: Int = 1 // 20
+    for _ in 0..<15 {
+      let duplicatedCommandCount: Int = 20
       
       // Encode the GPU command.
       let commandBuffer = MTLContext.global.commandQueue.makeCommandBuffer()!
@@ -337,7 +353,7 @@ func profileProblemSize(
     errorThreshold = max(errorThreshold, thresholdC)
   }
   
-  #if true
+  #if false
   // Check the results.
   var errorCount: Int = .zero
   for m in 0..<problemSize {
