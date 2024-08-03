@@ -35,6 +35,7 @@
 		98FB0ABA2C5E7F850069ABA0 /* SquareAttentionTest.swift in Sources */ = {isa = PBXBuildFile; fileRef = 98FB0AB92C5E7F850069ABA0 /* SquareAttentionTest.swift */; };
 		98FB0ABC2C5EA7040069ABA0 /* GEMMKernel+Caching.swift in Sources */ = {isa = PBXBuildFile; fileRef = 98FB0ABB2C5EA7040069ABA0 /* GEMMKernel+Caching.swift */; };
 		98FB0ABE2C5EA7120069ABA0 /* GEMMKernel+Multiply.swift in Sources */ = {isa = PBXBuildFile; fileRef = 98FB0ABD2C5EA7120069ABA0 /* GEMMKernel+Multiply.swift */; };
+		98FB0AC02C5EA9C50069ABA0 /* GEMMKernel+Source.swift in Sources */ = {isa = PBXBuildFile; fileRef = 98FB0ABF2C5EA9C50069ABA0 /* GEMMKernel+Source.swift */; };
 		98FB66E12C347CBA00C56CED /* AttentionKernel+OuterLoop.swift in Sources */ = {isa = PBXBuildFile; fileRef = 98FB66E02C347CBA00C56CED /* AttentionKernel+OuterLoop.swift */; };
 /* End PBXBuildFile section */
 
@@ -72,6 +73,7 @@
 		98FB0AB92C5E7F850069ABA0 /* SquareAttentionTest.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = SquareAttentionTest.swift; sourceTree = "<group>"; };
 		98FB0ABB2C5EA7040069ABA0 /* GEMMKernel+Caching.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = "GEMMKernel+Caching.swift"; sourceTree = "<group>"; };
 		98FB0ABD2C5EA7120069ABA0 /* GEMMKernel+Multiply.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = "GEMMKernel+Multiply.swift"; sourceTree = "<group>"; };
+		98FB0ABF2C5EA9C50069ABA0 /* GEMMKernel+Source.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = "GEMMKernel+Source.swift"; sourceTree = "<group>"; };
 		98FB66E02C347CBA00C56CED /* AttentionKernel+OuterLoop.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = "AttentionKernel+OuterLoop.swift"; sourceTree = "<group>"; };
 /* End PBXFileReference section */
 
@@ -138,12 +140,10 @@
 		9881AA122C25AEA80056D05C /* GEMM */ = {
 			isa = PBXGroup;
 			children = (
+				98FB0AC12C5EAA340069ABA0 /* GEMMKernel */,
 				9881AA1B2C25B11C0056D05C /* CoreCount.swift */,
 				9881AA192C25B0F70056D05C /* GEMMDescriptor.swift */,
 				9881AA172C25B0440056D05C /* GEMMHeaders.swift */,
-				9881AA1D2C25B1ED0056D05C /* GEMMKernel.swift */,
-				98FB0ABB2C5EA7040069ABA0 /* GEMMKernel+Caching.swift */,
-				98FB0ABD2C5EA7120069ABA0 /* GEMMKernel+Multiply.swift */,
 				9881AA132C25AED50056D05C /* GEMMKernelDescriptor.swift */,
 				9881AA152C25AEF10056D05C /* GEMMOperandPrecision.swift */,
 				9881AA1F2C25B26D0056D05C /* ShaderCache.swift */,
@@ -191,6 +191,17 @@
 				98F950F82C49671600C370E4 /* StoreDerivativeSTest.swift */,
 			);
 			path = Archive;
+			sourceTree = "<group>";
+		};
+		98FB0AC12C5EAA340069ABA0 /* GEMMKernel */ = {
+			isa = PBXGroup;
+			children = (
+				9881AA1D2C25B1ED0056D05C /* GEMMKernel.swift */,
+				98FB0ABB2C5EA7040069ABA0 /* GEMMKernel+Caching.swift */,
+				98FB0ABD2C5EA7120069ABA0 /* GEMMKernel+Multiply.swift */,
+				98FB0ABF2C5EA9C50069ABA0 /* GEMMKernel+Source.swift */,
+			);
+			path = GEMMKernel;
 			sourceTree = "<group>";
 		};
 /* End PBXGroup section */
@@ -289,6 +300,7 @@
 				98FB0ABA2C5E7F850069ABA0 /* SquareAttentionTest.swift in Sources */,
 				9827D7A52C4ABF0F00649C7B /* AttentionKernel+Accumulate.swift in Sources */,
 				9881A9F62C24C8230056D05C /* FlashAttentionApp.swift in Sources */,
+				98FB0AC02C5EA9C50069ABA0 /* GEMMKernel+Source.swift in Sources */,
 				98FB0ABC2C5EA7040069ABA0 /* GEMMKernel+Caching.swift in Sources */,
 				9881AA1E2C25B1ED0056D05C /* GEMMKernel.swift in Sources */,
 				9827D7A72C4AC05C00649C7B /* AttentionKernel+Softmax.swift in Sources */,

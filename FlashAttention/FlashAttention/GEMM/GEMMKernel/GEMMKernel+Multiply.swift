@@ -95,8 +95,8 @@ METAL_FUNC thread simdgroup_matrix_storage<T>* get_sram(
       }
       
       multiplyDesc.addressSpace = "device"
-      multiplyDesc.leadingDimensionA = leadingDimensions.A
-      multiplyDesc.leadingDimensionB = leadingDimensions.B
+      multiplyDesc.leadingDimensionA = leadingDimension("A")
+      multiplyDesc.leadingDimensionB = leadingDimension("B")
       output += createMultiply(descriptor: multiplyDesc)
       
       multiplyDesc.addressSpace = "threadgroup"
@@ -129,9 +129,9 @@ for (uint k = 0; k < \(asyncIterationsStart); k += 8) {
   B_offset += uint2(offset_in_group.x, morton_offset.y);
   
   auto A_src = simdgroup_matrix_storage<\(memoryName("A"))>::apply_offset(
-    A, \(leadingDimensions.A), A_offset, A_trans);
+    A, \(leadingDimension("A")), A_offset, A_trans);
   auto B_src = simdgroup_matrix_storage<\(memoryName("B"))>::apply_offset(
-    B, \(leadingDimensions.B), B_offset, B_trans);
+    B, \(leadingDimension("B")), B_offset, B_trans);
 
   simdgroup_matrix_storage<\(registerName("A"))> A_sram[
     \(registerM / 8) * (8 / 8)];
@@ -143,14 +143,19 @@ for (uint k = 0; k < \(asyncIterationsStart); k += 8) {
 
 // Perform the iterations where async copy is used.
 for (uint k = \(asyncIterationsStart); k < K; k += K_group) {
+  auto A_block = (threadgroup \(memoryName("A"))*)(
+    threadgroup_block);
+  auto B_block = (threadgroup \(memoryName("B"))*)(
+    threadgroup_block + \(blockBytes.A));
+  
   // Launch an async copy from device to threadgroup memory.
   if (sidx == 0) {
     uint2 A_offset(k, M_offset);
     uint2 B_offset(N_offset, k);
     auto A_src = simdgroup_matrix_storage<\(memoryName("A"))>::apply_offset(
-      A, \(leadingDimensions.A), A_offset, A_trans);
+      A, \(leadingDimension("A")), A_offset, A_trans);
     auto B_src = simdgroup_matrix_storage<\(memoryName("B"))>::apply_offset(
-      B, \(leadingDimensions.B), B_offset, B_trans);
+      B, \(leadingDimension("B")), B_offset, B_trans);
 
     ushort M_tile_dimension = min(uint(M_group), M - M_offset);
     ushort N_tile_dimension = min(uint(N_group), N - N_offset);
@@ -163,21 +168,25 @@ for (uint k = \(asyncIterationsStart); k < K; k += K_group) {
     ushort2 B_tile_dst(N_tile_dimension, K_tile_padded);
 
     simdgroup_event events[2];
-    events[0].async_copy(A_block, \(leadingBlockDimensions.A), A_tile_dst,
-                         A_src, \(leadingDimensions.A), A_tile_src, A_trans);
-    events[1].async_copy(B_block, \(leadingBlockDimensions.B), B_tile_dst,
-                         B_src, \(leadingDimensions.B), B_tile_src, B_trans);
+    events[0].async_copy(
+      A_block, \(leadingBlockDimensions.A), A_tile_dst,
+      A_src, \(leadingDimension("A")), A_tile_src, A_trans);
+    events[1].async_copy(
+      B_block, \(leadingBlockDimensions.B), B_tile_dst,
+      B_src, \(leadingDimension("B")), B_tile_src, B_trans);
     simdgroup_event::wait(2, events);
   }
   threadgroup_barrier(mem_flags::mem_threadgroup);
-
+  
   ushort2 A_block_offset(morton_offset.x, offset_in_group.y);
   ushort2 B_block_offset(offset_in_group.x, morton_offset.y);
-  auto A_block_src = simdgroup_matrix_storage<\(memoryName("A"))>::apply_offset(
-    A_block, \(leadingBlockDimensions.A), A_block_offset, A_trans);
-  auto B_block_src = simdgroup_matrix_storage<\(memoryName("B"))>::apply_offset(
-    B_block, \(leadingBlockDimensions.B), B_block_offset, B_trans);
-
+  auto A_block_src = A_block;
+  auto B_block_src = B_block;
+  A_block_src = simdgroup_matrix_storage<\(memoryName("A"))>::apply_offset(
+    A_block_src, \(leadingBlockDimensions.A), A_block_offset, A_trans);
+  B_block_src = simdgroup_matrix_storage<\(memoryName("B"))>::apply_offset(
+    B_block_src, \(leadingBlockDimensions.B), B_block_offset, B_trans);
+  
   simdgroup_matrix_storage<\(registerName("A"))> A_sram[
     \(registerM / 8) * (K_group / 8)];
   simdgroup_matrix_storage<\(registerName("B"))> B_sram[
@@ -187,7 +196,7 @@ for (uint k = \(asyncIterationsStart); k < K; k += K_group) {
     multiply_accumulate(A_block_src, B_block_src,
                         A_sram, B_sram, C_sram, k);
   }
-
+  
   // Will there be any iterations after this one?
   if (k + K_group < K) {
     // If so, we haven't reached the edge of either input matrix yet.
@@ -199,7 +208,7 @@ for (uint k = \(asyncIterationsStart); k < K; k += K_group) {
     threadgroup_barrier(mem_flags::mem_threadgroup);
   }
 }
-  
+
 """
   }
 }

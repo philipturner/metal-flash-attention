@@ -6,18 +6,23 @@
 //
 
 extension GEMMKernel {
-  func createLoadC() -> String {
-    func loadAccumulator() -> String {
-      return ""
+  // Whether the accumulator can be written directly to RAM.
+  fileprivate var directAccessCondition: String {
+    if preferAsyncStore {
+      return "false"
+    } else {
+      return "(M >= M_group) && (N >= N_group)"
     }
-    
-    return """
+  }
+  
+  func createInitializeC() -> String {
+    """
     
     simdgroup_matrix_storage<\(registerName("C"))> C_sram[
       \((registerM / 8) * (registerN / 8))];
     
     if (arguments.accumulateC) {
-      \(loadAccumulator())
+      \(createLoadC())
     } else {
       #pragma clang loop unroll(full)
       for (ushort m = 0; m < \(registerM); m += 8) {
@@ -33,6 +38,18 @@ extension GEMMKernel {
     """
   }
   
+  func createLoadC() -> String {
+    var loadFunctionC: String
+    if memoryPrecisions.C == .BF16,
+       registerPrecisions.C == .FP32 {
+      loadFunctionC = "load_bfloat"
+    } else {
+      loadFunctionC = "load"
+    }
+    
+    return ""
+  }
+  
   func createStoreC() -> String {
     var storeFunctionC: String
     if memoryPrecisions.C == .BF16,
@@ -42,21 +59,14 @@ extension GEMMKernel {
       storeFunctionC = "store"
     }
     
-    var condition: String
-    if preferAsyncStore {
-      condition = "false"
-    } else {
-      condition = "(M >= M_group) && (N >= N_group)"
-    }
-    
     return """
 
-if (\(condition)) {
+if (\(directAccessCondition)) {
   // Fast path for matrices that qualify.
   uint2 C_offset(N_offset + offset_in_group.x,
                  M_offset + offset_in_group.y);
   auto C_dst = simdgroup_matrix_storage<\(memoryName("C"))>::apply_offset(
-    C, N, C_offset);
+    C, \(leadingDimension("C")), C_offset);
   
   // Write the accumulator to device memory.
 #pragma clang loop unroll(full)
@@ -65,7 +75,7 @@ if (\(condition)) {
     for (ushort n = 0; n < \(registerN); n += 8) {
       ushort2 origin(n, m);
       auto C = get_sram(C_sram, \(registerN), origin);
-      C->\(storeFunctionC)(C_dst, N, origin);
+      C->\(storeFunctionC)(C_dst, \(leadingDimension("C")), origin);
     }
   }
 } else {
@@ -73,7 +83,7 @@ if (\(condition)) {
   auto C_block = (threadgroup \(memoryName("C"))*)(threadgroup_block);
   auto C_block_dst =
   simdgroup_matrix_storage<\(memoryName("C"))>::apply_offset(
-    C_block, N_group, offset_in_group);
+    C_block, \(leadingBlockDimensions.C), offset_in_group);
   threadgroup_barrier(mem_flags::mem_threadgroup);
   
   // Write the accumulator to threadgroup memory.
@@ -83,7 +93,8 @@ if (\(condition)) {
     for (ushort n = 0; n < \(registerN); n += 8) {
       ushort2 origin(n, m);
       auto C = get_sram(C_sram, \(registerN), origin);
-      C->\(storeFunctionC)(C_block_dst, N_group, origin);
+      C->\(storeFunctionC)(
+        C_block_dst, \(leadingBlockDimensions.C), origin);
     }
   }
   threadgroup_barrier(mem_flags::mem_threadgroup);
@@ -94,7 +105,7 @@ if (\(condition)) {
     ushort2 C_tile(min(uint(N_group), N - C_offset.x),
                    min(uint(M_group), M - C_offset.y));
     auto C_dst = simdgroup_matrix_storage<\(memoryName("C"))>::apply_offset(
-      C, N, C_offset);
+      C, \(leadingDimension("C")), C_offset);
     
     // If we shift successfully, the garbage zone moves from the bottom right
     // to the top left.
@@ -107,11 +118,13 @@ if (\(condition)) {
         C_block_shift.x = N_shift;
       }
       C_block = simdgroup_matrix_storage<\(memoryName("C"))>::apply_offset(
-        C_block, N_group, C_block_shift);
+        C_block, \(leadingBlockDimensions.C), C_block_shift);
     }
     
     simdgroup_event event;
-    event.async_copy(C_dst, N, C_tile, C_block, N_group, C_tile);
+    event.async_copy(
+      C_dst, \(leadingDimension("C")), C_tile,
+      C_block, \(leadingBlockDimensions.C), C_tile);
   }
 }
 """
