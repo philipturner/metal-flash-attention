@@ -14,20 +14,14 @@ import QuartzCore
 /// function to script tests in their fork.
 
 // Zeroinit branch in GEMM
-// - runtime boolean shader argument
-// - negligible performance delta, although omitted from reference impl.
-// - easiest way to support in-place accumulation
-// - include "previous C matrix" in shape tests
-// - check for a performance regression in the Laplacian test, both when C
-//   is and isn't loaded from a previous value. Is it correct and performant
-//   on both M1 Max and M4?
-//
-// if (accumulate) {
-//   load
-// } else {
-//   zeroinit
-// }
+// - Profile the kernel with "load previous C" done through a function
+//   constant, on both M1 and M4. Are there any regressions?
 //
 // Noncontiguous strides
-// - include leading dimension A, B, and C in the function constants, just
-//   like BLAS
+// - Include leading dimension A, B, and C in the function constants, just
+//   like BLAS.
+// - Change "paddedBlockDimensions" to "leadingBlockDimensions".
+//
+// Attention
+// - Backward Key-Value gains the ability to work on a subregion of the
+//   attention matrix at a time.

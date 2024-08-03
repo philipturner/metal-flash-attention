@@ -66,6 +66,9 @@ extension GEMMKernel {
       constants.setConstantValue(&N, type: .uint, index: 1)
       constants.setConstantValue(&K, type: .uint, index: 2)
       
+      var loadPreviousC = gemmDesc.loadPreviousC
+      constants.setConstantValue(&loadPreviousC, type: .bool, index: 10)
+      
       let function = try! library.makeFunction(
         name: "gemm", constantValues: constants)
       let pipeline = try! device.makeComputePipelineState(function: function)

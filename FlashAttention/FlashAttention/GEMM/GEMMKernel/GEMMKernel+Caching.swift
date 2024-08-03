@@ -11,7 +11,25 @@ extension GEMMKernel {
     if preferAsyncStore {
       return "false"
     } else {
-      return "(M >= M_group) && (N >= N_group)"
+      // In the vanilla GEMM kernel, the extra storing code can be optimized
+      // away at compile time. The compiler may allocate less registers, and
+      // occupancy may be greater.
+      var output = "(M >= M_group) && (N >= N_group)"
+      
+      // When accumulate is supported, there are overlapping writes. We must
+      // sanitize the matrix edge with async copy. The optimization from
+      // the unified GEMM kernel cannot be applied.
+      //
+      // Ideally, a client implementation would add a GEMMKernelDescriptor
+      // property for whether in-place accumulation was enabled. When false,
+      // the statements below are not part of the direct-access condition.
+      // The code for loading C from memory would be elided at
+      // code-generation time.
+      //
+      // MFA has settled on a function constant to toggle accumulation.
+      output += " && (load_previous_C ? (M_offset == gid.y * M_group) : true)"
+      output += " && (load_previous_C ? (N_offset == gid.x * N_group) : true)"
+      return output
     }
   }
   
@@ -21,7 +39,7 @@ extension GEMMKernel {
     simdgroup_matrix_storage<\(registerName("C"))> C_sram[
       \((registerM / 8) * (registerN / 8))];
     
-    if (arguments.accumulateC) {
+    if (load_previous_C) {
       \(createLoadC())
     } else {
       #pragma clang loop unroll(full)
@@ -49,9 +67,7 @@ extension GEMMKernel {
     
     return """
 
-if (\(directAccessCondition) &&
-    (gid.y * M_group < M_edge) &&
-    (gid.x * N_group < N_edge)) {
+if (\(directAccessCondition)) {
   // Fast path for matrices that qualify.
   uint2 C_offset(N_offset + offset_in_group.x,
                  M_offset + offset_in_group.y);
@@ -119,13 +135,7 @@ if (\(directAccessCondition) &&
     
     return """
 
-// Overlapping writes; this access must be sanitized through async copy.
-//
-// Either 'false' or
-// 'directAccessCondition && (gid.y * M_group < M_edge) && (gid.x * N_group < N_edge)'.
-if (\(directAccessCondition) &&
-    (gid.y * M_group < M_edge) &&
-    (gid.x * N_group < N_edge)) {
+if (\(directAccessCondition)) {
   // Fast path for matrices that qualify.
   uint2 C_offset(N_offset + offset_in_group.x,
                  M_offset + offset_in_group.y);

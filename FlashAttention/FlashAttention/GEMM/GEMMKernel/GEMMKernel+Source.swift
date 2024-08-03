@@ -13,65 +13,7 @@ extension GEMMKernel {
 \(createMetalSimdgroupMatrixStorage())
 using namespace metal;
 
-// Dimensions of each matrix.
-// - Limitations to matrix size:
-//   - 2^32 in each dimension (M/N/K).
-//   - Extending to 2^64 may require changing 'uint' to 'ulong'. There is a
-//     good chance this will significantly degrade performance, and require
-//     changing the data type of several variables that process addresses. The
-//     client is responsible for ensuring correctness and performance with
-//     matrices spanning several billion elements in one direction.
-//   - The matrix dimensions must be known at compile time, via function
-//     constants. Dynamic matrix shapes are beyond the scope of this reference
-//     implementation. Dynamic shapes cause a non-negligible regression to
-//     shader execution speed. However, they could minimize a compilation
-//     latency bottleneck in some use cases.
-// - Limitations to batch size:
-//   - Dictated by how the client modifies the code to implement batching.
-//   - Dynamic batch shapes would likely not harm performance much. For example,
-//     someone could enter an array of pointers/memory offsets to different
-//     matrices in the batch. Each slice of a 3D thread grid could read a
-//     different pointer from memory, and use that pointer as the A/B/C matrix.
-//     Another approach is to restrict the input format, so all matrices are
-//     stored contiguously in memory. Then, the memory offset could be computed
-//     analytically from matrix size and the Z dimension in a 3D thread grid.
-//
-// Another note:
-// - The rows of the matrix must be contiguous in memory. Supporting strides
-//   that differ from the actual matrix dimensions should not be difficult, but
-//   it is out of scope for this reference kernel.
-constant uint M [[function_constant(0)]];
-constant uint N [[function_constant(1)]];
-constant uint K [[function_constant(2)]];
-
-// Whether each matrix is transposed.
-constant bool A_trans = \(transposeState.A);
-constant bool B_trans = \(transposeState.B);
-
-// Define the memory layout of the matrix block.
-constant ushort M_group = \(blockDimensions.M);
-constant ushort N_group = \(blockDimensions.N);
-constant ushort K_group = \(blockDimensions.K);
-
-// Thresholds that mark the matrix edge.
-constant uint M_edge = M - (M % M_group);
-constant uint N_edge = N - (N % N_group);
-
-// Find the number of elements in the final block. If the matrix
-// dimensions are perfectly divisibly by block dimensions, we don't want
-// this value to be zero. The final block is a full block.
-constant ushort M_remainder = (M % \(registerM) == 0)
-  ? \(registerM) : M % \(registerM);
-constant ushort N_remainder = (N % \(registerN) == 0)
-  ? \(registerN) : N % \(registerN);
-constant ushort K_remainder = (K % K_group == 0)
-  ? K_group : K % K_group;
-constant ushort K_remainder_padded = (K_remainder + 7) / 8 * 8;
-
-// Shift the final block, so it doesn't access out-of-bounds memory.
-constant ushort M_shift = (M < M_group) ? 0 : \(registerM) - M_remainder;
-constant ushort N_shift = (N < N_group) ? 0 : \(registerN) - N_remainder;
-
+\(createConstants())
 \(createUtilities())
 
 // Metal function arguments.
@@ -97,14 +39,9 @@ constant ushort N_shift = (N < N_group) ? 0 : \(registerN) - N_remainder;
 // - ideally 10 KB or less
 // - precision: void/8-bit integer to make the pointer arithmetic more legible
 
-struct Arguments {
-  bool accumulateC;
-};
-
 kernel void gemm(device \(memoryName("A")) *A [[buffer(0)]],
                  device \(memoryName("B")) *B [[buffer(1)]],
                  device \(memoryName("C")) *C [[buffer(2)]],
-                 constant Arguments &arguments [[buffer(30)]],
                  threadgroup uchar *threadgroup_block [[threadgroup(0)]],
                  
                  uint3 gid [[threadgroup_position_in_grid]],
@@ -143,6 +80,74 @@ kernel void gemm(device \(memoryName("A")) *A [[buffer(0)]],
   \(createMultiplyIterations())
   \(createStoreC())
 }
+
+"""
+  }
+  
+  func createConstants() -> String {
+    """
+    
+// Dimensions of each matrix.
+// - Limitations to matrix size:
+//   - 2^32 in each dimension (M/N/K).
+//   - Extending to 2^64 may require changing 'uint' to 'ulong'. There is a
+//     good chance this will significantly degrade performance, and require
+//     changing the data type of several variables that process addresses. The
+//     client is responsible for ensuring correctness and performance with
+//     matrices spanning several billion elements in one direction.
+//   - The matrix dimensions must be known at compile time, via function
+//     constants. Dynamic matrix shapes are beyond the scope of this reference
+//     implementation. Dynamic shapes cause a non-negligible regression to
+//     shader execution speed. However, they could minimize a compilation
+//     latency bottleneck in some use cases.
+// - Limitations to batch size:
+//   - Dictated by how the client modifies the code to implement batching.
+//   - Dynamic batch shapes would likely not harm performance much. For example,
+//     someone could enter an array of pointers/memory offsets to different
+//     matrices in the batch. Each slice of a 3D thread grid could read a
+//     different pointer from memory, and use that pointer as the A/B/C matrix.
+//     Another approach is to restrict the input format, so all matrices are
+//     stored contiguously in memory. Then, the memory offset could be computed
+//     analytically from matrix size and the Z dimension in a 3D thread grid.
+//
+// Another note:
+// - The rows of the matrix must be contiguous in memory. Supporting strides
+//   that differ from the actual matrix dimensions should not be difficult, but
+//   it is out of scope for this reference kernel.
+constant uint M [[function_constant(0)]];
+constant uint N [[function_constant(1)]];
+constant uint K [[function_constant(2)]];
+
+// Whether to load the previous value of C, and add it to the accumulator.
+constant bool load_previous_C [[function_constant(10)]];
+
+// Whether each matrix is transposed.
+constant bool A_trans = \(transposeState.A);
+constant bool B_trans = \(transposeState.B);
+
+// Define the memory layout of the matrix block.
+constant ushort M_group = \(blockDimensions.M);
+constant ushort N_group = \(blockDimensions.N);
+constant ushort K_group = \(blockDimensions.K);
+
+// Thresholds that mark the matrix edge.
+constant uint M_edge = M - (M % M_group);
+constant uint N_edge = N - (N % N_group);
+
+// Find the number of elements in the final block. If the matrix
+// dimensions are perfectly divisibly by block dimensions, we don't want
+// this value to be zero. The final block is a full block.
+constant ushort M_remainder = (M % \(registerM) == 0)
+  ? \(registerM) : M % \(registerM);
+constant ushort N_remainder = (N % \(registerN) == 0)
+  ? \(registerN) : N % \(registerN);
+constant ushort K_remainder = (K % K_group == 0)
+  ? K_group : K % K_group;
+constant ushort K_remainder_padded = (K_remainder + 7) / 8 * 8;
+
+// Shift the final block, so it doesn't access out-of-bounds memory.
+constant ushort M_shift = (M < M_group) ? 0 : \(registerM) - M_remainder;
+constant ushort N_shift = (N < N_group) ? 0 : \(registerN) - N_remainder;
 
 """
   }

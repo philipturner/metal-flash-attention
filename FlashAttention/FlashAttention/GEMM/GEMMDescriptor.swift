@@ -18,6 +18,8 @@ struct GEMMDescriptor {
   /// (with potentially nonuniform stride or noncontiguous padding).
   var batchDimension: Int = 1
   
+  var loadPreviousC: Bool = false
+  
   /// The dimensions of the input and output matrices.
   /// - Parameter M: Number of output columns.
   /// - Parameter N: Number of output rows.
@@ -40,12 +42,14 @@ struct GEMMDescriptor {
 
 struct GEMMKey: Equatable, Hashable {
   var batchDimension: Int
+  var loadPreviousC: UInt8
   var matrixDimensions: SIMD3<UInt32>
   var memoryPrecisions: SIMD3<UInt16>
   var transposeState: SIMD2<UInt8>
  
   init(copying source: GEMMDescriptor) {
     batchDimension = source.batchDimension
+    loadPreviousC = GEMMKernelKey.createBoolean(source.loadPreviousC)
     matrixDimensions = Self.createMatrixDimensions(source.matrixDimensions)
     memoryPrecisions = GEMMKernelKey.createPrecisions(source.memoryPrecisions)
     transposeState = GEMMKernelKey.createTransposeState(source.transposeState)

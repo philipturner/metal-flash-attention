@@ -36,6 +36,7 @@ func executeScript() {
     }
     
     // Define the problem configuration.
+    let loadPreviousC = Bool.random()
     let matrixDimensions = (
       M: randomInts[0],
       N: randomInts[1],
@@ -50,6 +51,7 @@ func executeScript() {
     
     // Run a test.
     var gemmDesc = GEMMDescriptor()
+    gemmDesc.loadPreviousC = loadPreviousC
     gemmDesc.matrixDimensions = matrixDimensions
     gemmDesc.memoryPrecisions = memoryPrecisions
     gemmDesc.transposeState = transposeState
@@ -119,16 +121,6 @@ func runCorrectnessTest(descriptor: GEMMDescriptor) {
     encoder.setBuffer(bufferB, offset: 0, index: 1)
     encoder.setBuffer(bufferC, offset: 0, index: 2)
     
-    func setArguments(accumulateC: Bool) {
-      struct Arguments {
-        var accumulateC: Bool
-      }
-      var arguments = Arguments(accumulateC: accumulateC)
-      encoder.setBytes(
-        &arguments, length: MemoryLayout<Arguments>.stride, index: 30)
-    }
-    setArguments(accumulateC: true)
-    
     func ceilDivide(_ target: UInt32, _ granularity: UInt16) -> Int {
       (Int(target) + Int(granularity) - 1) / Int(granularity)
     }
@@ -191,9 +183,6 @@ func runCorrectnessTest(descriptor: GEMMDescriptor) {
     for n in 0..<matrixDimensions.N {
       var dotProduct: Float = .zero
       
-      let addressC: UInt32 = m * matrixDimensions.N + n
-      dotProduct = operandPreviousC[Int(addressC)]
-      
       for k in 0..<matrixDimensions.K {
         var addressA: UInt32
         var addressB: UInt32
@@ -213,6 +202,10 @@ func runCorrectnessTest(descriptor: GEMMDescriptor) {
         dotProduct += valueA * valueB
       }
       
+      let addressC: UInt32 = m * matrixDimensions.N + n
+      if descriptor.loadPreviousC {
+        dotProduct += operandPreviousC[Int(addressC)]
+      }
       cpuOperandC[Int(addressC)] = dotProduct
     }
   }
