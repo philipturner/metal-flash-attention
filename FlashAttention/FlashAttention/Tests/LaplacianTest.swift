@@ -10,7 +10,7 @@ import Metal
 // Tests the performance of large matrix multiplications, using the
 // second-order Laplacian in direct matrix form.
 
-#if false
+#if true
 func executeScript() {
   print("Hello, console.")
   
@@ -151,6 +151,8 @@ func profileProblemSize(
   var A = [Float](repeating: .zero, count: problemSize * problemSize)
   var B = [Float](repeating: .zero, count: problemSize * problemSize)
   var C = [Float](repeating: .zero, count: problemSize * problemSize)
+  var previousOperandC = [Float](
+    repeating: .zero, count: problemSize * problemSize)
   
   // Initialize A as the 2nd-order periodic Laplacian.
   for diagonalID in 0..<problemSize {
@@ -172,6 +174,15 @@ func profileProblemSize(
       let address = rowID * problemSize + columnID
       let entry = Float.random(in: 0..<1)
       B[address] = entry
+    }
+  }
+  
+  // Initialize C to random numbers.
+  for rowID in 0..<problemSize {
+    for columnID in 0..<problemSize {
+      let address = rowID * problemSize + columnID
+      let entry = Float.random(in: 0..<1)
+      previousOperandC[address] = entry
     }
   }
   
@@ -200,11 +211,11 @@ func profileProblemSize(
     let bufferB = MTLContext.global
       .createBuffer(B, descriptor.memoryPrecisions!.B)
     let bufferC = MTLContext.global
-      .createBuffer(C, descriptor.memoryPrecisions!.C)
+      .createBuffer(previousOperandC, descriptor.memoryPrecisions!.C)
     
     // Profile the latency of matrix multiplication.
-    for _ in 0..<15 {
-      let duplicatedCommandCount: Int = 20
+    for _ in 0..<1 { // 15
+      let duplicatedCommandCount: Int = 1 // 20
       
       // Encode the GPU command.
       let commandBuffer = MTLContext.global.commandQueue.makeCommandBuffer()!
@@ -215,6 +226,17 @@ func profileProblemSize(
       encoder.setBuffer(bufferA, offset: 0, index: 0)
       encoder.setBuffer(bufferB, offset: 0, index: 1)
       encoder.setBuffer(bufferC, offset: 0, index: 2)
+      
+      func setArguments(accumulateC: Bool) {
+        struct Arguments {
+          var accumulateC: Bool
+        }
+        var arguments = Arguments(accumulateC: accumulateC)
+        encoder.setBytes(
+          &arguments, length: MemoryLayout<Arguments>.stride, index: 30)
+      }
+      setArguments(accumulateC: true)
+      
       for _ in 0..<duplicatedCommandCount {
         func ceilDivide(_ target: Int, _ granularity: UInt16) -> Int {
           (target + Int(granularity) - 1) / Int(granularity)
@@ -298,6 +320,7 @@ func profileProblemSize(
     errorThreshold = max(errorThreshold, thresholdC)
   }
   
+  #if true
   // Check the results.
   var errorCount: Int = .zero
   for m in 0..<problemSize {
@@ -326,7 +349,12 @@ func profileProblemSize(
       }
       
       // Find the expected result.
-      let expected = leftSource - 2 * centerSource + rightSource
+      var expected = leftSource - 2 * centerSource + rightSource
+      if descriptor.transposeState!.A {
+        expected += previousOperandC[n * problemSize + m]
+      } else {
+        expected += previousOperandC[m * problemSize + n]
+      }
       
       // Find the actual result.
       var actual: Float
@@ -346,6 +374,7 @@ func profileProblemSize(
       }
     }
   }
+  #endif
   return SIMD2(maxGFLOPS, occupancy)
 }
 #endif

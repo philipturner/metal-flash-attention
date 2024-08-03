@@ -11,7 +11,7 @@ import QuartzCore
 // Test the correctness of the GEMM kernel, in edge cases where the matrix
 // size is indivisible by the block size.
 
-#if true
+#if false
 func executeScript() {
   print("Hello, console.")
   
@@ -91,7 +91,7 @@ func runCorrectnessTest(descriptor: GEMMDescriptor) {
   }
   for elementID in operandPreviousC.indices {
     let randomNumber = Float.random(in: 0..<1)
-    operandPreviousC[elementID] = 0 * randomNumber * normalizationFactor
+    operandPreviousC[elementID] = randomNumber * normalizationFactor
   }
   
   // Create the buffers.
@@ -127,7 +127,7 @@ func runCorrectnessTest(descriptor: GEMMDescriptor) {
       encoder.setBytes(
         &arguments, length: MemoryLayout<Arguments>.stride, index: 30)
     }
-    setArguments(accumulateC: false)
+    setArguments(accumulateC: true)
     
     func ceilDivide(_ target: UInt32, _ granularity: UInt16) -> Int {
       (Int(target) + Int(granularity) - 1) / Int(granularity)
@@ -297,6 +297,17 @@ fileprivate func createTolerance(
     } else {
       tolerance = max(tolerance, 5e-3)
     }
+  }
+  
+  // List the precisions involved in the bias rounding event.
+  // convert bias -> accumulator
+  let biasPrecisions = [memoryPrecisions.C]
+  if biasPrecisions.contains(.BF16) {
+    tolerance += Float.exp2(-8.0)
+  } else if biasPrecisions.contains(.FP16) {
+    tolerance += Float.exp2(-10.0)
+  } else {
+    tolerance += Float.exp2(-23.0)
   }
   
   return tolerance

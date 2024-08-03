@@ -19,7 +19,8 @@ import QuartzCore
 // - easiest way to support in-place accumulation
 // - include "previous C matrix" in shape tests
 // - check for a performance regression in the Laplacian test, both when C
-//   is and isn't loaded from a previous value
+//   is and isn't loaded from a previous value. Is it correct and performant
+//   on both M1 Max and M4?
 //
 // if (accumulate) {
 //   load
