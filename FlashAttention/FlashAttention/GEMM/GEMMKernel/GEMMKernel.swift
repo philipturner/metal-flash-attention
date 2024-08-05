@@ -21,12 +21,8 @@ struct GEMMKernel {
     A: GEMMOperandPrecision, B: GEMMOperandPrecision, C: GEMMOperandPrecision)
   
   // Layout of the data in memory.
-  var blockBytes: (A: UInt16, B: UInt16, C: UInt16)
   var blockDimensions: (M: UInt16, N: UInt16, K: UInt16)
   var leadingBlockDimensions: (A: UInt16, B: UInt16, C: UInt16)
-  var paddedBlockDimensionsA: (M: UInt16, K: UInt16)
-  var paddedBlockDimensionsB: (K: UInt16, N: UInt16)
-  var paddedBlockDimensionsC: (M: UInt16, N: UInt16)
   var transposeState: (A: Bool, B: Bool)
   
   // Threadgroup sizes.
@@ -121,40 +117,44 @@ struct GEMMKernel {
     
     // Retrieve the "padded" block dimensions, otherwise compute analytically
     // from the true block dimensions.
-    if let paddedBlockDimensions = descriptor.paddedBlockDimensions {
-      paddedBlockDimensionsA = paddedBlockDimensions.A
-      paddedBlockDimensionsB = paddedBlockDimensions.B
-      paddedBlockDimensionsC = paddedBlockDimensions.C
-    } else {
-      paddedBlockDimensionsA = (blockDimensions.M, blockDimensions.K)
-      paddedBlockDimensionsB = (blockDimensions.K, blockDimensions.N)
-      paddedBlockDimensionsC = (blockDimensions.M, blockDimensions.N)
+    //
+    // TODO: Also, compute the block bytes in this function.
+    func chooseLeadingBlockDimension(
+      _ specifiedLeading: UInt16?,
+      _ transposeState: Bool,
+      _ untransposedRows: UInt16,
+      _ untransposedColumns: UInt16
+    ) -> UInt16 {
+      var expectedLeading: UInt16
+      if transposeState {
+        expectedLeading = untransposedRows
+      } else {
+        expectedLeading = untransposedColumns
+      }
+      
+      var actualLeading: UInt16
+      if let specifiedLeading {
+        guard specifiedLeading >= expectedLeading else {
+          fatalError("Leading block dimension was too small.")
+        }
+        actualLeading = specifiedLeading
+      } else {
+        actualLeading = expectedLeading
+      }
+      
+      return actualLeading
     }
     
-    // Determine the block dimensions from the transpose state.
     leadingBlockDimensions = (.zero, .zero, .zero)
-    if transposeState.A {
-      leadingBlockDimensions.A = paddedBlockDimensionsA.M
-    } else {
-      leadingBlockDimensions.A = paddedBlockDimensionsA.K
-    }
-    if transposeState.B {
-      leadingBlockDimensions.B = paddedBlockDimensionsB.K
-    } else {
-      leadingBlockDimensions.B = paddedBlockDimensionsB.N
-    }
-    leadingBlockDimensions.C = paddedBlockDimensionsC.N
-    
-    // Determine the threadgroup memory allocation.
-    do {
-      blockBytes = (
-        A: paddedBlockDimensionsA.M * paddedBlockDimensionsA.K,
-        B: paddedBlockDimensionsB.K * paddedBlockDimensionsB.N,
-        C: paddedBlockDimensionsC.M * paddedBlockDimensionsC.N)
-      blockBytes.A *= UInt16(memoryPrecisions.A.size)
-      blockBytes.B *= UInt16(memoryPrecisions.B.size)
-      blockBytes.C *= UInt16(memoryPrecisions.C.size)
-    }
+    leadingBlockDimensions.A = chooseLeadingBlockDimension(
+      descriptor.leadingBlockDimensions?.A, transposeState.A,
+      blockDimensions.M, blockDimensions.K)
+    leadingBlockDimensions.B = chooseLeadingBlockDimension(
+      descriptor.leadingBlockDimensions?.B, transposeState.B,
+      blockDimensions.K, blockDimensions.N)
+    leadingBlockDimensions.C = chooseLeadingBlockDimension(
+      descriptor.leadingBlockDimensions?.C, false,
+      blockDimensions.M, blockDimensions.N)
     
     // Compile the shader source.
     source = createSource()
@@ -184,7 +184,10 @@ extension GEMMKernel {
   }
   
   var threadgroupMemoryAllocation: UInt16 {
-    max(blockBytes.A + blockBytes.B, blockBytes.C)
+    let blockBytesA = self.blockBytes("A")
+    let blockBytesB = self.blockBytes("B")
+    let blockBytesC = self.blockBytes("C")
+    return max(blockBytesA + blockBytesB, blockBytesC)
   }
   
   func transposed(_ operand: String) -> Bool {
@@ -203,5 +206,61 @@ extension GEMMKernel {
     case "C": return transposed("C") ? "M" : "N"
     default: fatalError("Unrecognized operand.")
     }
+  }
+  
+  func leadingBlockDimension(_ operand: String) -> UInt16 {
+    switch operand {
+    case "A": return leadingBlockDimensions.A
+    case "B": return leadingBlockDimensions.B
+    case "C": return leadingBlockDimensions.C
+    default: fatalError("Unrecognized operand.")
+    }
+  }
+  
+  func trailingBlockDimension(_ operand: String) -> UInt16 {
+    func chooseTrailingBlockDimension(
+      _ transposeState: Bool,
+      _ untransposedRows: UInt16,
+      _ untransposedColumns: UInt16
+    ) -> UInt16 {
+      if transposeState {
+        return untransposedColumns
+      } else {
+        return untransposedRows
+      }
+    }
+    
+    switch operand {
+    case "A":
+      return chooseTrailingBlockDimension(
+        transposed("A"), blockDimensions.M, blockDimensions.K)
+    case "B":
+      return chooseTrailingBlockDimension(
+        transposed("B"), blockDimensions.K, blockDimensions.N)
+    case "C":
+      return chooseTrailingBlockDimension(
+        transposed("C"), blockDimensions.M, blockDimensions.N)
+    default: fatalError("Unrecognized operand.")
+    }
+  }
+  
+  func blockBytes(_ operand: String) -> UInt16 {
+    var output: UInt16 = 1
+    output *= leadingBlockDimension(operand)
+    output *= trailingBlockDimension(operand)
+    
+    var memoryPrecision: GEMMOperandPrecision
+    switch operand {
+    case "A":
+      memoryPrecision = memoryPrecisions.A
+    case "B":
+      memoryPrecision = memoryPrecisions.B
+    case "C":
+      memoryPrecision = memoryPrecisions.C
+    default: 
+      fatalError("Unrecognized operand.")
+    }
+    output *= UInt16(memoryPrecision.size)
+    return output
   }
 }

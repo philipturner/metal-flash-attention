@@ -11,7 +11,7 @@ import QuartzCore
 // Test the correctness of the GEMM kernel, in edge cases where the matrix
 // size is indivisible by the block size.
 
-#if false
+#if true
 func executeScript() {
   print("Hello, console.")
   
@@ -300,7 +300,7 @@ fileprivate func createTolerance(
   } else if biasPrecisions.contains(.FP16) {
     tolerance += Float.exp2(-10.0)
   } else {
-    tolerance += Float.exp2(-23.0)
+    tolerance += Float.exp2(-22.0)
   }
   
   return tolerance

@@ -275,9 +275,9 @@ extension GEMMKernelDescriptor {
     if useLargeAllocation {
       let idealGroups = coreCount * 6
       if actualGroups <= idealGroups {
-        self.blockDimensions = (32, 32, 32)
+        blockDimensions = (32, 32, 32)
       } else {
-        self.blockDimensions = (48, 48, 24)
+        blockDimensions = (48, 48, 24)
         
         // This is verified to be optimal for:
         // - (memA, memB, memC) = (FP32, FP32, FP32)
@@ -286,16 +286,20 @@ extension GEMMKernelDescriptor {
         // - (memA, memB, memC) = (FP16, FP32, FP16)
         switch transposeState {
         case (false, false):
-          self.paddedBlockDimensions = ((48, 24), (24, 48), (48, 48))
+          // Mx(K), Kx(N), Mx(N)
+          leadingBlockDimensions = (24, 48, 48)
         case (false, true):
+          // Mx(K), (K)xN, Mx(N)
           let paddedBK = (memoryPrecisions.B == .FP32) ? UInt16(28) : 24
-          self.paddedBlockDimensions = ((48, 24), (paddedBK, 48), (48, 48))
+          leadingBlockDimensions = (24, paddedBK, 48)
         case (true, false):
+          // (M)xK, Kx(N), Mx(N)
           let paddedAM = (memoryPrecisions.A == .FP32) ? UInt16(52) : 56
-          self.paddedBlockDimensions = ((paddedAM, 24), (24, 48), (48, 48))
+          leadingBlockDimensions = (paddedAM, 48, 48)
         case (true, true):
+          // (M)xK, (K)xN, Mx(N)
           let paddedAM = (memoryPrecisions.A == .FP32) ? UInt16(52) : 56
-          self.paddedBlockDimensions = ((paddedAM, 24), (24, 48), (48, 48))
+          leadingBlockDimensions = (paddedAM, 24, 48)
         }
       }
     } else {

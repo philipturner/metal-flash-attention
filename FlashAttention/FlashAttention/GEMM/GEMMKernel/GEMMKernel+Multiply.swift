@@ -146,7 +146,7 @@ for (uint k = \(asyncIterationsStart); k < K; k += K_group) {
   auto A_block = (threadgroup \(memoryName("A"))*)(
     threadgroup_block);
   auto B_block = (threadgroup \(memoryName("B"))*)(
-    threadgroup_block + \(blockBytes.A));
+    threadgroup_block + \(blockBytes("A")));
   
   // Launch an async copy from device to threadgroup memory.
   if (sidx == 0) {
