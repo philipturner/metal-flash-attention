@@ -247,8 +247,45 @@ func profileProblemSize(
     //  problemSize = 1489 | A^T B   |  768 threads/core | 8034 GFLOPS
     //  problemSize = 1489 | A^T B^T |  832 threads/core | 8461 GFLOPS
     //
-    // TODO: Profile the kernel with "load previous C" as a function constant
-    // on both M1 Max and M4.
+    // load previous C = false (M1 Max)
+    //  problemSize = 1488 | A   B   |  896 threads/core | 8358 GFLOPS
+    //  problemSize = 1488 | A   B^T | 1024 threads/core | 8682 GFLOPS
+    //  problemSize = 1488 | A^T B   | 1024 threads/core | 8803 GFLOPS
+    //  problemSize = 1488 | A^T B^T | 1024 threads/core | 9024 GFLOPS
+    //  problemSize = 1489 | A   B   |  768 threads/core | 8039 GFLOPS
+    //  problemSize = 1489 | A   B^T |  832 threads/core | 8376 GFLOPS
+    //  problemSize = 1489 | A^T B   |  832 threads/core | 8374 GFLOPS
+    //  problemSize = 1489 | A^T B^T |  832 threads/core | 8654 GFLOPS
+    //
+    // load previous C = true (M1 Max)
+    //  problemSize = 1488 | A   B   |  896 threads/core | 8352 GFLOPS
+    //  problemSize = 1488 | A   B^T |  896 threads/core | 8515 GFLOPS
+    //  problemSize = 1488 | A^T B   | 1024 threads/core | 8760 GFLOPS
+    //  problemSize = 1488 | A^T B^T | 1024 threads/core | 9007 GFLOPS
+    //  problemSize = 1489 | A   B   |  768 threads/core | 7917 GFLOPS
+    //  problemSize = 1489 | A   B^T |  768 threads/core | 7992 GFLOPS
+    //  problemSize = 1489 | A^T B   |  832 threads/core | 8185 GFLOPS
+    //  problemSize = 1489 | A^T B^T |  832 threads/core | 8583 GFLOPS
+    //
+    // load previous C = false (M4)
+    //  problemSize = 1488 | A   B   | 1024 threads/core | 3353 GFLOPS
+    //  problemSize = 1488 | A   B^T | 1024 threads/core | 3324 GFLOPS
+    //  problemSize = 1488 | A^T B   | 1024 threads/core | 3338 GFLOPS
+    //  problemSize = 1488 | A^T B^T | 1024 threads/core | 3289 GFLOPS
+    //  problemSize = 1489 | A   B   | 1024 threads/core | 3375 GFLOPS
+    //  problemSize = 1489 | A   B^T | 1024 threads/core | 3317 GFLOPS
+    //  problemSize = 1489 | A^T B   | 1024 threads/core | 3343 GFLOPS
+    //  problemSize = 1489 | A^T B^T | 1024 threads/core | 3298 GFLOPS
+    //
+    // load previous C = true (M4)
+    //  problemSize = 1488 | A   B   | 1024 threads/core | 3374 GFLOPS
+    //  problemSize = 1488 | A   B^T | 1024 threads/core | 3312 GFLOPS
+    //  problemSize = 1488 | A^T B   | 1024 threads/core | 3321 GFLOPS
+    //  problemSize = 1488 | A^T B^T | 1024 threads/core | 3249 GFLOPS
+    //  problemSize = 1489 | A   B   | 1024 threads/core | 3323 GFLOPS
+    //  problemSize = 1489 | A   B^T | 1024 threads/core | 3280 GFLOPS
+    //  problemSize = 1489 | A^T B   | 1024 threads/core | 3308 GFLOPS
+    //  problemSize = 1489 | A^T B^T | 1024 threads/core | 3256 GFLOPS
     
     // Profile the latency of matrix multiplication.
     for _ in 0..<(descriptor.loadPreviousC ? 1 : 15) {
