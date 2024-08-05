@@ -11,7 +11,7 @@ import QuartzCore
 // Test the correctness of the GEMM kernel, in edge cases where the matrix
 // size is indivisible by the block size.
 
-#if true
+#if false
 func executeScript() {
   print("Hello, console.")
   
@@ -49,8 +49,21 @@ func executeScript() {
       A: Bool.random(),
       B: Bool.random())
     
+    // Set the leading dimensions.
+    var leadingDimensions = (
+      A: transposeState.A ? matrixDimensions.M : matrixDimensions.K,
+      B: transposeState.B ? matrixDimensions.K : matrixDimensions.N,
+      C: false ? matrixDimensions.M : matrixDimensions.N)
+    if Bool.random() {
+      leadingDimensions = (
+        A: leadingDimensions.A + UInt32.random(in: 0..<64),
+        B: leadingDimensions.B + UInt32.random(in: 0..<64),
+        C: leadingDimensions.C + UInt32.random(in: 0..<64))
+    }
+    
     // Run a test.
     var gemmDesc = GEMMDescriptor()
+    gemmDesc.leadingDimensions = leadingDimensions
     gemmDesc.loadPreviousC = loadPreviousC
     gemmDesc.matrixDimensions = matrixDimensions
     gemmDesc.memoryPrecisions = memoryPrecisions
@@ -61,24 +74,43 @@ func executeScript() {
 
 // Run a test with the specified configuration.
 func runCorrectnessTest(descriptor: GEMMDescriptor) {
-  guard let matrixDimensions = descriptor.matrixDimensions,
+  guard let leadingDimensions = descriptor.leadingDimensions,
+        let matrixDimensions = descriptor.matrixDimensions,
         let memoryPrecisions = descriptor.memoryPrecisions,
         let transposeState = descriptor.transposeState else {
     fatalError("Descriptor was incomplete.")
   }
+  
+  func chooseTrailingBlockDimension(
+    _ transposeState: Bool,
+    _ untransposedRows: UInt32,
+    _ untransposedColumns: UInt32
+  ) -> UInt32 {
+    if transposeState {
+      return untransposedColumns
+    } else {
+      return untransposedRows
+    }
+  }
+  let trailingDimensionA = chooseTrailingBlockDimension(
+    transposeState.A, matrixDimensions.M, matrixDimensions.K)
+  let trailingDimensionB = chooseTrailingBlockDimension(
+    transposeState.B, matrixDimensions.K, matrixDimensions.N)
+  let trailingDimensionC = chooseTrailingBlockDimension(
+    false, matrixDimensions.M, matrixDimensions.N)
   
   let checkpoint0 = CACurrentMediaTime()
   
   // Set the inputs.
   var operandA = [Float](
     repeating: .zero,
-    count: Int(matrixDimensions.M * matrixDimensions.K))
+    count: Int(trailingDimensionA * leadingDimensions.A))
   var operandB = [Float](
     repeating: .zero,
-    count: Int(matrixDimensions.K * matrixDimensions.N))
+    count: Int(trailingDimensionB * leadingDimensions.B))
   var operandPreviousC = [Float](
     repeating: .zero,
-    count: Int(matrixDimensions.M * matrixDimensions.N))
+    count: Int(trailingDimensionC * leadingDimensions.C))
   
   // Normalize so that every dot product approaches 1.
   let normalizationFactor = 1 / Float(matrixDimensions.K).squareRoot()
@@ -143,12 +175,12 @@ func runCorrectnessTest(descriptor: GEMMDescriptor) {
   // Copy the GPU output to an array.
   var gpuOperandC = [Float](
     repeating: .zero,
-    count: Int(matrixDimensions.M * matrixDimensions.N))
+    count: Int(trailingDimensionC * leadingDimensions.C))
   do {
     let sourcePointer = bufferC.contents()
     for m in 0..<matrixDimensions.M {
       for n in 0..<matrixDimensions.N {
-        let address = m * matrixDimensions.N + n
+        let address = m * leadingDimensions.C + n
         var sourceValue: Float
         
         switch memoryPrecisions.C {
@@ -178,7 +210,7 @@ func runCorrectnessTest(descriptor: GEMMDescriptor) {
   // Generate the output, on the reference implementation.
   var cpuOperandC = [Float](
     repeating: .zero,
-    count: Int(matrixDimensions.M * matrixDimensions.N))
+    count: Int(trailingDimensionC * leadingDimensions.C))
   for m in 0..<matrixDimensions.M {
     for n in 0..<matrixDimensions.N {
       var dotProduct: Float = .zero
@@ -187,14 +219,14 @@ func runCorrectnessTest(descriptor: GEMMDescriptor) {
         var addressA: UInt32
         var addressB: UInt32
         if !transposeState.A {
-          addressA = m * matrixDimensions.K + k
+          addressA = m * leadingDimensions.A + k
         } else {
-          addressA = k * matrixDimensions.M + m
+          addressA = k * leadingDimensions.A + m
         }
         if !transposeState.B {
-          addressB = k * matrixDimensions.N + n
+          addressB = k * leadingDimensions.B + n
         } else {
-          addressB = n * matrixDimensions.K + k
+          addressB = n * leadingDimensions.B + k
         }
         
         let valueA = operandA[Int(addressA)]
@@ -202,7 +234,7 @@ func runCorrectnessTest(descriptor: GEMMDescriptor) {
         dotProduct += valueA * valueB
       }
       
-      let addressC: UInt32 = m * matrixDimensions.N + n
+      let addressC: UInt32 = m * leadingDimensions.C + n
       if descriptor.loadPreviousC {
         dotProduct += operandPreviousC[Int(addressC)]
       }
@@ -215,7 +247,7 @@ func runCorrectnessTest(descriptor: GEMMDescriptor) {
   var totalDistance: Float = .zero
   for m in 0..<matrixDimensions.M {
     for n in 0..<matrixDimensions.N {
-      let address = m * matrixDimensions.N + n
+      let address = m * leadingDimensions.C + n
       let cpuValue = cpuOperandC[Int(address)]
       let gpuValue = gpuOperandC[Int(address)]
       

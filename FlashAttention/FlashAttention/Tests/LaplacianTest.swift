@@ -10,7 +10,7 @@ import Metal
 // Tests the performance of large matrix multiplications, using the
 // second-order Laplacian in direct matrix form.
 
-#if false
+#if true
 func executeScript() {
   print("Hello, console.")
   

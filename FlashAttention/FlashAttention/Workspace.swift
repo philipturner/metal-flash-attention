@@ -13,12 +13,6 @@ import QuartzCore
 /// when the 'main' branch is in a stable state. Clients can utilize this
 /// function to script tests in their fork.
 
-// Noncontiguous strides
-// - Include leading dimension A, B, and C in the function constants, just
-//   like BLAS.
-// - Add adversarial shape tests where the leading dimensions can all be
-//   slightly padded.
-//
 // Attention
 // - Backward Key-Value gains the ability to work on a subregion of the
 //   attention matrix at a time.
