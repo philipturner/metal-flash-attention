@@ -118,6 +118,11 @@ constant uint M [[function_constant(0)]];
 constant uint N [[function_constant(1)]];
 constant uint K [[function_constant(2)]];
 
+// Specify the leading dimensions at PSO creation time.
+constant uint A_leading_dimension [[function_constant(5)]];
+constant uint B_leading_dimension [[function_constant(6)]];
+constant uint C_leading_dimension [[function_constant(7)]];
+
 // Whether to load the previous value of C, and add it to the accumulator.
 constant bool load_previous_C [[function_constant(10)]];
 

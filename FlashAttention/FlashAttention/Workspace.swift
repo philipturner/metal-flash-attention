@@ -16,6 +16,8 @@ import QuartzCore
 // Noncontiguous strides
 // - Include leading dimension A, B, and C in the function constants, just
 //   like BLAS.
+// - Add adversarial shape tests where the leading dimensions can all be
+//   slightly padded.
 //
 // Attention
 // - Backward Key-Value gains the ability to work on a subregion of the

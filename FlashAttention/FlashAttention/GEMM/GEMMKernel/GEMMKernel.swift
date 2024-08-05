@@ -117,8 +117,6 @@ struct GEMMKernel {
     
     // Retrieve the "padded" block dimensions, otherwise compute analytically
     // from the true block dimensions.
-    //
-    // TODO: Also, compute the block bytes in this function.
     func chooseLeadingBlockDimension(
       _ specifiedLeading: UInt16?,
       _ transposeState: Bool,
@@ -200,12 +198,7 @@ extension GEMMKernel {
   }
   
   func leadingDimension(_ operand: String) -> String {
-    switch operand {
-    case "A": return transposed("A") ? "M" : "K"
-    case "B": return transposed("B") ? "K" : "N"
-    case "C": return transposed("C") ? "M" : "N"
-    default: fatalError("Unrecognized operand.")
-    }
+    return "\(operand)_leading_dimension"
   }
   
   func leadingBlockDimension(_ operand: String) -> UInt16 {
