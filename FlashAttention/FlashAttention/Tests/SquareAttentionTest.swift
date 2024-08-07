@@ -10,29 +10,31 @@ import Metal
 // Test the performance of the attention kernel, using single-headed attention
 // over a square attention matrix.
 
-#if false
+#if true
 func executeScript() {
   // Automate the execution of the test suite.
-  profileProblemSize(N: 10, D: 3)
-  profileProblemSize(N: 10, D: 80)
-  profileProblemSize(N: 8, D: 2)
-  profileProblemSize(N: 9, D: 2)
-  profileProblemSize(N: 23, D: 2)
-  profileProblemSize(N: 24, D: 2)
-  profileProblemSize(N: 25, D: 2)
-  profileProblemSize(N: 192, D: 77)
-  profileProblemSize(N: 192, D: 80)
-  profileProblemSize(N: 93, D: 32)
-  profileProblemSize(N: 99, D: 35)
-  profileProblemSize(N: 64, D: 32)
-  profileProblemSize(N: 32, D: 64)
-  profileProblemSize(N: 4, D: 1)
-  profileProblemSize(N: 4, D: 2)
-  profileProblemSize(N: 384, D: 95)
-  profileProblemSize(N: 777, D: 199)
+//  profileProblemSize(N: 10, D: 3)
+//  profileProblemSize(N: 10, D: 80)
+//  profileProblemSize(N: 8, D: 2)
+//  profileProblemSize(N: 9, D: 2)
+//  profileProblemSize(N: 23, D: 2)
+//  profileProblemSize(N: 24, D: 2)
+//  profileProblemSize(N: 25, D: 2)
+//  profileProblemSize(N: 192, D: 77)
+//  profileProblemSize(N: 192, D: 80)
+//  profileProblemSize(N: 93, D: 32)
+//  profileProblemSize(N: 99, D: 35)
+//  profileProblemSize(N: 64, D: 32)
+//  profileProblemSize(N: 32, D: 64)
+//  profileProblemSize(N: 4, D: 1)
+//  profileProblemSize(N: 4, D: 2)
+//  profileProblemSize(N: 384, D: 95)
+//  profileProblemSize(N: 777, D: 199)
   
-  #if false
-  let N_array = [128, 160, 192]
+  #if true
+  // let N_array = [4096, 8192]
+  // let D_array = [192, 256]
+  let N_array = [128, 256, 512, 1024, 2048, 4096, 8192]
   let D_array = [32, 48, 64, 80, 96, 128, 160, 192, 256]
   
   // Loop over the configurations.
@@ -139,25 +141,6 @@ func executeScript() {
 // Returns: Throughput in GINSTRS.
 @discardableResult
 func profileProblemSize(N: Int, D: Int) -> Int {
-  // Try using atomics to accumulate dQ.
-  // - Use the backward query kernel to zero-out dQ.
-  // - Redistribute work between parallelization and traversal dimensions.
-  // - Store dQ to threadgroup memory before writing to device memory via
-  //   atomics. This step resolves the challenge of handling misaligned
-  //   problem sizes, at least for FP32.
-  // - Redefine "true" in backward key-value, to mean whether dQ is
-  //   accumulated.
-  //
-  // Alternatively, try the route that uses GEMM. Keep an (ideally square)
-  // allocation in the L3 cache. The dQ and dK multiplications can use regular
-  // GEMM, lessening the impact of register spilling bottlenecks. A large
-  // traversal dimension like 96 would not be needed as much.
-  //
-  // One could also have an abbreviated forward pass that returns the dS matrix
-  // and L. Then, it reconstructs P to accumulate O / dV without register
-  // spilling or excessive rounding error. This will be a little more involved,
-  // so wait until the major bottlenecks in the backward pass are fixed.
-  
   var networkDesc = NetworkDescriptor()
   networkDesc.N = N
   networkDesc.D = D
@@ -165,16 +148,17 @@ func profileProblemSize(N: Int, D: Int) -> Int {
   
   var attentionDesc = AttentionDescriptor()
   attentionDesc.blockDimensions = (
-    parallelization: 32,
-    traversal: 64,
-    head: 32)
+    parallelization: 16,
+    traversal: 128,
+    head: 8)
   attentionDesc.headDimension = UInt16(D)
   
-  let cacheAll: Bool = false
+  let cacheInputs: Bool = false
+  let cacheOutputs: Bool = false
   attentionDesc.cachedInputs = (
-    Q: cacheAll, K: cacheAll, V: cacheAll, dO: cacheAll)
+    Q: cacheInputs, K: cacheInputs, V: cacheInputs, dO: cacheInputs)
   attentionDesc.cachedOutputs = (
-    dQ: cacheAll, dK: cacheAll, dV: cacheAll, O: cacheAll)
+    dQ: cacheOutputs, dK: cacheOutputs, dV: cacheOutputs, O: cacheOutputs)
   attentionDesc.transposeState = (Q: false, K: false, V: false, O: false)
   
   attentionDesc.type = .forward(true)
@@ -282,8 +266,8 @@ func profileProblemSize(N: Int, D: Int) -> Int {
       if dispatchCount > 1 {
         // WARNING: Change this code to match the kernel you're profiling.
         dispatch(
-          kernel: kernelForward,
-          pipeline: pipelineForward,
+          kernel: kernelBackwardKeyValue,
+          pipeline: pipelineBackwardKeyValue,
           along: N)
       } else {
         dispatch(
@@ -309,12 +293,12 @@ func profileProblemSize(N: Int, D: Int) -> Int {
     let start = commandBuffer.gpuStartTime
     let end = commandBuffer.gpuEndTime
     let latency = end - start
-    print("latency:", Int(latency * 1e6))
+    // print("latency:", Int(latency * 1e6))
     return latency
   }
   executeCommandBuffer(dispatchCount: 1)
   
-  #if true
+  #if false
   let O = network.inferenceAttention()
   let LTerms = (0..<N).map(network.createLTerm(rowID:))
   let DTerms = (0..<N).map(network.createDTerm(rowID:))
@@ -457,7 +441,7 @@ func profileProblemSize(N: Int, D: Int) -> Int {
   check(expected: dQ, actual: resultDerivativeQ)
   #endif
   
-  #if false
+  #if true
   // Benchmark performance.
   var maxGINSTRS: Int = .zero
   for _ in 0..<5 {
@@ -468,7 +452,7 @@ func profileProblemSize(N: Int, D: Int) -> Int {
     //
     // WARNING: Change this code to match the kernel you're profiling.
     var operations: Int = .zero
-    operations += (2 * D + 5) * (N * N)
+    operations += (4 * D + 5) * (N * N)
     operations *= dispatchCount
     
     // Divide the work by the latency, resulting in throughput.
@@ -481,7 +465,7 @@ func profileProblemSize(N: Int, D: Int) -> Int {
   return maxGINSTRS
   #endif
   
-  #if true
+  #if false
   // WARNING: Change this to match the kernel being profiled.
   if N == 128 {
     return pipelineForward.maxTotalThreadsPerThreadgroup
