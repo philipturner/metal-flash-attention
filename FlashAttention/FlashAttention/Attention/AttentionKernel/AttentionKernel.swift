@@ -23,12 +23,14 @@
 // design choice before fine-tuning block sizes.
 
 struct AttentionKernel {
+  // Problem size information that must be known during codegen.
   var blockDimensions: (
     parallelization: UInt16, traversal: UInt16, head: UInt16)
-  var cachedInputs: (Q: Bool, K: Bool, V: Bool, dO: Bool)
-  var cachedOutputs: (dQ: Bool, dK: Bool, dV: Bool, O: Bool)
   var headDimension: UInt16
-  var transposeState: (Q: Bool, K: Bool, V: Bool, O: Bool)
+  
+  // Categorical information about various operand attributes.
+  var cacheState: [AttentionOperand: Bool]
+  var transposeState: [AttentionOperand: Bool]
   var type: AttentionKernelType
   
   // The source code to compile.
@@ -41,20 +43,16 @@ struct AttentionKernel {
   // has higher performance.
   var threadgroupMemoryAllocation: UInt16
   
-  init(descriptor: AttentionDescriptor) {
+  init(descriptor: AttentionKernelDescriptor) {
     guard let blockDimensions = descriptor.blockDimensions,
-          let cachedInputs = descriptor.cachedInputs,
-          let cachedOutputs = descriptor.cachedOutputs,
           let headDimension = descriptor.headDimension,
-          let transposeState = descriptor.transposeState,
           let type = descriptor.type else {
       fatalError("Descriptor was incomplete.")
     }
     self.blockDimensions = blockDimensions
-    self.cachedInputs = cachedInputs
-    self.cachedOutputs = cachedOutputs
+    self.cacheState = descriptor.cacheState
     self.headDimension = headDimension
-    self.transposeState = transposeState
+    self.transposeState = descriptor.transposeState
     self.type = type
     
     threadgroupSize = 32 * (blockDimensions.parallelization / 8)
@@ -114,36 +112,18 @@ struct AttentionKernel {
 // MARK: - Utilities
 
 extension AttentionKernel {
-  // TODO: Start the next round of refactoring, by replacing operand strings
-  // with enumerations. Remove the tuples that specify whether each input is
-  // cached, and instead use lists. These lists will be populated by decision
-  // algorithms in AttentionDescriptor, which understand which operands are
-  // present in every kernel.
-  
   func cached(_ operand: AttentionOperand) -> Bool {
-    switch operand {
-    case .Q: return cachedInputs.Q
-    case .K: return cachedInputs.K
-    case .V: return cachedInputs.V
-    case .O: return cachedOutputs.O
-      
-    case .dQ: return cachedOutputs.dQ
-    case .dK: return cachedOutputs.dK
-    case .dV: return cachedOutputs.dV
-    case .dO: return cachedInputs.dO
-      
-    default: fatalError("Unrecognized operand.")
+    guard let output = cacheState[operand] else {
+      fatalError("Cache state of \(operand) was not specified.")
     }
+    return output
   }
   
   func transposed(_ operand: AttentionOperand) -> Bool {
-    switch operand {
-    case .Q, .dQ: return transposeState.Q
-    case .K, .dK: return transposeState.K
-    case .V, .dV: return transposeState.V
-    case .O, .dO: return transposeState.O
-    default: fatalError("Unrecognized operand.")
+    guard let output = transposeState[operand] else {
+      fatalError("Transpose state of \(operand) was not specified.")
     }
+    return output
   }
   
   func sequenceLength(_ operand: AttentionOperand) -> String {

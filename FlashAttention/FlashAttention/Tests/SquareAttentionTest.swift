@@ -146,20 +146,21 @@ func profileProblemSize(N: Int, D: Int) -> Int {
   networkDesc.D = D
   let network = Network(descriptor: networkDesc)
   
-  var attentionDesc = AttentionDescriptor()
+  var attentionDesc = AttentionKernelDescriptor()
   attentionDesc.blockDimensions = (
     parallelization: 32,
     traversal: 64,
     head: 32)
   attentionDesc.headDimension = UInt16(D)
   
-  let cacheInputs: Bool = false
-  let cacheOutputs: Bool = false
-  attentionDesc.cachedInputs = (
-    Q: cacheInputs, K: cacheInputs, V: cacheInputs, dO: cacheInputs)
-  attentionDesc.cachedOutputs = (
-    dQ: cacheOutputs, dK: cacheOutputs, dV: cacheOutputs, O: cacheOutputs)
-  attentionDesc.transposeState = (Q: false, K: false, V: false, O: false)
+  for input in [AttentionOperand.Q, .K, .V, .dO] {
+    attentionDesc.cacheState[input] = false
+    attentionDesc.transposeState[input] = false
+  }
+  for output in [AttentionOperand.dQ, .dK, .dV, .O] {
+    attentionDesc.cacheState[output] = false
+    attentionDesc.transposeState[output] = false
+  }
   
   attentionDesc.type = .forward(true)
   let kernelForward = AttentionKernel(descriptor: attentionDesc)
@@ -298,7 +299,7 @@ func profileProblemSize(N: Int, D: Int) -> Int {
   }
   executeCommandBuffer(dispatchCount: 1)
   
-  #if true
+#if true
   let O = network.inferenceAttention()
   let LTerms = (0..<N).map(network.createLTerm(rowID:))
   let DTerms = (0..<N).map(network.createDTerm(rowID:))
@@ -320,7 +321,7 @@ func profileProblemSize(N: Int, D: Int) -> Int {
   MTLContext.copy(bufferDerivativeK, into: &resultDerivativeK)
   MTLContext.copy(bufferDerivativeQ, into: &resultDerivativeQ)
   
-  #if false
+#if false
   // Displays a matrix with dimensions N * 1.
   func printVector(_ matrix: [Float]) {
     for n in 0..<min(N, 10) {
@@ -405,7 +406,7 @@ func profileProblemSize(N: Int, D: Int) -> Int {
   print()
   print("dQ:")
   printMatrix(resultDerivativeQ)
-  #endif
+#endif
   
   // Check the results.
   //
@@ -439,9 +440,9 @@ func profileProblemSize(N: Int, D: Int) -> Int {
   check(expected: dV, actual: resultDerivativeV)
   check(expected: dK, actual: resultDerivativeK)
   check(expected: dQ, actual: resultDerivativeQ)
-  #endif
+#endif
   
-  #if false
+#if false
   // Benchmark performance.
   var maxGINSTRS: Int = .zero
   for _ in 0..<5 {
@@ -463,9 +464,9 @@ func profileProblemSize(N: Int, D: Int) -> Int {
     maxGINSTRS = max(maxGINSTRS, ginstrs)
   }
   return maxGINSTRS
-  #endif
+#endif
   
-  #if true
+#if true
   // WARNING: Change this to match the kernel being profiled.
   if N == 128 {
     return pipelineForward.maxTotalThreadsPerThreadgroup
@@ -474,6 +475,6 @@ func profileProblemSize(N: Int, D: Int) -> Int {
   } else {
     return pipelineBackwardKeyValue.maxTotalThreadsPerThreadgroup
   }
-  #endif
+#endif
 }
 #endif

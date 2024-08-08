@@ -171,10 +171,10 @@ extension AttentionKernel {
     
     switch type {
     case .forward:
-      if cachedInputs.Q {
+      if cached(.Q) {
         output += load(operand: .Q)
       }
-      if cachedOutputs.O {
+      if cached(.O) {
         output += allocateCache(operand: .O)
       }
       output += """
@@ -185,13 +185,13 @@ extension AttentionKernel {
       """
       
     case .backwardQuery(let computeDerivativeQ):
-      if cachedInputs.Q {
+      if cached(.Q){
         output += load(operand: .Q)
       }
-      if cachedInputs.dO {
+      if cached(.dO) {
         output += load(operand: .dO)
       }
-      if computeDerivativeQ, cachedOutputs.dQ {
+      if computeDerivativeQ, cached(.dQ) {
         output += allocateCache(operand: .dQ)
       }
       if computeDerivativeQ {
@@ -213,16 +213,16 @@ extension AttentionKernel {
       """
       
     case .backwardKeyValue(let computeDerivativeK):
-      if cachedInputs.K {
+      if cached(.K) {
         output += load(operand: .K)
       }
-      if cachedInputs.V {
+      if cached(.V) {
         output += load(operand: .V)
       }
-      if computeDerivativeK, cachedOutputs.dK {
+      if computeDerivativeK, cached(.dK) {
         output += allocateCache(operand: .dK)
       }
-      if cachedOutputs.dV {
+      if cached(.dV) {
         output += allocateCache(operand: .dV)
       }
     }
@@ -237,7 +237,7 @@ extension AttentionKernel {
     
     switch type {
     case .forward(let computeL):
-      if cachedOutputs.O {
+      if cached(.O) {
         output += store(operand: .O)
       }
       if computeL {
@@ -251,17 +251,17 @@ extension AttentionKernel {
         
         """
       }
-    
+      
     case .backwardQuery(let computeDerivativeQ):
-      if computeDerivativeQ, cachedOutputs.dQ {
+      if computeDerivativeQ, cached(.dQ) {
         output += store(operand: .dQ)
       }
       
     case .backwardKeyValue(let computeDerivativeK):
-      if computeDerivativeK, cachedOutputs.dK {
+      if computeDerivativeK, cached(.dK) {
         output += store(operand: .dK)
       }
-      if cachedOutputs.dV {
+      if cached(.dV) {
         output += store(operand: .dV)
       }
     }
