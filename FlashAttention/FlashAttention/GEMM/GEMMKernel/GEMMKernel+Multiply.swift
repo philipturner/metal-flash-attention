@@ -108,7 +108,7 @@ METAL_FUNC thread simdgroup_matrix_storage<T>* get_sram(
     return output
   }
 }
-  
+
 extension GEMMKernel {
   func createMultiplyIterations() -> String {
     var asyncIterationsStart: String

@@ -13,25 +13,25 @@ import Metal
 #if true
 func executeScript() {
   // Automate the execution of the test suite.
-//  profileProblemSize(N: 10, D: 3)
-//  profileProblemSize(N: 10, D: 80)
-//  profileProblemSize(N: 8, D: 2)
-//  profileProblemSize(N: 9, D: 2)
-//  profileProblemSize(N: 23, D: 2)
-//  profileProblemSize(N: 24, D: 2)
-//  profileProblemSize(N: 25, D: 2)
-//  profileProblemSize(N: 192, D: 77)
-//  profileProblemSize(N: 192, D: 80)
-//  profileProblemSize(N: 93, D: 32)
-//  profileProblemSize(N: 99, D: 35)
-//  profileProblemSize(N: 64, D: 32)
-//  profileProblemSize(N: 32, D: 64)
-//  profileProblemSize(N: 4, D: 1)
-//  profileProblemSize(N: 4, D: 2)
-//  profileProblemSize(N: 384, D: 95)
-//  profileProblemSize(N: 777, D: 199)
+  profileProblemSize(N: 10, D: 3)
+  profileProblemSize(N: 10, D: 80)
+  profileProblemSize(N: 8, D: 2)
+  profileProblemSize(N: 9, D: 2)
+  profileProblemSize(N: 23, D: 2)
+  profileProblemSize(N: 24, D: 2)
+  profileProblemSize(N: 25, D: 2)
+  profileProblemSize(N: 192, D: 77)
+  profileProblemSize(N: 192, D: 80)
+  profileProblemSize(N: 93, D: 32)
+  profileProblemSize(N: 99, D: 35)
+  profileProblemSize(N: 64, D: 32)
+  profileProblemSize(N: 32, D: 64)
+  profileProblemSize(N: 4, D: 1)
+  profileProblemSize(N: 4, D: 2)
+  profileProblemSize(N: 384, D: 95)
+  profileProblemSize(N: 777, D: 199)
   
-  #if true
+  #if false
   // let N_array = [4096, 8192]
   // let D_array = [192, 256]
   let N_array = [128, 256, 512, 1024, 2048, 4096, 8192]
@@ -148,9 +148,9 @@ func profileProblemSize(N: Int, D: Int) -> Int {
   
   var attentionDesc = AttentionDescriptor()
   attentionDesc.blockDimensions = (
-    parallelization: 16,
-    traversal: 128,
-    head: 8)
+    parallelization: 32,
+    traversal: 64,
+    head: 32)
   attentionDesc.headDimension = UInt16(D)
   
   let cacheInputs: Bool = false
@@ -293,12 +293,12 @@ func profileProblemSize(N: Int, D: Int) -> Int {
     let start = commandBuffer.gpuStartTime
     let end = commandBuffer.gpuEndTime
     let latency = end - start
-    // print("latency:", Int(latency * 1e6))
+    print("latency:", Int(latency * 1e6))
     return latency
   }
   executeCommandBuffer(dispatchCount: 1)
   
-  #if false
+  #if true
   let O = network.inferenceAttention()
   let LTerms = (0..<N).map(network.createLTerm(rowID:))
   let DTerms = (0..<N).map(network.createDTerm(rowID:))
@@ -441,7 +441,7 @@ func profileProblemSize(N: Int, D: Int) -> Int {
   check(expected: dQ, actual: resultDerivativeQ)
   #endif
   
-  #if true
+  #if false
   // Benchmark performance.
   var maxGINSTRS: Int = .zero
   for _ in 0..<5 {
@@ -465,7 +465,7 @@ func profileProblemSize(N: Int, D: Int) -> Int {
   return maxGINSTRS
   #endif
   
-  #if false
+  #if true
   // WARNING: Change this to match the kernel being profiled.
   if N == 128 {
     return pipelineForward.maxTotalThreadsPerThreadgroup

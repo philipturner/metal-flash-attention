@@ -116,6 +116,12 @@ struct AttentionKernel {
 // MARK: - Utilities
 
 extension AttentionKernel {
+  // TODO: Start the next round of refactoring, by replacing operand strings
+  // with enumerations. Remove the tuples that specify whether each input is
+  // cached, and instead use lists. These lists will be populated by decision
+  // algorithms in AttentionDescriptor, which understand which operands are
+  // present in every kernel.
+  
   func cached(_ operand: String) -> Bool {
     switch operand {
     case "Q": return cachedInputs.Q
@@ -255,22 +261,25 @@ extension AttentionKernel {
 extension AttentionKernel {
   func createFunctionSignature() -> String {
     // What operands does the kernel use?
-    var operands: [AttentionOperand] = [
-      .LTerms, .DTerms,
-    ]
+    var operands: [AttentionOperand] = []
     switch type {
-    case .forward:
+    case .forward(let computeLTerms):
       operands += [.Q, .K, .V, .O]
+      if computeLTerms {
+        operands += [.LTerms]
+      }
     case .backwardQuery(let computeDerivativeQ):
       operands += [.O, .dO]
       if computeDerivativeQ {
         operands += [.Q, .K, .V, .dQ]
       }
+      operands += [.LTerms, .DTerms]
     case .backwardKeyValue(let computeDerivativeK):
       operands += [.Q, .K, .V, .dO, .dV]
       if computeDerivativeK {
         operands += [.dK]
       }
+      operands += [.LTerms, .DTerms]
     }
     operands.sort {
       $0.bufferBinding! < $1.bufferBinding!
@@ -321,6 +330,10 @@ extension AttentionKernel {
       ushort lane_id [[thread_index_in_simdgroup]]
     ) {
       \(declareOffsets())
+      
+      if (simd_all(\(parallelizationThreadOffset) >= \(parallelizationDimension))) {
+        return;
+      }
     
     """
   }

@@ -5,6 +5,29 @@
 //  Created by Philip Turner on 6/28/24.
 //
 
+/// The three kernels of the FlashAttention algorithm for devices without
+/// hardware acceleration for floating-point atomics.
+///
+/// For the forward pass, enter `.forward(false)` if you are only running AI
+/// inference. Never bind the "L terms" (softmax log-sum-exp)  when encoding the
+/// forward command. If you will compute the gradient in another pass (e.g. ML
+/// training), enter `.forward(true)`. Always bind the "L terms" when encoding
+/// the forward command. The rule regarding presence/absence of buffer binding
+/// is a way to detect accidental computation of L terms during forward pass.
+/// Although small for some problem configurations, such accidental computation
+/// is a provable performance regression of nonzero magnitude. Omitting the
+/// L buffer binding will cause a Metal API error when an offending forward
+/// kernel is encoded.
+///
+/// Originally, there was intended to be two pathways for backward. One path
+/// computed everything online without materializing the attention matrix:
+/// `.backwardQuery(true)`, `.backwardKeyValue(true)`. The other skipped the
+/// computation of dQ and dK, deferring that to two GEMM calls after the
+/// attention submatrix was stored in RAM:
+/// `.backwardQuery(false)`, `.backwardKeyValue(false)`. The latter, faster
+/// pathway was not implemented due to time constraints. The extra associated
+/// value (`Bool`) on the dQ and dK/dV cases remains as an artifact of this
+/// design.
 enum AttentionKernelType {
   /// Forward attention, computing O and L[i].
   ///
