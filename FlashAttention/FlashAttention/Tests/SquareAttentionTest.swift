@@ -165,10 +165,10 @@ func profileProblemSize(N: Int, D: Int) -> Int {
   attentionDesc.type = .forward(true)
   let kernelForward = AttentionKernel(descriptor: attentionDesc)
   
-  attentionDesc.type = .backwardQuery(true)
+  attentionDesc.type = .backwardQuery
   let kernelBackwardQuery = AttentionKernel(descriptor: attentionDesc)
   
-  attentionDesc.type = .backwardKeyValue(true)
+  attentionDesc.type = .backwardKeyValue
   let kernelBackwardKeyValue = AttentionKernel(descriptor: attentionDesc)
   
   func createPipeline(kernel: AttentionKernel) -> MTLComputePipelineState {

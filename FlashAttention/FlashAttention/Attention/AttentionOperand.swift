@@ -11,15 +11,15 @@
 enum AttentionOperand: Hashable, Equatable, CustomStringConvertible {
   case Q
   case K
-  case S
-  case P
+  case S // only materialized in registers
+  case P // only materialized in registers
   case V
   case O
   
   case dO
   case dV
-  case dP
-  case dS
+  case dP // only materialized in registers
+  case dS // only materialized in registers
   case dK
   case dQ
   
@@ -65,7 +65,6 @@ enum AttentionOperand: Hashable, Equatable, CustomStringConvertible {
       
     case .LTerms: return 10
     case .DTerms: return 11
-    case .dS: return 12
       
     default: return nil
     }

@@ -342,7 +342,7 @@ extension GEMMDescriptor {
       } else {
         expectedLeading = untransposedColumns
       }
-
+      
       var actualLeading: UInt32
       if let specifiedLeading {
         guard specifiedLeading >= expectedLeading else {
@@ -352,7 +352,7 @@ extension GEMMDescriptor {
       } else {
         actualLeading = expectedLeading
       }
-
+      
       return actualLeading
     }
     var leadingDimensionA = chooseLeadingDimension(

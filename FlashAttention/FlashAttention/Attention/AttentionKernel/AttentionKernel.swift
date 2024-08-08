@@ -91,13 +91,10 @@ struct AttentionKernel {
     switch type {
     case .forward:
       source += loopForward()
-    case .backwardQuery(let computeDerivativeQ):
-      if computeDerivativeQ {
-        source += loopBackwardQuery()
-      }
-    case .backwardKeyValue(let computeDerivativeK):
-      source += loopBackwardKeyValue(
-        computeDerivativeK: computeDerivativeK)
+    case .backwardQuery:
+      source += loopBackwardQuery()
+    case .backwardKeyValue:
+      source += loopBackwardKeyValue()
     }
     
     source += createCleanup(type: type)
@@ -246,17 +243,13 @@ extension AttentionKernel {
       if computeLTerms {
         operands += [.LTerms]
       }
-    case .backwardQuery(let computeDerivativeQ):
+    case .backwardQuery:
       operands += [.O, .dO]
-      if computeDerivativeQ {
-        operands += [.Q, .K, .V, .dQ]
-      }
+      operands += [.Q, .K, .V, .dQ]
       operands += [.LTerms, .DTerms]
-    case .backwardKeyValue(let computeDerivativeK):
+    case .backwardKeyValue:
       operands += [.Q, .K, .V, .dO, .dV]
-      if computeDerivativeK {
-        operands += [.dK]
-      }
+      operands += [.dK]
       operands += [.LTerms, .DTerms]
     }
     operands.sort {

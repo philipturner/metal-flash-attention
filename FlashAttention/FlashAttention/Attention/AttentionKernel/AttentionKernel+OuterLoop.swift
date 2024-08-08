@@ -220,7 +220,7 @@ extension AttentionKernel {
     """
   }
   
-  func loopBackwardKeyValue(computeDerivativeK: Bool) -> String {
+  func loopBackwardKeyValue() -> String {
     var outerProductDesc = AttentionOuterProductDescriptor()
     outerProductDesc.A = .K
     outerProductDesc.B = .Q
@@ -239,16 +239,11 @@ extension AttentionKernel {
     outerProductDesc.C = .dP // dP^T
     let VdOT = outerProduct(descriptor: outerProductDesc)
     
-    var dSTQ: String
-    if computeDerivativeK {
-      var accumulateDesc = AttentionAccumulateDescriptor()
-      accumulateDesc.A = .dS // dS^T
-      accumulateDesc.B = .Q
-      accumulateDesc.C = .dK
-      dSTQ = accumulate(descriptor: accumulateDesc)
-    } else {
-      dSTQ = ""
-    }
+    accumulateDesc = AttentionAccumulateDescriptor()
+    accumulateDesc.A = .dS // dS^T
+    accumulateDesc.B = .Q
+    accumulateDesc.C = .dK
+    let dSTQ = accumulate(descriptor: accumulateDesc)
     
     return """
     

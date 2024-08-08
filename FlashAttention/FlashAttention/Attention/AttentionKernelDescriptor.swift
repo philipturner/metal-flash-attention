@@ -8,9 +8,9 @@
 /// The three kernels of the FlashAttention algorithm for devices without
 /// hardware acceleration for floating-point atomics.
 ///
-/// For the forward pass, enter `.forward(false)` if you are only running AI
+/// For the forward pass, enter `.forward(false)` if you are only running
 /// inference. Never bind the "L terms" (softmax log-sum-exp)  when encoding the
-/// forward command. If you will compute the gradient in another pass (e.g. ML
+/// forward command. If you will compute the gradient in another pass (e.g.
 /// training), enter `.forward(true)`. Always bind the "L terms" when encoding
 /// the forward command. The rule regarding presence/absence of buffer binding
 /// is a way to detect accidental computation of L terms during forward pass.
@@ -25,34 +25,25 @@
 /// computation of dQ and dK, deferring that to two GEMM calls after the
 /// attention submatrix was stored in RAM:
 /// `.backwardQuery(false)`, `.backwardKeyValue(false)`. The latter, faster
-/// pathway was not implemented due to time constraints. The extra associated
-/// value (`Bool`) on the dQ and dK/dV cases remains as an artifact of this
-/// design.
+/// pathway was not implemented due to time constraints. Therefore, the
+/// associated value on the dQ and dK/dV cases has now been removed.
 enum AttentionKernelType {
-  /// Forward attention, computing O and L[i].
+  /// Forward attention, computing O and optionally L[i].
   ///
   /// Variants:
-  /// - `false`: compute O
-  /// - `true`: compute O and L[i]
+  /// - `false`: compute only O
+  /// - `true`: compute both O and L[i]
   case forward(Bool)
   
   /// Backward attention, computing D[i] and dQ.
   ///
-  /// Variants:
-  /// - `false`: compute D[i]
-  /// - `true`: compute D[i] and dQ
-  ///
   /// Depends on: L[i]
-  case backwardQuery(Bool)
+  case backwardQuery
   
   /// Backward attention, computing dK and dV.
   ///
-  /// Variants:
-  /// - `false`: compute dV
-  /// - `true`: compute dV and dK
-  ///
   /// Depends on: L[i], D[i]
-  case backwardKeyValue(Bool)
+  case backwardKeyValue
 }
 
 struct AttentionKernelDescriptor {

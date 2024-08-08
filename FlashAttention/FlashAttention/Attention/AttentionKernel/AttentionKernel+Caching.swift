@@ -184,26 +184,19 @@ extension AttentionKernel {
 
       """
       
-    case .backwardQuery(let computeDerivativeQ):
+    case .backwardQuery:
       if cached(.Q){
         output += load(operand: .Q)
       }
       if cached(.dO) {
         output += load(operand: .dO)
       }
-      if computeDerivativeQ, cached(.dQ) {
+      if cached(.dQ) {
         output += allocateCache(operand: .dQ)
       }
-      if computeDerivativeQ {
-        output += """
-        
-        float L_term = L_terms[\(parallelizationThreadOffset)];
-        
-        """
-      }
-      
       output += """
       
+      float L_term = L_terms[\(parallelizationThreadOffset)];
       float D_term;
       \(computeDTerm())
       if (\(parallelizationThreadOffset) < R) {
@@ -212,14 +205,14 @@ extension AttentionKernel {
       
       """
       
-    case .backwardKeyValue(let computeDerivativeK):
+    case .backwardKeyValue:
       if cached(.K) {
         output += load(operand: .K)
       }
       if cached(.V) {
         output += load(operand: .V)
       }
-      if computeDerivativeK, cached(.dK) {
+      if cached(.dK) {
         output += allocateCache(operand: .dK)
       }
       if cached(.dV) {
@@ -252,13 +245,13 @@ extension AttentionKernel {
         """
       }
       
-    case .backwardQuery(let computeDerivativeQ):
-      if computeDerivativeQ, cached(.dQ) {
+    case .backwardQuery:
+      if cached(.dQ) {
         output += store(operand: .dQ)
       }
       
-    case .backwardKeyValue(let computeDerivativeK):
-      if computeDerivativeK, cached(.dK) {
+    case .backwardKeyValue:
+      if cached(.dK) {
         output += store(operand: .dK)
       }
       if cached(.dV) {
