@@ -146,6 +146,7 @@ func profileProblemSize(N: Int, D: Int) -> Int {
   networkDesc.D = D
   let network = Network(descriptor: networkDesc)
   
+  /*
   var attentionDesc = AttentionKernelDescriptor()
   attentionDesc.blockDimensions = (
     parallelization: 32,
@@ -188,6 +189,9 @@ func profileProblemSize(N: Int, D: Int) -> Int {
   let pipelineForward = createPipeline(kernel: kernelForward)
   let pipelineBackwardQuery = createPipeline(kernel: kernelBackwardQuery)
   let pipelineBackwardKeyValue = createPipeline(kernel: kernelBackwardKeyValue)
+   */
+  
+  // MARK: - Buffers
   
   let bufferQ = MTLContext.global.createBuffer(network.Q, .FP32)
   let bufferK = MTLContext.global.createBuffer(network.K, .FP32)
@@ -195,12 +199,12 @@ func profileProblemSize(N: Int, D: Int) -> Int {
   let bufferDerivativeO = MTLContext.global.createBuffer(network.C, .FP32)
   
   var resultO = [Float](repeating: .zero, count: N * D)
-  resultO[0] = .nan
   var resultLTerms = [Float](repeating: .zero, count: N)
   var resultDTerms = [Float](repeating: .zero, count: N)
   var resultDerivativeV = [Float](repeating: .zero, count: N * D)
   var resultDerivativeK = [Float](repeating: .zero, count: N * D)
   var resultDerivativeQ = [Float](repeating: .zero, count: N * D)
+  resultO[0] = .nan
   
   let bufferO = MTLContext.global.createBuffer(resultO, .FP32)
   let bufferLTerms = MTLContext.global.createBuffer(resultLTerms, .FP32)
@@ -211,6 +215,38 @@ func profileProblemSize(N: Int, D: Int) -> Int {
     .createBuffer(resultDerivativeK, .FP32)
   let bufferDerivativeQ = MTLContext.global
     .createBuffer(resultDerivativeQ, .FP32)
+  
+  // MARK: - Kernels
+  
+  var attentionDesc = AttentionDescriptor()
+  attentionDesc.matrixDimensions = (R: UInt32(N), C: UInt32(N), D: UInt16(D))
+  attentionDesc.transposeState = (Q: false, K: false, V: false, O: false)
+  
+  func createKernel(type: AttentionKernelType) -> AttentionKernel {
+    let attentionKernelDesc = attentionDesc.kernelDescriptor(type: type)
+    let attentionKernel = AttentionKernel(descriptor: attentionKernelDesc)
+    return attentionKernel
+  }
+  let kernelForward = createKernel(type: .forward(true))
+  let kernelBackwardQuery = createKernel(type: .backwardQuery)
+  let kernelBackwardKeyValue = createKernel(type: .backwardKeyValue)
+  
+  func createPipeline(kernel: AttentionKernel) -> MTLComputePipelineState {
+    let device = MTLContext.global.device
+    let library = try! device.makeLibrary(
+      source: kernel.source, options: nil)
+    
+    let functionConstants = MTLFunctionConstantValues()
+    attentionDesc.setFunctionConstants(functionConstants)
+    let function = try! library.makeFunction(
+      name: "attention", constantValues: functionConstants)
+    return try! device.makeComputePipelineState(function: function)
+  }
+  let pipelineForward = createPipeline(kernel: kernelForward)
+  let pipelineBackwardQuery = createPipeline(kernel: kernelBackwardQuery)
+  let pipelineBackwardKeyValue = createPipeline(kernel: kernelBackwardKeyValue)
+  
+  // MARK: - GPU Commands
   
   // - Parameter dispatchCount: Number of times to duplicate the FWD / BWD
   //                            combined pass.
@@ -298,6 +334,8 @@ func profileProblemSize(N: Int, D: Int) -> Int {
     return latency
   }
   executeCommandBuffer(dispatchCount: 1)
+  
+  // MARK: - Validation
   
 #if true
   let O = network.inferenceAttention()
@@ -442,6 +480,8 @@ func profileProblemSize(N: Int, D: Int) -> Int {
   check(expected: dQ, actual: resultDerivativeQ)
 #endif
   
+  // MARK: - Profiling
+  
 #if false
   // Benchmark performance.
   var maxGINSTRS: Int = .zero
@@ -466,15 +506,6 @@ func profileProblemSize(N: Int, D: Int) -> Int {
   return maxGINSTRS
 #endif
   
-#if true
-  // WARNING: Change this to match the kernel being profiled.
-  if N == 128 {
-    return pipelineForward.maxTotalThreadsPerThreadgroup
-  } else if N == 160 {
-    return pipelineBackwardQuery.maxTotalThreadsPerThreadgroup
-  } else {
-    return pipelineBackwardKeyValue.maxTotalThreadsPerThreadgroup
-  }
-#endif
+  return 0
 }
 #endif

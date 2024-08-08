@@ -10,7 +10,7 @@ import Metal
 // Design specifications for the attention descriptor:
 // - member function to set the function constants as a component of PSO init
 //   - caller can now create one MTLFunctionConstantValues object for all
-//     three kernels
+//     three kernels [DONE]
 // - populates the lists of operands present in each kernel [DONE]
 // - encapsulates the three kernels that make up the attention pass
 //   - one set of function constants / buffer bindings should be the same
@@ -85,6 +85,7 @@ extension AttentionDescriptor {
     
     var output = AttentionKernelDescriptor()
     output.headDimension = matrixDimensions.D
+    output.type = type
     
     // Block sizes for the case where nothing is cached.
     if mtlDevice.supportsFamily(.apple9) {
@@ -133,5 +134,24 @@ extension AttentionDescriptor {
     }
     
     return output
+  }
+}
+
+extension AttentionDescriptor {
+  // Specialize the Metal function with this attention descriptor.
+  //
+  // You can initialize a MTLFunctionConstantValues object once, then recycle
+  // it for all three kernels when gradient is requested. This may simplify
+  // the code or incrementally reduce the compilation latency.
+  func setFunctionConstants(_ constants: MTLFunctionConstantValues) {
+    guard let matrixDimensions = self.matrixDimensions else {
+      fatalError("Descriptor was incomplete.")
+    }
+    
+    var R = matrixDimensions.R
+    var C = matrixDimensions.C
+    constants.setConstantValue(&R, type: .uint, index: 0)
+    constants.setConstantValue(&C, type: .uint, index: 1)
+
   }
 }
