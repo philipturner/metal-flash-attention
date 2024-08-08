@@ -8,7 +8,7 @@
 /// The memory allocations used in attention kernels.
 ///
 /// The raw value is the buffer binding.
-enum AttentionOperand: Hashable, Equatable {
+enum AttentionOperand: Hashable, Equatable, CustomStringConvertible {
   case Q
   case K
   case S
@@ -27,7 +27,10 @@ enum AttentionOperand: Hashable, Equatable {
   case DTerms
   
   /// The name in the shader source.
-  var name: String {
+  ///
+  /// Since the `AttentionOperand` type conforms to `CustomStringConvertible`,
+  /// the name can be injected through string interpolation.
+  var description: String {
     switch self {
     case .Q: return "Q"
     case .K: return "K"

@@ -9,9 +9,9 @@
 // parallelization x head x traversal
 
 struct AttentionOuterProductDescriptor {
-  var A: String?
-  var B: String?
-  var C: String?
+  var A: AttentionOperand?
+  var B: AttentionOperand?
+  var C: AttentionOperand?
 }
 
 extension AttentionKernel {

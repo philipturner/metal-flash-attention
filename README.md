@@ -20,9 +20,7 @@ Single-headed attention only, to focus on the core bottlenecks of different atte
 
 ## Modifications to FlashAttention
 
-<s>The Metal port differs from the official implementation. It relies heavily on block sparsity with programmable blockmasks (held in RAM). The memory cost of the blockmask scales quadratically with sequence length. However, the prefactor to quadratic scaling is ~1/1000 of standard attention. Both triangular (causal) attention and arbitrary sparsity patterns are supported, without any specialized code.</s>
-
-> Removed block sparsity from MFA v2.0, as it was not being used in production.
+TODO: Rewrite all of this.
 
 Second, the backward pass uses less memory. The official implementation allocates scratch space for atomics and partial sums. Apple hardware lacks native FP32 atomics (`metal::atomic<float>` is emulated). While attempting to circumvent the lack of hardware support, bandwidth and parallelization bottlenecks in the FlashAttention-2 backward kernel were revealed. An alternative backward pass was designed with higher compute cost (7 GEMMs instead of 5 GEMMs). It achieves 100% parallelization efficiency across both the row and column dimensions of the attention matrix. Most importantly, it is easier to code and maintain.
 

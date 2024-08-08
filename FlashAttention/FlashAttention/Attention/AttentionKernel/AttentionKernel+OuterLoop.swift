@@ -145,15 +145,15 @@
 extension AttentionKernel {
   func loopForward() -> String {
     var outerProductDesc = AttentionOuterProductDescriptor()
-    outerProductDesc.A = "Q"
-    outerProductDesc.B = "K"
-    outerProductDesc.C = "S"
+    outerProductDesc.A = .Q
+    outerProductDesc.B = .K
+    outerProductDesc.C = .S
     let QKT = outerProduct(descriptor: outerProductDesc)
     
     var accumulateDesc = AttentionAccumulateDescriptor()
-    accumulateDesc.A = "P"
-    accumulateDesc.B = "V"
-    accumulateDesc.C = "O"
+    accumulateDesc.A = .P
+    accumulateDesc.B = .V
+    accumulateDesc.C = .O
     accumulateDesc.everyIterationScale = "correction"
     accumulateDesc.lastIterationScale = "fast::divide(1, l)"
     let PV = accumulate(descriptor: accumulateDesc)
@@ -180,21 +180,21 @@ extension AttentionKernel {
   
   func loopBackwardQuery() -> String {
     var outerProductDesc = AttentionOuterProductDescriptor()
-    outerProductDesc.A = "Q"
-    outerProductDesc.B = "K"
-    outerProductDesc.C = "S"
+    outerProductDesc.A = .Q
+    outerProductDesc.B = .K
+    outerProductDesc.C = .S
     let QKT = outerProduct(descriptor: outerProductDesc)
     
     outerProductDesc = AttentionOuterProductDescriptor()
-    outerProductDesc.A = "dO"
-    outerProductDesc.B = "V"
-    outerProductDesc.C = "dP"
+    outerProductDesc.A = .dO
+    outerProductDesc.B = .V
+    outerProductDesc.C = .dP
     let dOVT = outerProduct(descriptor: outerProductDesc)
     
     var accumulateDesc = AttentionAccumulateDescriptor()
-    accumulateDesc.A = "dS"
-    accumulateDesc.B = "K"
-    accumulateDesc.C = "dQ"
+    accumulateDesc.A = .dS
+    accumulateDesc.B = .K
+    accumulateDesc.C = .dQ
     let dSK = accumulate(descriptor: accumulateDesc)
     
     return """
@@ -222,29 +222,29 @@ extension AttentionKernel {
   
   func loopBackwardKeyValue(computeDerivativeK: Bool) -> String {
     var outerProductDesc = AttentionOuterProductDescriptor()
-    outerProductDesc.A = "K"
-    outerProductDesc.B = "Q"
-    outerProductDesc.C = "ST"
+    outerProductDesc.A = .K
+    outerProductDesc.B = .Q
+    outerProductDesc.C = .S // S^T
     let KQT = outerProduct(descriptor: outerProductDesc)
     
     var accumulateDesc = AttentionAccumulateDescriptor()
-    accumulateDesc.A = "PT"
-    accumulateDesc.B = "dO"
-    accumulateDesc.C = "dV"
+    accumulateDesc.A = .P // P^T
+    accumulateDesc.B = .dO
+    accumulateDesc.C = .dV
     let PTdO = accumulate(descriptor: accumulateDesc)
     
     outerProductDesc = AttentionOuterProductDescriptor()
-    outerProductDesc.A = "V"
-    outerProductDesc.B = "dO"
-    outerProductDesc.C = "dPT"
+    outerProductDesc.A = .V
+    outerProductDesc.B = .dO
+    outerProductDesc.C = .dP // dP^T
     let VdOT = outerProduct(descriptor: outerProductDesc)
     
     var dSTQ: String
     if computeDerivativeK {
       var accumulateDesc = AttentionAccumulateDescriptor()
-      accumulateDesc.A = "dST"
-      accumulateDesc.B = "Q"
-      accumulateDesc.C = "dK"
+      accumulateDesc.A = .dS // dS^T
+      accumulateDesc.B = .Q
+      accumulateDesc.C = .dK
       dSTQ = accumulate(descriptor: accumulateDesc)
     } else {
       dSTQ = ""

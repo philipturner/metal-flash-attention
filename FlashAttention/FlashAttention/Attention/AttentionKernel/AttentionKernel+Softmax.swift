@@ -14,20 +14,20 @@ extension AttentionKernel {
     func bulkContributions(truncatedHeadDimension: UInt16) -> String {
       // Recycle most of the cached values for dO.
       func declareDerivativeOLocation() -> String {
-        if cached("dO") {
+        if cached(.dO) {
           return ""
         } else {
           return """
           
           // Where the dO data will be read from.
           auto dO_src = simdgroup_matrix_storage<float>::apply_offset(
-            dO, \(leadingDimension("dO")), offset_src, \(transposed("dO")));
+            dO, \(leadingDimension(.dO)), offset_src, \(transposed(.dO)));
           
           """
         }
       }
       func loadDerivativeO() -> String {
-        if cached("dO") {
+        if cached(.dO) {
           return """
           
           auto dO = dO_sram[d / 8];
@@ -38,8 +38,8 @@ extension AttentionKernel {
           
           simdgroup_matrix_storage<float> dO;
           dO.load(
-            dO_src, \(leadingDimension("dO")),
-            ushort2(d, 0), \(transposed("dO")));
+            dO_src, \(leadingDimension(.dO)),
+            ushort2(d, 0), \(transposed(.dO)));
           
           """
         }
@@ -57,7 +57,7 @@ extension AttentionKernel {
       
       // Where the O data will be read from.
       auto O_src = simdgroup_matrix_storage<float>::apply_offset(
-        O, \(leadingDimension("O")), offset_src, \(transposed("O")));
+        O, \(leadingDimension(.O)), offset_src, \(transposed(.O)));
       
       // Going to use async copy to handle the matrix edge.
       #pragma clang loop unroll(disable)
@@ -66,8 +66,8 @@ extension AttentionKernel {
         
         simdgroup_matrix_storage<float> O;
         O.load(
-          O_src, \(leadingDimension("O")),
-          ushort2(d, 0), \(transposed("O")));
+          O_src, \(leadingDimension(.O)),
+          ushort2(d, 0), \(transposed(.O)));
         
         // Perform the pointwise multiplication.
         float2 dO_value = *(dO.thread_elements());
@@ -84,7 +84,7 @@ extension AttentionKernel {
       }
       
       // Abbreviated block, only covers the last 8 elements.
-      func leadingBlockDimension(_ operand: String) -> UInt16 {
+      func leadingBlockDimension(_ operand: AttentionOperand) -> UInt16 {
         if transposed(operand) {
           return blockSequenceLength(operand)
         } else {
@@ -101,9 +101,9 @@ extension AttentionKernel {
         uint2 offset_src(D_offset, R_offset);
         
         auto dO_src = simdgroup_matrix_storage<float>::apply_offset(
-          dO, \(leadingDimension("dO")), offset_src, \(transposed("dO")));
+          dO, \(leadingDimension(.dO)), offset_src, \(transposed(.dO)));
         auto O_src = simdgroup_matrix_storage<float>::apply_offset(
-          O, \(leadingDimension("O")), offset_src, \(transposed("O")));
+          O, \(leadingDimension(.O)), offset_src, \(transposed(.O)));
         auto dO_dst = (threadgroup float*)(threadgroup_block);
         auto O_dst = (threadgroup float*)(threadgroup_block);
         O_dst += \(blockDimensions.parallelization * 8);
@@ -119,11 +119,11 @@ extension AttentionKernel {
         // Issue two async copies.
         simdgroup_event events[2];
         events[0].async_copy(
-          dO_dst, \(leadingBlockDimension("dO")), tile_dst,
-          dO_src, \(leadingDimension("dO")), tile_src, \(transposed("dO")));
+          dO_dst, \(leadingBlockDimension(.dO)), tile_dst,
+          dO_src, \(leadingDimension(.dO)), tile_src, \(transposed(.dO)));
         events[1].async_copy(
-          O_dst, \(leadingBlockDimension("O")), tile_dst,
-          O_src, \(leadingDimension("O")), tile_src, \(transposed("O")));
+          O_dst, \(leadingBlockDimension(.O)), tile_dst,
+          O_src, \(leadingDimension(.O)), tile_src, \(transposed(.O)));
         simdgroup_event::wait(2, events);
       }
       
@@ -134,11 +134,11 @@ extension AttentionKernel {
       O_block += \(blockDimensions.parallelization * 8);
       
       dO_block = simdgroup_matrix_storage<float>::apply_offset(
-        dO_block, \(leadingBlockDimension("dO")),
-        offset_src, \(transposed("dO")));
+        dO_block, \(leadingBlockDimension(.dO)),
+        offset_src, \(transposed(.dO)));
       O_block = simdgroup_matrix_storage<float>::apply_offset(
-        O_block, \(leadingBlockDimension("O")),
-        offset_src, \(transposed("O")));
+        O_block, \(leadingBlockDimension(.O)),
+        offset_src, \(transposed(.O)));
       threadgroup_barrier(mem_flags::mem_threadgroup);
       
       // Load the zero-padded edge data.
@@ -146,9 +146,9 @@ extension AttentionKernel {
       simdgroup_matrix_storage<float> dO;
       simdgroup_matrix_storage<float> O;
       dO.load(
-        dO_block, \(leadingBlockDimension("dO")), origin, \(transposed("dO")));
+        dO_block, \(leadingBlockDimension(.dO)), origin, \(transposed(.dO)));
       O.load(
-        O_block, \(leadingBlockDimension("O")), origin, \(transposed("O")));
+        O_block, \(leadingBlockDimension(.O)), origin, \(transposed(.O)));
       
       // Perform the pointwise multiplication.
       float2 dO_value = *(dO.thread_elements());
@@ -331,7 +331,7 @@ extension AttentionKernel {
   func checkpointSoftmaxT() -> String {
     """
     
-    simdgroup_matrix_storage<float> PT_sram[\(blockDimensions.traversal) / 8];
+    simdgroup_matrix_storage<float> P_sram[\(blockDimensions.traversal) / 8];
     {
       \(loadTerm(name: "L"))
       
@@ -343,9 +343,9 @@ extension AttentionKernel {
         L_terms.load(L_terms_block, 1, origin, false);
         float2 L_term = *(L_terms.thread_elements());
         
-        float2 ST_elements = float2(*(ST_sram[r / 8].thread_elements()));
-        float2 PT_elements = fast::exp2(ST_elements * \(forwardScale) - L_term);
-        *(PT_sram[r / 8].thread_elements()) = PT_elements;
+        float2 S_elements = float2(*(S_sram[r / 8].thread_elements()));
+        float2 P_elements = fast::exp2(S_elements * \(forwardScale) - L_term);
+        *(P_sram[r / 8].thread_elements()) = P_elements;
       }
     }
     
@@ -379,7 +379,7 @@ extension AttentionKernel {
   func derivativeSoftmaxT() -> String {
     """
     
-    simdgroup_matrix_storage<float> dST_sram[\(blockDimensions.traversal) / 8];
+    simdgroup_matrix_storage<float> dS_sram[\(blockDimensions.traversal) / 8];
     {
       \(loadTerm(name: "D"))
       
@@ -391,11 +391,11 @@ extension AttentionKernel {
         D_terms.load(D_terms_block, 1, origin, false);
         float2 D_term = *(D_terms.thread_elements());
         
-        float2 PT_elements = float2(*(PT_sram[r / 8].thread_elements()));
-        float2 dPT_elements = float2(*(dPT_sram[r / 8].thread_elements()));
-        float2 dST_elements = dPT_elements * \(backwardScale) - D_term;
-        dST_elements *= PT_elements;
-        *(dST_sram[r / 8].thread_elements()) = dST_elements;
+        float2 P_elements = float2(*(P_sram[r / 8].thread_elements()));
+        float2 dP_elements = float2(*(dP_sram[r / 8].thread_elements()));
+        float2 dS_elements = dP_elements * \(backwardScale) - D_term;
+        dS_elements *= P_elements;
+        *(dS_sram[r / 8].thread_elements()) = dS_elements;
       }
     }
 

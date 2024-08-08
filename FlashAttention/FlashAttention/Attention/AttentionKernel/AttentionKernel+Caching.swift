@@ -9,16 +9,16 @@
 // parallelization x head
 
 extension AttentionKernel {
-  func load(name: String) -> String {
+  func load(operand: AttentionOperand) -> String {
     func loadBlock(registerSize: UInt16) -> String {
       """
       
       #pragma clang loop unroll(full)
       for (ushort d = 0; d < \(registerSize); d += 8) {
         ushort2 origin(d, 0);
-        \(name)_sram[(d_outer + d) / 8].load(
-          \(name)_block, \(leadingBlockDimension(name)),
-          origin, \(transposed(name)));
+        \(operand)_sram[(d_outer + d) / 8].load(
+          \(operand)_block, \(leadingBlockDimension(operand)),
+          origin, \(transposed(operand)));
       }
       
       """
@@ -26,14 +26,14 @@ extension AttentionKernel {
     
     return """
 
-\(allocateCachedOperand(name: name))
+\(allocateCache(operand: operand))
 {
-  // Where the \(name) data will be read from.
-  ushort2 \(name)_block_offset(morton_offset.x, morton_offset.y + sidx * 8);
-  auto \(name)_block = (threadgroup float*)(threadgroup_block);
-  \(name)_block = simdgroup_matrix_storage<float>::apply_offset(
-    \(name)_block, \(leadingBlockDimension(name)),
-    \(name)_block_offset, \(transposed(name)));
+  // Where the \(operand) data will be read from.
+  ushort2 \(operand)_block_offset(morton_offset.x, morton_offset.y + sidx * 8);
+  auto \(operand)_block = (threadgroup float*)(threadgroup_block);
+  \(operand)_block = simdgroup_matrix_storage<float>::apply_offset(
+    \(operand)_block, \(leadingBlockDimension(operand)),
+    \(operand)_block_offset, \(transposed(operand)));
   
   // Outer loop over the head dimension.
 #pragma clang loop unroll(full)
@@ -45,10 +45,10 @@ extension AttentionKernel {
     threadgroup_barrier(mem_flags::mem_threadgroup);
     
     if (sidx == 0) {
-      uint2 \(name)_offset(d_outer, \(parallelizationOffset));
+      uint2 \(operand)_offset(d_outer, \(parallelizationOffset));
       auto src = simdgroup_matrix_storage<float>::apply_offset(
-        \(name), \(leadingDimension(name)),
-        \(name)_offset, \(transposed(name)));
+        \(operand), \(leadingDimension(operand)),
+        \(operand)_offset, \(transposed(operand)));
       auto dst = (threadgroup float*)(threadgroup_block);
       
       ushort D_src_dimension = min(
@@ -65,8 +65,8 @@ extension AttentionKernel {
       
       simdgroup_event event;
       event.async_copy(
-        dst, \(leadingBlockDimension(name)), tile_dst,
-        src, \(leadingDimension(name)), tile_src, \(transposed(name)));
+        dst, \(leadingBlockDimension(operand)), tile_dst,
+        src, \(leadingDimension(operand)), tile_src, \(transposed(operand)));
       simdgroup_event::wait(1, &event);
     }
     threadgroup_barrier(mem_flags::mem_threadgroup);
@@ -83,16 +83,16 @@ extension AttentionKernel {
 """
   }
   
-  func store(name: String) -> String {
+  func store(operand: AttentionOperand) -> String {
     func storeBlock(registerSize: UInt16) -> String {
       """
       
       #pragma clang loop unroll(full)
       for (ushort d = 0; d < \(registerSize); d += 8) {
         ushort2 origin(d, 0);
-        \(name)_sram[(d_outer + d) / 8].store(
-          \(name)_block, \(leadingBlockDimension(name)),
-          origin, \(transposed(name)));
+        \(operand)_sram[(d_outer + d) / 8].store(
+          \(operand)_block, \(leadingBlockDimension(operand)),
+          origin, \(transposed(operand)));
       }
       
       """
@@ -101,12 +101,12 @@ extension AttentionKernel {
     return """
 
 {
-  // Where the \(name) data will be written to.
-  ushort2 \(name)_block_offset(morton_offset.x, morton_offset.y + sidx * 8);
-  auto \(name)_block = (threadgroup float*)(threadgroup_block);
-  \(name)_block = simdgroup_matrix_storage<float>::apply_offset(
-    \(name)_block, \(leadingBlockDimension(name)),
-    \(name)_block_offset, \(transposed(name)));
+  // Where the \(operand) data will be written to.
+  ushort2 \(operand)_block_offset(morton_offset.x, morton_offset.y + sidx * 8);
+  auto \(operand)_block = (threadgroup float*)(threadgroup_block);
+  \(operand)_block = simdgroup_matrix_storage<float>::apply_offset(
+    \(operand)_block, \(leadingBlockDimension(operand)),
+    \(operand)_block_offset, \(transposed(operand)));
   
     // Outer loop over the head dimension.
 #pragma clang loop unroll(full)
@@ -126,11 +126,11 @@ extension AttentionKernel {
     threadgroup_barrier(mem_flags::mem_threadgroup);
     
     if (sidx == 0) {
-      uint2 \(name)_offset(d_outer, \(parallelizationOffset));
+      uint2 \(operand)_offset(d_outer, \(parallelizationOffset));
       auto src = (threadgroup float*)(threadgroup_block);
       auto dst = simdgroup_matrix_storage<float>::apply_offset(
-        \(name), \(leadingDimension(name)),
-        \(name)_offset, \(transposed(name)));
+        \(operand), \(leadingDimension(operand)),
+        \(operand)_offset, \(transposed(operand)));
      
       ushort D_dimension = min(
         ushort(\(blockDimensions.head)),
@@ -142,8 +142,8 @@ extension AttentionKernel {
       
       simdgroup_event event;
       event.async_copy(
-        dst, \(leadingDimension(name)), tile,
-        src, \(leadingBlockDimension(name)), tile, \(transposed(name)));
+        dst, \(leadingDimension(operand)), tile,
+        src, \(leadingBlockDimension(operand)), tile, \(transposed(operand)));
       simdgroup_event::wait(1, &event);
     }
   }
@@ -155,10 +155,11 @@ extension AttentionKernel {
 
 extension AttentionKernel {
   // Allocate registers for the specified operand.
-  fileprivate func allocateCachedOperand(name: String) -> String {
+  fileprivate func allocateCache(operand: AttentionOperand) -> String {
     """
     
-    simdgroup_matrix_storage<float> \(name)_sram[\(paddedHeadDimension / 8)];
+    simdgroup_matrix_storage<float> \
+    \(operand)_sram[\(paddedHeadDimension / 8)];
     
     """
   }
@@ -171,10 +172,10 @@ extension AttentionKernel {
     switch type {
     case .forward:
       if cachedInputs.Q {
-        output += load(name: "Q")
+        output += load(operand: .Q)
       }
       if cachedOutputs.O {
-        output += allocateCachedOperand(name: "O")
+        output += allocateCache(operand: .O)
       }
       output += """
 
@@ -185,13 +186,13 @@ extension AttentionKernel {
       
     case .backwardQuery(let computeDerivativeQ):
       if cachedInputs.Q {
-        output += load(name: "Q")
+        output += load(operand: .Q)
       }
       if cachedInputs.dO {
-        output += load(name: "dO")
+        output += load(operand: .dO)
       }
       if computeDerivativeQ, cachedOutputs.dQ {
-        output += allocateCachedOperand(name: "dQ")
+        output += allocateCache(operand: .dQ)
       }
       if computeDerivativeQ {
         output += """
@@ -213,16 +214,16 @@ extension AttentionKernel {
       
     case .backwardKeyValue(let computeDerivativeK):
       if cachedInputs.K {
-        output += load(name: "K")
+        output += load(operand: .K)
       }
       if cachedInputs.V {
-        output += load(name: "V")
+        output += load(operand: .V)
       }
       if computeDerivativeK, cachedOutputs.dK {
-        output += allocateCachedOperand(name: "dK")
+        output += allocateCache(operand: .dK)
       }
       if cachedOutputs.dV {
-        output += allocateCachedOperand(name: "dV")
+        output += allocateCache(operand: .dV)
       }
     }
     
@@ -237,7 +238,7 @@ extension AttentionKernel {
     switch type {
     case .forward(let computeL):
       if cachedOutputs.O {
-        output += store(name: "O")
+        output += store(operand: .O)
       }
       if computeL {
         output += """
@@ -253,15 +254,15 @@ extension AttentionKernel {
     
     case .backwardQuery(let computeDerivativeQ):
       if computeDerivativeQ, cachedOutputs.dQ {
-        output += store(name: "dQ")
+        output += store(operand: .dQ)
       }
       
     case .backwardKeyValue(let computeDerivativeK):
       if computeDerivativeK, cachedOutputs.dK {
-        output += store(name: "dK")
+        output += store(operand: .dK)
       }
       if cachedOutputs.dV {
-        output += store(name: "dV")
+        output += store(operand: .dV)
       }
     }
     

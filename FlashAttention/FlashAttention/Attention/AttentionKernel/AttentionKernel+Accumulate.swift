@@ -9,9 +9,9 @@
 // parallelization x traversal x head
 
 struct AttentionAccumulateDescriptor {
-  var A: String?
-  var B: String?
-  var C: String?
+  var A: AttentionOperand?
+  var B: AttentionOperand?
+  var C: AttentionOperand?
   
   /// Optional. Factor to multiply every time the accumulator is loaded.
   var everyIterationScale: String?

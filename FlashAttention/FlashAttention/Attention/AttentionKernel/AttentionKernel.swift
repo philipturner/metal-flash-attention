@@ -24,9 +24,7 @@
 
 struct AttentionKernel {
   var blockDimensions: (
-    parallelization: UInt16,
-    traversal: UInt16,
-    head: UInt16)
+    parallelization: UInt16, traversal: UInt16, head: UInt16)
   var cachedInputs: (Q: Bool, K: Bool, V: Bool, dO: Bool)
   var cachedOutputs: (dQ: Bool, dK: Bool, dV: Bool, O: Bool)
   var headDimension: UInt16
@@ -122,65 +120,65 @@ extension AttentionKernel {
   // algorithms in AttentionDescriptor, which understand which operands are
   // present in every kernel.
   
-  func cached(_ operand: String) -> Bool {
+  func cached(_ operand: AttentionOperand) -> Bool {
     switch operand {
-    case "Q": return cachedInputs.Q
-    case "K": return cachedInputs.K
-    case "V": return cachedInputs.V
-    case "O": return cachedOutputs.O
+    case .Q: return cachedInputs.Q
+    case .K: return cachedInputs.K
+    case .V: return cachedInputs.V
+    case .O: return cachedOutputs.O
       
-    case "dQ": return cachedOutputs.dQ
-    case "dK": return cachedOutputs.dK
-    case "dV": return cachedOutputs.dV
-    case "dO": return cachedInputs.dO
+    case .dQ: return cachedOutputs.dQ
+    case .dK: return cachedOutputs.dK
+    case .dV: return cachedOutputs.dV
+    case .dO: return cachedInputs.dO
       
     default: fatalError("Unrecognized operand.")
     }
   }
   
-  func transposed(_ operand: String) -> Bool {
+  func transposed(_ operand: AttentionOperand) -> Bool {
     switch operand {
-    case "Q", "dQ": return transposeState.Q
-    case "K", "dK": return transposeState.K
-    case "V", "dV": return transposeState.V
-    case "O", "dO": return transposeState.O
+    case .Q, .dQ: return transposeState.Q
+    case .K, .dK: return transposeState.K
+    case .V, .dV: return transposeState.V
+    case .O, .dO: return transposeState.O
     default: fatalError("Unrecognized operand.")
     }
   }
   
-  func sequenceLength(_ operand: String) -> String {
+  func sequenceLength(_ operand: AttentionOperand) -> String {
     switch operand {
-    case "Q", "dQ": return "R"
-    case "K", "dK": return "C"
-    case "V", "dV": return "C"
-    case "O", "dO": return "R"
+    case .Q, .dQ: return "R"
+    case .K, .dK: return "C"
+    case .V, .dV: return "C"
+    case .O, .dO: return "R"
     default: fatalError("Unrecognized operand.")
     }
   }
   
-  func blockSequenceLength(_ operand: String) -> UInt16 {
+  func blockSequenceLength(_ operand: AttentionOperand) -> UInt16 {
     switch type {
     case .forward, .backwardQuery:
       switch operand {
-      case "Q", "dQ": return blockDimensions.parallelization
-      case "K", "dK": return blockDimensions.traversal
-      case "V", "dV": return blockDimensions.traversal
-      case "O", "dO": return blockDimensions.parallelization
+      case .Q, .dQ: return blockDimensions.parallelization
+      case .K, .dK: return blockDimensions.traversal
+      case .V, .dV: return blockDimensions.traversal
+      case .O, .dO: return blockDimensions.parallelization
       default: fatalError("Unrecognized operand.")
       }
       
     case .backwardKeyValue:
       switch operand {
-      case "Q", "dQ": return blockDimensions.traversal
-      case "K", "dK": return blockDimensions.parallelization
-      case "V", "dV": return blockDimensions.parallelization
-      case "O", "dO": return blockDimensions.traversal
+      case .Q, .dQ: return blockDimensions.traversal
+      case .K, .dK: return blockDimensions.parallelization
+      case .V, .dV: return blockDimensions.parallelization
+      case .O, .dO: return blockDimensions.traversal
       default: fatalError("Unrecognized operand.")
       }
     }
   }
   
-  func leadingDimension(_ operand: String) -> String {
+  func leadingDimension(_ operand: AttentionOperand) -> String {
     if transposed(operand) {
       return sequenceLength(operand)
     } else {
@@ -188,7 +186,7 @@ extension AttentionKernel {
     }
   }
   
-  func leadingBlockDimension(_ operand: String) -> UInt16 {
+  func leadingBlockDimension(_ operand: AttentionOperand) -> UInt16 {
     if transposed(operand) {
       return blockSequenceLength(operand)
     } else {
@@ -289,7 +287,7 @@ extension AttentionKernel {
     func createBufferBindings() -> String {
       var output: String = ""
       for key in operands {
-        var line = "device float* \(key.name) "
+        var line = "device float* \(key) "
         line += "[[buffer(\(key.bufferBinding!))]],"
         output += "  " + line + "\n"
       }
