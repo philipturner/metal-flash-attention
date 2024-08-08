@@ -244,12 +244,12 @@ extension AttentionKernel {
         operands += [.LTerms]
       }
     case .backwardQuery:
-      operands += [.O, .dO]
-      operands += [.Q, .K, .V, .dQ]
+      operands += [.Q, .K, .V, .O]
+      operands += [.dO, .dQ]
       operands += [.LTerms, .DTerms]
     case .backwardKeyValue:
-      operands += [.Q, .K, .V, .dO, .dV]
-      operands += [.dK]
+      operands += [.Q, .K, .V]
+      operands += [.dO, .dV, .dK]
       operands += [.LTerms, .DTerms]
     }
     operands.sort {
