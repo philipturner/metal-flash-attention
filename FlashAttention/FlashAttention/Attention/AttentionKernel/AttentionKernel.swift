@@ -30,6 +30,8 @@ struct AttentionKernel {
   
   // Categorical information about various operand attributes.
   var cacheState: [AttentionOperand: Bool]
+  var preferAsyncCache: Bool
+  var preferAsyncLoad: Bool
   var transposeState: [AttentionOperand: Bool]
   var type: AttentionKernelType
   
@@ -50,8 +52,11 @@ struct AttentionKernel {
       fatalError("Descriptor was incomplete.")
     }
     self.blockDimensions = blockDimensions
-    self.cacheState = descriptor.cacheState
     self.headDimension = headDimension
+    
+    self.cacheState = descriptor.cacheState
+    self.preferAsyncCache = descriptor.preferAsyncCache
+    self.preferAsyncLoad = descriptor.preferAsyncLoad
     self.transposeState = descriptor.transposeState
     self.type = type
     

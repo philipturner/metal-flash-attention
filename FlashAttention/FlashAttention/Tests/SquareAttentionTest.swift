@@ -223,7 +223,11 @@ func profileProblemSize(N: Int, D: Int) -> Int {
   attentionDesc.transposeState = (Q: false, K: false, V: false, O: false)
   
   func createKernel(type: AttentionKernelType) -> AttentionKernel {
-    let attentionKernelDesc = attentionDesc.kernelDescriptor(type: type)
+    var attentionKernelDesc = attentionDesc.kernelDescriptor(type: type)
+    
+    // Change the default kernel settings here.
+    attentionKernelDesc.preferAsyncLoad = false
+    
     let attentionKernel = AttentionKernel(descriptor: attentionKernelDesc)
     return attentionKernel
   }

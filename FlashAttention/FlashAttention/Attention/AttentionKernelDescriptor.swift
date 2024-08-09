@@ -55,6 +55,12 @@ struct AttentionKernelDescriptor {
   
   var headDimension: UInt16?
   
+  /// Reads with a one-to-one mapping to threads (like GEMM store) and writes.
+  var preferAsyncCache: Bool = true
+  
+  /// Reads that are shared among threads (like GEMM load).
+  var preferAsyncLoad: Bool = true
+  
   /// Whether each operand is transposed in RAM.
   ///
   /// If the layout is row-major, where a row spans D contiguous elements in

@@ -23,3 +23,7 @@ import QuartzCore
 // - Find a way to benchmark the 90% iterations direct, 10% iterations async
 //   case on M4, when the problem size is divisible by the block size.
 //   - Most severe impact is when the D block is very small
+//
+// To implement the pathways:
+// - start by modifying the L_term/D_term code to rely on 'preferAsyncLoad'
+// - benchmark the impact on occupancy
