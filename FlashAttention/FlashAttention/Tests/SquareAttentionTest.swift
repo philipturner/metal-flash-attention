@@ -31,10 +31,8 @@ func executeScript() {
   profileProblemSize(sequenceDimension: 384, headDimension: 95)
   profileProblemSize(sequenceDimension: 777, headDimension: 199)
   
-  #if false
-  // let N_array = [4096, 8192]
-  // let D_array = [192, 256]
-  let N_array = [128, 256, 512, 1024, 2048, 4096, 8192]
+  #if true
+  let N_array = [129, 161, 193]
   let D_array = [32, 48, 64, 80, 96, 128, 160, 192, 256]
   
   // Loop over the configurations.
@@ -44,7 +42,8 @@ func executeScript() {
     print("N =", N, terminator: ", ")
     
     for D in D_array {
-      let metric = profileProblemSize(N: N, D: D)
+      let metric = profileProblemSize(
+        sequenceDimension: N, headDimension: D)
       outputString += "\(metric), "
       print(metric, terminator: ", ")
     }
@@ -57,85 +56,71 @@ func executeScript() {
   print(outputString)
   #endif
   
-  // Before: 100% Caching
-  //
-  //  latency: 57
-  //  latency: 112
-  //  latency: 54
-  //  latency: 57
-  //  latency: 63
-  //  latency: 64
-  //  latency: 66
-  //  latency: 537
-  //  latency: 528
-  //  latency: 164
-  //  latency: 217
-  //  latency: 135
-  //  latency: 124
-  //  latency: 53
-  //  latency: 63
-  //  latency: 1187
-  //  latency: 5975
-  
-  // Before: 0% Caching
-  //
-  //  latency: 55
-  //  latency: 123
-  //  latency: 52
-  //  latency: 56
-  //  latency: 62
-  //  latency: 63
-  //  latency: 64
-  //  latency: 770
-  //  latency: 770
-  //  latency: 191
-  //  latency: 316
-  //  latency: 123
-  //  latency: 117
-  //  latency: 48
-  //  latency: 53
-  //  latency: 1640
-  //  latency: 7624
-  
-  // With new D terms computation
-  //
-  //  latency: 66
-  //  latency: 124
-  //  latency: 54
-  //  latency: 62
-  //  latency: 75
-  //  latency: 77
-  //  latency: 86
-  //  latency: 852
-  //  latency: 829
-  //  latency: 206
-  //  latency: 339
-  //  latency: 152
-  //  latency: 118
-  //  latency: 54
-  //  latency: 56
-  //  latency: 1824
-  //  latency: 7483
-  
-  // With higher-latency L[i]/D[i] async copies
-  //
-  //  latency: 66
-  //  latency: 125
-  //  latency: 59
-  //  latency: 62
-  //  latency: 73
-  //  latency: 74
-  //  latency: 84
-  //  latency: 863
-  //  latency: 824
-  //  latency: 205
-  //  latency: 334
-  //  latency: 166
-  //  latency: 117
-  //  latency: 56
-  //  latency: 58
-  //  latency: 1834
-  //  latency: 5318
+  /*
+   Benchmarking the option to load L/D from device memory.
+   
+   ## One codepath
+   
+   N = 127
+   
+   127, 1024, 896, 896, 896, 896, 896, 896, 896, 896
+   159, 704, 640, 640, 640, 640, 640, 640, 640, 640
+   191, 704, 704, 704, 704, 704, 704, 704, 704, 704
+   
+   N = 128
+   
+   128, 896, 896, 1024, 896, 1024, 1024, 1024, 1024, 1024
+   160, 704, 640, 640, 640, 640, 640, 640, 640, 640
+   192, 704, 704, 704, 704, 704, 704, 704, 704, 704
+   
+   N = 129
+   
+   129, 896, 896, 832, 896, 832, 832, 832, 832, 832
+   161, 768, 704, 640, 704, 640, 640, 640, 640, 640
+   193, 768, 704, 704, 704, 704, 704, 704, 640, 704
+   
+   ## Two codepaths
+   
+   N = 127
+   
+   127, 1024, 896, 896, 896, 896, 896, 896, 896, 896
+   159, 704, 640, 640, 640, 640, 640, 640, 640, 640
+   191, 704, 704, 704, 704, 704, 704, 704, 704, 704
+   
+   N = 128
+   
+   128, 896, 896, 1024, 896, 1024, 1024, 1024, 1024, 1024
+   160, 704, 640, 640, 640, 640, 640, 640, 640, 640
+   192, 704, 704, 704, 704, 704, 704, 704, 704, 704
+   
+   N = 129
+   
+   129, 896, 896, 832, 896, 832, 832, 832, 832, 832
+   161, 768, 704, 640, 704, 640, 640, 640, 640, 640
+   193, 768, 704, 704, 704, 704, 704, 704, 640, 704
+   
+   ## Two codepaths when unaligned (D_block = 64)
+   
+   N = 127
+   
+   127, 1024, 896, 896, 896, 896, 896, 896, 896, 896
+   159, 704, 640, 640, 640, 640, 640, 640, 640, 640
+   191, 704, 704, 704, 704, 704, 704, 704, 704, 704
+   
+   N = 128
+   
+   128, 896, 896, 1024, 896, 1024, 1024, 1024, 1024, 1024
+   160, 704, 640, 640, 640, 640, 640, 640, 640, 640
+   192, 704, 704, 704, 704, 704, 704, 704, 704, 704
+   
+   N = 129
+   
+   129, 896, 896, 832, 896, 832, 832, 832, 832, 832
+   161, 768, 704, 640, 704, 640, 640, 640, 640, 640
+   193, 768, 704, 704, 704, 704, 704, 704, 640, 704
+
+   
+   */
 }
 
 // Returns: Throughput in GINSTRS.
@@ -526,6 +511,15 @@ func profileProblemSize(
   return maxGINSTRS
 #endif
   
-  return 0
+  if sequenceDimension <= 135 {
+    return pipelineForward.maxTotalThreadsPerThreadgroup
+  } else if sequenceDimension <= 165 {
+    return pipelineBackwardQuery.maxTotalThreadsPerThreadgroup
+  } else if sequenceDimension <= 195 {
+    return pipelineBackwardQuery.maxTotalThreadsPerThreadgroup
+  } else {
+    return 0
+  }
 }
+
 #endif

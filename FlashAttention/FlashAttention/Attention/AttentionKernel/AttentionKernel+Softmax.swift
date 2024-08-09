@@ -404,7 +404,22 @@ extension AttentionKernel {
         
         """
       case .backwardKeyValue:
-        fatalError("Not implemented.")
+        return """
+        
+        auto \(operand)_src = \(operand);
+        \(operand)_src += \(traversalThreadOffset);
+        
+        #pragma clang loop unroll(full)
+        for (ushort c = 0; c < \(blockDimensions.traversal); c += 8) {
+          ushort2 origin(c, 0);
+          simdgroup_matrix_storage<float> \(operand)_sram;
+          \(operand)_sram.load(\(operand)_src, 1, origin, false);
+          float2 \(operand) = *(\(operand)_sram.thread_elements());
+          
+          \(innerLoop())
+        }
+        
+        """
       }
     }
     
@@ -466,15 +481,43 @@ extension AttentionKernel {
       
       """
     case .backwardKeyValue:
-      return """
-      
-      \(allocateOutput())
-      {
-        \(loadOperand())
-        \(asyncBranch())
+      if preferAsyncLoad {
+        return """
+        
+        \(allocateOutput())
+        {
+          \(loadOperand())
+          \(asyncBranch())
+        }
+        
+        """
+      } else {
+        let blockDim = blockDimensions.traversal
+        #if true
+        
+        let condition = """
+        (\(traversalDimension) % \(blockDim) != 0) &&
+        (\(traversalOffset) + \(blockDim) <= \(traversalDimension))
+        """
+        #else
+        
+        let condition = """
+        (\(traversalOffset) + \(blockDim) <= \(traversalDimension))
+        """
+        #endif
+        
+        return """
+        
+        \(allocateOutput())
+        if (\(condition)) {
+          \(directBranch())
+        } else {
+          \(loadOperand())
+          \(asyncBranch())
+        }
+        
+        """
       }
-      
-      """
     }
   }
 }

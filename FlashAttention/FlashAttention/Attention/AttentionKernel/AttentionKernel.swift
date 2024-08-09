@@ -213,6 +213,10 @@ extension AttentionKernel {
     }
   }
   
+  var traversalThreadOffset: String {
+    "\(traversalOffset) + morton_offset.x"
+  }
+  
   var paddedTraversalEdge: String {
     let blockDim = blockDimensions.traversal
     let remainder = "\(traversalDimension) % \(blockDim)"
