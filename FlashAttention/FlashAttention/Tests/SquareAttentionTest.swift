@@ -31,8 +31,8 @@ func executeScript() {
   profileProblemSize(sequenceDimension: 384, headDimension: 95)
   profileProblemSize(sequenceDimension: 777, headDimension: 199)
   
-  #if true
-  let N_array = [129, 161, 193]
+  #if false
+  let N_array = [128, 160, 192]
   let D_array = [32, 48, 64, 80, 96, 128, 160, 192, 256]
   
   // Loop over the configurations.
@@ -55,72 +55,6 @@ func executeScript() {
   print()
   print(outputString)
   #endif
-  
-  /*
-   Benchmarking the option to load L/D from device memory.
-   
-   ## One codepath
-   
-   N = 127
-   
-   127, 1024, 896, 896, 896, 896, 896, 896, 896, 896
-   159, 704, 640, 640, 640, 640, 640, 640, 640, 640
-   191, 704, 704, 704, 704, 704, 704, 704, 704, 704
-   
-   N = 128
-   
-   128, 896, 896, 1024, 896, 1024, 1024, 1024, 1024, 1024
-   160, 704, 640, 640, 640, 640, 640, 640, 640, 640
-   192, 704, 704, 704, 704, 704, 704, 704, 704, 704
-   
-   N = 129
-   
-   129, 896, 896, 832, 896, 832, 832, 832, 832, 832
-   161, 768, 704, 640, 704, 640, 640, 640, 640, 640
-   193, 768, 704, 704, 704, 704, 704, 704, 640, 704
-   
-   ## Two codepaths
-   
-   N = 127
-   
-   127, 1024, 896, 896, 896, 896, 896, 896, 896, 896
-   159, 704, 640, 640, 640, 640, 640, 640, 640, 640
-   191, 704, 704, 704, 704, 704, 704, 704, 704, 704
-   
-   N = 128
-   
-   128, 896, 896, 1024, 896, 1024, 1024, 1024, 1024, 1024
-   160, 704, 640, 640, 640, 640, 640, 640, 640, 640
-   192, 704, 704, 704, 704, 704, 704, 704, 704, 704
-   
-   N = 129
-   
-   129, 896, 896, 832, 896, 832, 832, 832, 832, 832
-   161, 768, 704, 640, 704, 640, 640, 640, 640, 640
-   193, 768, 704, 704, 704, 704, 704, 704, 640, 704
-   
-   ## Two codepaths when unaligned (D_block = 64)
-   
-   N = 127
-   
-   127, 1024, 896, 896, 896, 896, 896, 896, 896, 896
-   159, 704, 640, 640, 640, 640, 640, 640, 640, 640
-   191, 704, 704, 704, 704, 704, 704, 704, 704, 704
-   
-   N = 128
-   
-   128, 896, 896, 1024, 896, 1024, 1024, 1024, 1024, 1024
-   160, 704, 640, 640, 640, 640, 640, 640, 640, 640
-   192, 704, 704, 704, 704, 704, 704, 704, 704, 704
-   
-   N = 129
-   
-   129, 896, 896, 832, 896, 832, 832, 832, 832, 832
-   161, 768, 704, 640, 704, 640, 640, 640, 640, 640
-   193, 768, 704, 704, 704, 704, 704, 704, 640, 704
-
-   
-   */
 }
 
 // Returns: Throughput in GINSTRS.
@@ -133,51 +67,6 @@ func profileProblemSize(
   networkDesc.N = sequenceDimension
   networkDesc.D = headDimension
   let network = Network(descriptor: networkDesc)
-  
-  /*
-  var attentionDesc = AttentionKernelDescriptor()
-  attentionDesc.blockDimensions = (
-    parallelization: 32,
-    traversal: 64,
-    head: 32)
-  attentionDesc.headDimension = UInt16(D)
-  
-  for input in [AttentionOperand.Q, .K, .V, .dO] {
-    attentionDesc.cacheState[input] = false
-    attentionDesc.transposeState[input] = false
-  }
-  for output in [AttentionOperand.dQ, .dK, .dV, .O] {
-    attentionDesc.cacheState[output] = false
-    attentionDesc.transposeState[output] = false
-  }
-  
-  attentionDesc.type = .forward(true)
-  let kernelForward = AttentionKernel(descriptor: attentionDesc)
-  
-  attentionDesc.type = .backwardQuery
-  let kernelBackwardQuery = AttentionKernel(descriptor: attentionDesc)
-  
-  attentionDesc.type = .backwardKeyValue
-  let kernelBackwardKeyValue = AttentionKernel(descriptor: attentionDesc)
-  
-  func createPipeline(kernel: AttentionKernel) -> MTLComputePipelineState {
-    // Set the function constants.
-    let constants = MTLFunctionConstantValues()
-    var R = UInt32(N)
-    var C = UInt32(N)
-    constants.setConstantValue(&R, type: .uint, index: 0)
-    constants.setConstantValue(&C, type: .uint, index: 1)
-    
-    let device = MTLContext.global.device
-    let library = try! device.makeLibrary(source: kernel.source, options: nil)
-    let function = try! library.makeFunction(
-      name: "attention", constantValues: constants)
-    return try! device.makeComputePipelineState(function: function)
-  }
-  let pipelineForward = createPipeline(kernel: kernelForward)
-  let pipelineBackwardQuery = createPipeline(kernel: kernelBackwardQuery)
-  let pipelineBackwardKeyValue = createPipeline(kernel: kernelBackwardKeyValue)
-   */
   
   // MARK: - Buffers
   

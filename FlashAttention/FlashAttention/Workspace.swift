@@ -13,7 +13,7 @@ import QuartzCore
 /// when the 'main' branch is in a stable state. Clients can utilize this
 /// function to script tests in their fork.
 
-// Tasks:
+// Tasks for M3 optimization:
 // - change the attention kernel to rely on a two-level descriptor API [DONE]
 // - add two optional pathways to elide async copies
 //   - reads that would be shared among threads (like GEMM load)
@@ -27,3 +27,18 @@ import QuartzCore
 // To implement the pathways:
 // - start by modifying the L/D code to rely on 'preferAsyncLoad'
 // - benchmark the impact on occupancy
+// - expand 'preferAsyncLoad' to the following specific areas:
+//   - dO * O (RHS)
+//   - outer product (RHS)
+//   - accumulate (RHS)
+
+// Tasks for attention bias:
+// - support two-level block sparse attention bias
+//   - outer block size is square and highly divisible
+//     - 480 divisible by 16, 24, 32, 40, 48,     80, 96, 120
+//     - 640 divisible by 16,     32, 40,     64, 80,     128
+//     - 960 divisible by 16, 24, 32, 40, 48, 64, 80, 96, 120
+//   - inner block size is rectangular and implementation-defined
+//   - storage format is block-padded in memory
+// - dense attention bias allows odd leading dimensions
+// - NOT THE PRIORITY AT THE MOMENT

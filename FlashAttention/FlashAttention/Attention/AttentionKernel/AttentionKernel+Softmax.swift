@@ -304,35 +304,6 @@ extension AttentionKernel {
 
 // MARK: - Softmax
 
-/*
-
-extension AttentionKernel {
-  // Whether the L/D can be read directly from RAM.
-  fileprivate var directLoadCondition: String {
-    if preferAsyncLoad {
-      return "false"
-    } else {
-      let blockDim = blockDimensions.traversal
-      return "\(traversalOffset) + \(blockDim) <= \(traversalDimension)"
-    }
-  }
-  
-  fileprivate func declareDirectLocation(term: AttentionOperand) -> String {
-    guard case .backwardKeyValue = type else {
-      fatalError("This function should not have been called.")
-    }
-    
-    return """
-    
-    // Where the \(term) data will be read from.
-    auto \(term)_src = \(term) + \(traversalOffset) + morton_offset.x;
-    
-    """
-  }
-}
- 
- */
-
 extension AttentionKernel {
   // A softmax where the per-row statistics have been reduced beforehand.
   //
@@ -493,18 +464,10 @@ extension AttentionKernel {
         """
       } else {
         let blockDim = blockDimensions.traversal
-        #if true
-        
         let condition = """
         (\(traversalDimension) % \(blockDim) != 0) &&
         (\(traversalOffset) + \(blockDim) <= \(traversalDimension))
         """
-        #else
-        
-        let condition = """
-        (\(traversalOffset) + \(blockDim) <= \(traversalDimension))
-        """
-        #endif
         
         return """
         
