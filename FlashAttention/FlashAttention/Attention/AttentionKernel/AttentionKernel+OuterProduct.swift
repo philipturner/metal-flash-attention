@@ -147,6 +147,11 @@ extension AttentionKernel {
     //
     // First step:
     // - if/else branch that just dives into the same exact code
+    //
+    // Next step:
+    // - clean up the code from debugging
+    // - remove dead assembly code from paths that are already
+    //   forbidden for 'device' read
     
     // NOTE: Affected by preferAsyncLoad
     // - omitted completely
@@ -255,6 +260,8 @@ extension AttentionKernel {
       for (ushort c = \(traversalStart); c < \(traversalEnd); c += 8) {
         // Load the RHS from threadgroup memory.
         // loop type: \(descriptor.addressSpace)
+        //
+        // NO LONGER THREADGROUP MEMORY!
         ushort2 origin(c, d);
         simdgroup_matrix_storage<float> \(B);
         \(B).load(
@@ -341,8 +348,15 @@ extension AttentionKernel {
       
       let blockDim = blockDimensions.traversal
       let condition = """
-      (\(traversalOffset) == 0) &&
-      (d_outer == 0)
+      \(!preferAsyncLoad)
+      && (
+        (\(traversalDimension) % \(blockDim) == 0) ||
+        (\(traversalOffset) + \(blockDim) <= \(traversalDimension))
+      )
+      && (
+        (\(headDimension) % \(blockDimensions.head) == 0) ||
+        (d_outer + \(blockDimensions.head) <= \(headDimension))
+      )
       """
       
       return """
