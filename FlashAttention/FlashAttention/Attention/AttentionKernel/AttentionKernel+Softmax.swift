@@ -329,71 +329,6 @@ extension AttentionKernel {
       }
     }
     
-    func innerLoop() -> String {
-      let scale = dotProductScale(derivative: derivative)
-      
-      if !derivative {
-        return """
-        
-        float2 S = float2(*(S_sram[c / 8].thread_elements()));
-        float2 P = fast::exp2(S * \(scale) - L);
-        *(P_sram[c / 8].thread_elements()) = P;
-        
-        """
-      } else {
-        return """
-        
-        float2 P = float2(*(P_sram[c / 8].thread_elements()));
-        float2 dP = float2(*(dP_sram[c / 8].thread_elements()));
-        float2 dS = P * (dP * \(scale) - D);
-        *(dS_sram[c / 8].thread_elements()) = dS;
-        
-        """
-      }
-    }
-    
-    func directBranch() -> String {
-      switch type {
-      case .forward:
-        return """
-        
-        #pragma clang loop unroll(full)
-        for (ushort c = 0; c < \(blockDimensions.traversal); c += 8) {
-          auto L = m;
-          \(innerLoop())
-        }
-        
-        """
-      case .backwardQuery:
-        return """
-        
-        #pragma clang loop unroll(full)
-        for (ushort c = 0; c < \(blockDimensions.traversal); c += 8) {
-          auto \(operand) = \(operand)_sram;
-          \(innerLoop())
-        }
-        
-        """
-      case .backwardKeyValue:
-        return """
-        
-        auto \(operand)_src = \(operand);
-        \(operand)_src += \(traversalThreadOffset);
-        
-        #pragma clang loop unroll(full)
-        for (ushort c = 0; c < \(blockDimensions.traversal); c += 8) {
-          ushort2 origin(c, 0);
-          simdgroup_matrix_storage<float> \(operand)_sram;
-          \(operand)_sram.load(\(operand)_src, 1, origin, false);
-          float2 \(operand) = *(\(operand)_sram.thread_elements());
-          
-          \(innerLoop())
-        }
-        
-        """
-      }
-    }
-    
     func loadOperand() -> String {
       """
       
@@ -421,24 +356,88 @@ extension AttentionKernel {
       """
     }
     
-    func asyncBranch() -> String {
-      """
-      
-      auto \(operand)_block = (threadgroup float*)(threadgroup_block);
-      \(operand)_block += morton_offset.x;
-      threadgroup_barrier(mem_flags::mem_threadgroup);
-      
-      #pragma clang loop unroll(full)
-      for (ushort c = 0; c < \(blockDimensions.traversal); c += 8) {
-        ushort2 origin(c, 0);
-        simdgroup_matrix_storage<float> \(operand)_sram;
-        \(operand)_sram.load(\(operand)_block, 1, origin, false);
-        float2 \(operand) = *(\(operand)_sram.thread_elements());
+    // Declares the source of L or D.
+    //
+    // Also guards against unsafe accesses to the declared pointer (barrier).
+    func declareOperandSource(async: Bool) -> String {
+      if !async {
+        return """
         
-        \(innerLoop())
+        auto \(operand)_src = \(operand);
+        \(operand)_src += \(traversalThreadOffset);
+        
+        """
+      } else {
+        return """
+        
+        auto \(operand)_src = (threadgroup float*)(threadgroup_block);
+        \(operand)_src += morton_offset.x;
+        threadgroup_barrier(mem_flags::mem_threadgroup);
+        
+        """
       }
+    }
+    
+    func overwriteAttentionMatrixElements() -> String {
+      let scale = dotProductScale(derivative: derivative)
       
-      """
+      if !derivative {
+        return """
+        
+        float2 S = float2(*(S_sram[c / 8].thread_elements()));
+        float2 P = fast::exp2(S * \(scale) - L);
+        *(P_sram[c / 8].thread_elements()) = P;
+        
+        """
+      } else {
+        return """
+        
+        float2 P = float2(*(P_sram[c / 8].thread_elements()));
+        float2 dP = float2(*(dP_sram[c / 8].thread_elements()));
+        float2 dS = P * (dP * \(scale) - D);
+        *(dS_sram[c / 8].thread_elements()) = dS;
+        
+        """
+      }
+    }
+    
+    func innerLoop() -> String {
+      switch type {
+      case .forward:
+        return """
+        
+        #pragma clang loop unroll(full)
+        for (ushort c = 0; c < \(blockDimensions.traversal); c += 8) {
+          auto L = m;
+          \(overwriteAttentionMatrixElements())
+        }
+        
+        """
+      case .backwardQuery:
+        return """
+        
+        #pragma clang loop unroll(full)
+        for (ushort c = 0; c < \(blockDimensions.traversal); c += 8) {
+          auto \(operand) = \(operand)_sram;
+          \(overwriteAttentionMatrixElements())
+        }
+        
+        """
+      case .backwardKeyValue:
+        return """
+        
+        #pragma clang loop unroll(full)
+        for (ushort c = 0; c < \(blockDimensions.traversal); c += 8) {
+          ushort2 origin(c, 0);
+          simdgroup_matrix_storage<float> \(operand)_sram;
+          \(operand)_sram.load(\(operand)_src, 1, origin, false);
+          float2 \(operand) = *(\(operand)_sram.thread_elements());
+          
+          \(overwriteAttentionMatrixElements())
+        }
+        
+        """
+      }
     }
     
     switch type {
@@ -447,40 +446,30 @@ extension AttentionKernel {
       
       \(allocateOutput())
       {
-        \(directBranch())
+        \(innerLoop())
       }
       
       """
     case .backwardKeyValue:
-      if preferAsyncLoad {
-        return """
-        
-        \(allocateOutput())
-        {
-          \(loadOperand())
-          \(asyncBranch())
-        }
-        
-        """
+      let blockDim = blockDimensions.traversal
+      var condition = """
+      (\(traversalDimension) % \(blockDim) != 0) &&
+      (\(traversalOffset) + \(blockDim) <= \(traversalDimension))
+      """
+      
+      return """
+      
+      \(allocateOutput())
+      if (!\(preferAsyncLoad) && \(condition)) {
+        \(declareOperandSource(async: false))
+        \(innerLoop())
       } else {
-        let blockDim = blockDimensions.traversal
-        let condition = """
-        (\(traversalDimension) % \(blockDim) != 0) &&
-        (\(traversalOffset) + \(blockDim) <= \(traversalDimension))
-        """
-        
-        return """
-        
-        \(allocateOutput())
-        if (\(condition)) {
-          \(directBranch())
-        } else {
-          \(loadOperand())
-          \(asyncBranch())
-        }
-        
-        """
+        \(loadOperand())
+        \(declareOperandSource(async: true))
+        \(innerLoop())
       }
+      
+      """
     }
   }
 }

@@ -107,7 +107,7 @@ func profileProblemSize(
     var attentionKernelDesc = attentionDesc.kernelDescriptor(type: type)
     
     // Change the default kernel settings here.
-    attentionKernelDesc.preferAsyncLoad = false
+    attentionKernelDesc.preferAsyncLoad = true
     
     let attentionKernel = AttentionKernel(descriptor: attentionKernelDesc)
     return attentionKernel

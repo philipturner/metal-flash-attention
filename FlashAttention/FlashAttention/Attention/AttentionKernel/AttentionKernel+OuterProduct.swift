@@ -130,6 +130,16 @@ extension AttentionKernel {
     
     // MARK: - RHS
     
+    // When does the code fall into each branch?
+    // - direct
+    //   - sequence length is in-bounds
+    //   - head dimension is in-bounds
+    // - async
+    //   - any other situation
+    
+    // NOTE: Affected by preferAsyncLoad
+    // - threadgroup address space becomes device
+    // - leading dimension changes as well
     func declareRHSLocation() -> String {
       """
       
@@ -143,6 +153,8 @@ extension AttentionKernel {
       """
     }
     
+    // NOTE: Affected by preferAsyncLoad
+    // - omitted completely
     func loadRHS(
       descriptor: LoopIterationDescriptor
     ) -> String {
@@ -182,12 +194,17 @@ extension AttentionKernel {
     
     // MARK: - Loop
     
+    // NOTE: Affected by preferAsyncLoad
+    // - might include an option for whether this branch is async
     struct LoopIterationDescriptor {
       // Whether to accumulate in the SIMD matmul.
       var accumulateConditional: String = ""
       var registerOffset: String = ""
     }
     
+    // NOTE: Affected by preferAsyncLoad
+    // - migrate from _block to _src, same name for both branches
+    // - leading dimension changes
     func innerLoopTraversal(
       traversalStart: String,
       traversalEnd: String,
@@ -213,6 +230,7 @@ extension AttentionKernel {
       """
     }
     
+    // NOTE: Affected by preferAsyncLoad
     func innerLoopHead(
       headStart: UInt16,
       headEnd: UInt16,
@@ -238,6 +256,7 @@ extension AttentionKernel {
       """
     }
     
+    // NOTE: Affected by preferAsyncLoad
     func loopIteration(
       descriptor iterationDesc: LoopIterationDescriptor
     ) -> String {
@@ -269,6 +288,7 @@ extension AttentionKernel {
     // Outer loop over the head dimension.
     var iterationDesc = LoopIterationDescriptor()
     
+    // NOTE: Affected by preferAsyncLoad
     if cached(A) {
       let loopEnd = paddedHeadDimension
       let loopEndFloor = loopEnd - loopEnd % blockDimensions.head

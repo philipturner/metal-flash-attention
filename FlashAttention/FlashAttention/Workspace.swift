@@ -35,9 +35,10 @@ import QuartzCore
 // Tasks for attention bias:
 // - support two-level block sparse attention bias
 //   - outer block size is square and highly divisible
-//     - 480 divisible by 16, 24, 32, 40, 48,     80, 96, 120
-//     - 640 divisible by 16,     32, 40,     64, 80,     128
-//     - 960 divisible by 16, 24, 32, 40, 48, 64, 80, 96, 120
+//     -  480 divisible by 16, 24, 32, 40, 48,     80, 96, 120
+//     -  640 divisible by 16,     32, 40,     64, 80,     128
+//     -  720 divisible by 16, 24,     40, 48,     80,     120
+//     -  960 divisible by 16, 24, 32, 40, 48, 64, 80, 96, 120
 //   - inner block size is rectangular and implementation-defined
 //   - storage format is block-padded in memory
 // - dense attention bias allows odd leading dimensions
