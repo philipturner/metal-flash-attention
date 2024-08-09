@@ -359,8 +359,8 @@ extension AttentionKernel {
     // Declares the source of L or D.
     //
     // Also guards against unsafe accesses to the declared pointer (barrier).
-    func declareOperandSource(async: Bool) -> String {
-      if !async {
+    func declareOperandLocation(addressSpace: MTLAddressSpace) -> String {
+      if addressSpace == .device {
         return """
         
         auto \(operand)_src = \(operand);
@@ -452,7 +452,8 @@ extension AttentionKernel {
       """
     case .backwardKeyValue:
       let blockDim = blockDimensions.traversal
-      var condition = """
+      let condition = """
+      (\(!preferAsyncLoad)) &&
       (\(traversalDimension) % \(blockDim) != 0) &&
       (\(traversalOffset) + \(blockDim) <= \(traversalDimension))
       """
@@ -460,12 +461,12 @@ extension AttentionKernel {
       return """
       
       \(allocateOutput())
-      if (!\(preferAsyncLoad) && \(condition)) {
-        \(declareOperandSource(async: false))
+      if (\(condition)) {
+        \(declareOperandLocation(addressSpace: .device))
         \(innerLoop())
       } else {
         \(loadOperand())
-        \(declareOperandSource(async: true))
+        \(declareOperandLocation(addressSpace: .threadgroup))
         \(innerLoop())
       }
       

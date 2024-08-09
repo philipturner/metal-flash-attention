@@ -7,6 +7,7 @@
 	objects = {
 
 /* Begin PBXBuildFile section */
+		980B0C0B2C66AB980063A1F6 /* MTLAddressSpace.swift in Sources */ = {isa = PBXBuildFile; fileRef = 980B0C0A2C66AB980063A1F6 /* MTLAddressSpace.swift */; };
 		9827D7A52C4ABF0F00649C7B /* AttentionKernel+Accumulate.swift in Sources */ = {isa = PBXBuildFile; fileRef = 9827D7A42C4ABF0F00649C7B /* AttentionKernel+Accumulate.swift */; };
 		9827D7A72C4AC05C00649C7B /* AttentionKernel+Softmax.swift in Sources */ = {isa = PBXBuildFile; fileRef = 9827D7A62C4AC05C00649C7B /* AttentionKernel+Softmax.swift */; };
 		982EBD602C5954D600AB4E00 /* AttentionKernel+OuterProduct.swift in Sources */ = {isa = PBXBuildFile; fileRef = 9827D7A22C4ABEEA00649C7B /* AttentionKernel+OuterProduct.swift */; };
@@ -41,6 +42,7 @@
 /* End PBXBuildFile section */
 
 /* Begin PBXFileReference section */
+		980B0C0A2C66AB980063A1F6 /* MTLAddressSpace.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = MTLAddressSpace.swift; sourceTree = "<group>"; };
 		9827D7A22C4ABEEA00649C7B /* AttentionKernel+OuterProduct.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = "AttentionKernel+OuterProduct.swift"; sourceTree = "<group>"; };
 		9827D7A42C4ABF0F00649C7B /* AttentionKernel+Accumulate.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = "AttentionKernel+Accumulate.swift"; sourceTree = "<group>"; };
 		9827D7A62C4AC05C00649C7B /* AttentionKernel+Softmax.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = "AttentionKernel+Softmax.swift"; sourceTree = "<group>"; };
@@ -178,6 +180,7 @@
 		98DA5B3E2C2C5101000F4E06 /* Utillities */ = {
 			isa = PBXGroup;
 			children = (
+				980B0C0A2C66AB980063A1F6 /* MTLAddressSpace.swift */,
 				98DA5B3C2C2C5086000F4E06 /* MTLContext.swift */,
 			);
 			path = Utillities;
@@ -287,6 +290,7 @@
 				98DA5B362C2AFD65000F4E06 /* Network.swift in Sources */,
 				982EBD602C5954D600AB4E00 /* AttentionKernel+OuterProduct.swift in Sources */,
 				9881AA182C25B0440056D05C /* GEMMHeaders.swift in Sources */,
+				980B0C0B2C66AB980063A1F6 /* MTLAddressSpace.swift in Sources */,
 				9882512E2C4E9F890047052E /* AttentionKernel+Caching.swift in Sources */,
 				9881AA202C25B26D0056D05C /* ShaderCache.swift in Sources */,
 				98DA5B482C2DE2DA000F4E06 /* AttentionKernel.swift in Sources */,

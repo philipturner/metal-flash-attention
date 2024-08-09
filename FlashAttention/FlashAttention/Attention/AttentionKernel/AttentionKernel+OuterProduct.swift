@@ -136,29 +136,28 @@ extension AttentionKernel {
     //   - head dimension is in-bounds
     // - async
     //   - any other situation
-    
-    // NOTE: Affected by preferAsyncLoad
-    // - threadgroup address space becomes device
-    // - leading dimension changes as well
-    func declareRHSLocation() -> String {
-      """
-      
-      // Where the \(B) data will be read from.
-      ushort2 \(B)_block_offset(morton_offset.x, morton_offset.y);
-      auto \(B)T_block = (threadgroup float*)(threadgroup_block);
-      \(B)T_block = simdgroup_matrix_storage<float>::apply_offset(
-        \(B)T_block, \(leadingBlockDimension(B)),
-        \(B)_block_offset, \(!transposed(B)));
-      
-      """
-    }
+    //
+    // Where can these checks be performed?
+    // - before any of the code in this loop
+    //   - if r/c falls out of bounds, or d_outer falls out of bounds
+    // - duplicate the entire piece of code, just to handle the case
+    //   with threadgroup memory instead of device memory
+    //   - that means the access type should be an argument to every function
+    //   - or part of the descriptor
+    //
+    // First step:
+    // - if/else branch that just dives into the same exact code
     
     // NOTE: Affected by preferAsyncLoad
     // - omitted completely
     func loadRHS(
       descriptor: LoopIterationDescriptor
     ) -> String {
-      """
+      guard descriptor.addressSpace == .threadgroup else {
+        return ""
+      }
+      
+      return """
       
       threadgroup_barrier(mem_flags::mem_threadgroup);
       if (sidx == 0) {
@@ -192,6 +191,46 @@ extension AttentionKernel {
       """
     }
     
+    func leadingDimensionRHS(
+      _ descriptor: LoopIterationDescriptor
+    ) -> String {
+      if descriptor.addressSpace == .device {
+        return leadingDimension(B)
+      } else {
+        return "\(leadingBlockDimension(B))"
+      }
+    }
+    
+    // Declares the source of the B matrix.
+    //
+    // Also guards against unsafe accesses to the declared pointer (barrier).
+    func declareRHSLocation(
+      descriptor: LoopIterationDescriptor
+    ) -> String {
+      if descriptor.addressSpace == .device {
+        return """
+        
+        uint2 \(B)_src_offset(
+          morton_offset.y + d_outer,
+          morton_offset.x + \(traversalOffset));
+        auto \(B)_src = simdgroup_matrix_storage<float>::apply_offset(
+          \(B), \(leadingDimension(B)), \(B)_src_offset, \(transposed(B)));
+        
+        """
+      } else {
+        return """
+        
+        ushort2 \(B)_block_offset(morton_offset.x, morton_offset.y);
+        auto \(B)_src = (threadgroup float*)(threadgroup_block);
+        \(B)_src = simdgroup_matrix_storage<float>::apply_offset(
+          \(B)_src, \(leadingBlockDimension(B)),
+          \(B)_block_offset, \(!transposed(B)));
+        threadgroup_barrier(mem_flags::mem_threadgroup);
+        
+        """
+      }
+    }
+    
     // MARK: - Loop
     
     // NOTE: Affected by preferAsyncLoad
@@ -199,11 +238,11 @@ extension AttentionKernel {
     struct LoopIterationDescriptor {
       // Whether to accumulate in the SIMD matmul.
       var accumulateConditional: String = ""
+      var addressSpace: MTLAddressSpace = .threadgroup
       var registerOffset: String = ""
     }
     
     // NOTE: Affected by preferAsyncLoad
-    // - migrate from _block to _src, same name for both branches
     // - leading dimension changes
     func innerLoopTraversal(
       traversalStart: String,
@@ -215,16 +254,17 @@ extension AttentionKernel {
       #pragma clang loop unroll(full)
       for (ushort c = \(traversalStart); c < \(traversalEnd); c += 8) {
         // Load the RHS from threadgroup memory.
+        // loop type: \(descriptor.addressSpace)
         ushort2 origin(c, d);
-        simdgroup_matrix_storage<float> \(B)T;
-        \(B)T.load(
-          \(B)T_block, \(leadingBlockDimension(B)),
+        simdgroup_matrix_storage<float> \(B);
+        \(B).load(
+          \(B)_src, \(leadingDimensionRHS(descriptor)),
           origin, \(!transposed(B)));
         
         // Issue one SIMD matmul instruction.
         \(C)_sram[c / 8].multiply(
           \(A)_sram[(\(descriptor.registerOffset) + d) / 8],
-          \(B)T, \(descriptor.accumulateConditional));
+          \(B), \(descriptor.accumulateConditional));
       }
       
       """
@@ -236,20 +276,23 @@ extension AttentionKernel {
       headEnd: UInt16,
       descriptor: LoopIterationDescriptor
     ) -> String {
+      // TODO: Remove the if statements for the device codepath.
       """
       
+      // iteration type: \(descriptor.addressSpace)
       #pragma clang loop unroll(full)
       for (ushort d = \(headStart); d < \(headEnd); d += 8) {
+        // iteration type: \(descriptor.addressSpace)
         \(innerLoopTraversal(
             traversalStart: "0",
             traversalEnd: paddedTraversalEdge,
-            descriptor: iterationDesc))
+            descriptor: descriptor))
         if (\(traversalOffset) + \(blockDimensions.traversal)
             < \(traversalDimension)) {
           \(innerLoopTraversal(
               traversalStart: paddedTraversalEdge,
               traversalEnd: "\(blockDimensions.traversal)",
-              descriptor: iterationDesc))
+              descriptor: descriptor))
         }
       }
       
@@ -258,42 +301,69 @@ extension AttentionKernel {
     
     // NOTE: Affected by preferAsyncLoad
     func loopIteration(
-      descriptor iterationDesc: LoopIterationDescriptor
+      descriptor: LoopIterationDescriptor
     ) -> String {
+      // TODO: Remove the if statements for the device codepath.
       """
       
       // Load the left-hand side.
-      \(allocateLHS(descriptor: iterationDesc))
-      \(loadLHS(descriptor: iterationDesc))
+      // iteration type: \(descriptor.addressSpace)
+      \(allocateLHS(descriptor: descriptor))
+      \(loadLHS(descriptor: descriptor))
       
       // Load the right-hand side.
-      \(loadRHS(descriptor: iterationDesc))
-      \(declareRHSLocation())
-      threadgroup_barrier(mem_flags::mem_threadgroup);
+      // iteration type: \(descriptor.addressSpace)
+      \(loadRHS(descriptor: descriptor))
+      \(declareRHSLocation(descriptor: descriptor))
       
+      // iteration type: \(descriptor.addressSpace)
       \(innerLoopHead(
           headStart: 0,
           headEnd: paddedHeadEdge,
-          descriptor: iterationDesc))
+          descriptor: descriptor))
       if (d_outer + \(blockDimensions.head) < \(headDimension)) {
         \(innerLoopHead(
             headStart: paddedHeadEdge,
             headEnd: blockDimensions.head,
-            descriptor: iterationDesc))
+            descriptor: descriptor))
+      }
+      
+      """
+    }
+    
+    func gatedLoopIteration(
+      descriptor: LoopIterationDescriptor
+    ) -> String {
+      var descriptorDevice = descriptor
+      var descriptorThreadgroup = descriptor
+      descriptorDevice.addressSpace = .device
+      descriptorThreadgroup.addressSpace = .threadgroup
+      
+      let blockDim = blockDimensions.traversal
+      let condition = """
+      (\(traversalOffset) == 0) &&
+      (d_outer == 0)
+      """
+      
+      return """
+      
+      if (\(condition)) {
+        \(loopIteration(descriptor: descriptorDevice))
+      } else {
+        \(loopIteration(descriptor: descriptorThreadgroup))
       }
       
       """
     }
     
     // Outer loop over the head dimension.
-    var iterationDesc = LoopIterationDescriptor()
+    var outerIterationDesc = LoopIterationDescriptor()
     
-    // NOTE: Affected by preferAsyncLoad
     if cached(A) {
       let loopEnd = paddedHeadDimension
       let loopEndFloor = loopEnd - loopEnd % blockDimensions.head
-      iterationDesc.accumulateConditional = "((d_outer > 0) || (d > 0))"
-      iterationDesc.registerOffset = "d_outer"
+      outerIterationDesc.accumulateConditional = "((d_outer > 0) || (d > 0))"
+      outerIterationDesc.registerOffset = "d_outer"
       
       // Add the first iterations.
       var output = """
@@ -306,7 +376,8 @@ extension AttentionKernel {
         d_outer < \(loopEndFloor);
         d_outer += \(blockDimensions.head)
       ) {
-        \(loopIteration(descriptor: iterationDesc))
+        // TODO: Add the gated loop iteration here, after debugging.
+        \(loopIteration(descriptor: outerIterationDesc))
       }
       
       """
@@ -316,15 +387,15 @@ extension AttentionKernel {
         output += """
         {
           ushort d_outer = \(loopEndFloor);
-          \(loopIteration(descriptor: iterationDesc))
+          \(loopIteration(descriptor: outerIterationDesc))
         }
         """
       }
       
       return output
     } else {
-      iterationDesc.accumulateConditional = "true"
-      iterationDesc.registerOffset = "0"
+      outerIterationDesc.accumulateConditional = "true"
+      outerIterationDesc.registerOffset = "0"
       
       // Add all of the iterations.
       return """
@@ -338,7 +409,7 @@ extension AttentionKernel {
         d_outer < \(headDimension);
         d_outer += \(blockDimensions.head)
       ) {
-        \(loopIteration(descriptor: iterationDesc))
+        \(gatedLoopIteration(descriptor: outerIterationDesc))
       }
       
       """

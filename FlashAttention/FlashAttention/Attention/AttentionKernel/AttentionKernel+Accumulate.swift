@@ -274,12 +274,12 @@ extension AttentionKernel {
         \(innerLoopHead(
             headStart: 0,
             headEnd: paddedHeadEdge,
-            descriptor: iterationDesc))
+            descriptor: descriptor))
         if (d_outer + \(blockDimensions.head) < \(headDimension)) {
           \(innerLoopHead(
               headStart: paddedHeadEdge,
               headEnd: blockDimensions.head,
-              descriptor: iterationDesc))
+              descriptor: descriptor))
         }
       }
       
@@ -287,19 +287,19 @@ extension AttentionKernel {
     }
     
     func loopIteration(
-      descriptor iterationDesc: LoopIterationDescriptor
+      descriptor: LoopIterationDescriptor
     ) -> String {
       """
       
       // Load the accumulator.
-      \(allocateAccumulator(descriptor: iterationDesc))
+      \(allocateAccumulator(descriptor: descriptor))
       if (\(traversalOffset) == 0) {
-        \(initializeAccumulator(descriptor: iterationDesc))
+        \(initializeAccumulator(descriptor: descriptor))
       } else {
-        \(loadAccumulator(descriptor: iterationDesc))
+        \(loadAccumulator(descriptor: descriptor))
         \(scaleAccumulator(
             by: accumulateDesc.everyIterationScale,
-            descriptor: iterationDesc))
+            descriptor: descriptor))
       }
       
       // Load the right-hand side.
@@ -310,32 +310,32 @@ extension AttentionKernel {
       \(innerLoopTraversal(
           traversalStart: "0",
           traversalEnd: paddedTraversalEdge,
-          descriptor: iterationDesc))
+          descriptor: descriptor))
       if (\(traversalOffset) + \(blockDimensions.traversal)
           < \(traversalDimension)) {
         \(innerLoopTraversal(
             traversalStart: paddedTraversalEdge,
             traversalEnd: "\(blockDimensions.traversal)",
-            descriptor: iterationDesc))
+            descriptor: descriptor))
       } else {
         \(scaleAccumulator(
             by: accumulateDesc.lastIterationScale,
-            descriptor: iterationDesc))
+            descriptor: descriptor))
       }
       
       // Store the accumulator.
-      \(storeAccumulator(descriptor: iterationDesc))
+      \(storeAccumulator(descriptor: descriptor))
       
       """
     }
     
     // Outer loop over the head dimension.
-    var iterationDesc = LoopIterationDescriptor()
+    var outerIterationDesc = LoopIterationDescriptor()
     if cached(C) {
       let loopEnd = paddedHeadDimension
       let loopEndFloor = loopEnd - loopEnd % blockDimensions.head
-      iterationDesc.registerOffset = "d_outer"
-      iterationDesc.registerSize = blockDimensions.head
+      outerIterationDesc.registerOffset = "d_outer"
+      outerIterationDesc.registerSize = blockDimensions.head
       
       // Add the first iterations.
       var output = """
@@ -346,26 +346,26 @@ extension AttentionKernel {
         d_outer < \(loopEndFloor);
         d_outer += \(blockDimensions.head)
       ) {
-        \(loopIteration(descriptor: iterationDesc))
+        \(loopIteration(descriptor: outerIterationDesc))
       }
       
       """
       
       // Add the last iteration, if unaligned.
       if loopEndFloor < loopEnd {
-        iterationDesc.registerSize = paddedHeadEdge
+        outerIterationDesc.registerSize = paddedHeadEdge
         output += """
         {
           ushort d_outer = \(loopEndFloor);
-          \(loopIteration(descriptor: iterationDesc))
+          \(loopIteration(descriptor: outerIterationDesc))
         }
         """
       }
       
       return output
     } else {
-      iterationDesc.registerOffset = "0"
-      iterationDesc.registerSize = blockDimensions.head
+      outerIterationDesc.registerOffset = "0"
+      outerIterationDesc.registerSize = blockDimensions.head
       
       // Add all of the iterations.
       return """
@@ -376,7 +376,7 @@ extension AttentionKernel {
         d_outer < \(headDimension);
         d_outer += \(blockDimensions.head)
       ) {
-        \(loopIteration(descriptor: iterationDesc))
+        \(loopIteration(descriptor: outerIterationDesc))
       }
 
       """

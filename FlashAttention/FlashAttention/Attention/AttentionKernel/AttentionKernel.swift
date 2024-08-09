@@ -310,10 +310,6 @@ extension AttentionKernel {
       ushort lane_id [[thread_index_in_simdgroup]]
     ) {
       \(declareOffsets())
-      
-      if (simd_all(\(parallelizationThreadOffset) >= \(parallelizationDimension))) {
-        return;
-      }
     
     """
   }
