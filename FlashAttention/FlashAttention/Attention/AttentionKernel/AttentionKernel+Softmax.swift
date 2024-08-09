@@ -219,11 +219,12 @@ extension AttentionKernel {
 // MARK: - Parallelized Along Rows
 
 extension AttentionKernel {
+  // M_LOG2E_F / sqrt(D)
   fileprivate var forwardScale: Float {
-    // M_LOG2E_F / sqrt(D)
     return 1.442695041 / Float(headDimension).squareRoot()
   }
   
+  // 1 / sqrt(D)
   fileprivate var backwardScale: Float {
     1 / Float(headDimension).squareRoot()
   }
@@ -247,7 +248,7 @@ extension AttentionKernel {
     m_new = max(m_new, simd_shuffle_xor(m_new, 8));
     m_new *= \(forwardScale);
     
-    // update 'm'
+    // update 'O'
     float correction = 1;
     if (m_new > m) {
       correction = fast::exp2(m - m_new);
@@ -284,7 +285,7 @@ extension AttentionKernel {
   
   func checkpointSoftmax() -> String {
     """
-
+    
     simdgroup_matrix_storage<float> P_sram[\(blockDimensions.traversal) / 8];
     #pragma clang loop unroll(full)
     for (ushort c = 0; c < \(blockDimensions.traversal); c += 8) {
@@ -316,11 +317,32 @@ extension AttentionKernel {
 // MARK: - Parallelized Along Columns
 
 extension AttentionKernel {
+  func checkpointSoftmaxT() -> String {
+    return checkpointSoftmax(derivative: false)
+  }
+  
+  func derivativeSoftmaxT() -> String {
+    return checkpointSoftmax(derivative: true)
+  }
+  
+  // MARK: - Utilities that will soon become nested functions.
+  
+  // Whether the L/D_terms can be read directly from RAM.
+  fileprivate var directLoadCondition: String {
+    if preferAsyncLoad {
+      return "false"
+    } else {
+      let blockDim = blockDimensions.traversal
+      return "\(traversalOffset) + \(blockDim) <= \(traversalDimension)"
+    }
+  }
+  
   // Load a vector where each entry corresponds to a different row.
   fileprivate func loadAsync(term: AttentionOperand) -> String {
-    guard parallelizationDimension == "C" else {
-      fatalError("Not allowed to call this function.")
+    guard case .backwardKeyValue = type else {
+      fatalError("This function should not have been called.")
     }
+    
     return """
     
     threadgroup_barrier(mem_flags::mem_threadgroup);
@@ -348,7 +370,11 @@ extension AttentionKernel {
   }
   
   fileprivate func declareAsyncLocation(term: AttentionOperand) -> String {
-    """
+    guard case .backwardKeyValue = type else {
+      fatalError("This function should not have been called.")
+    }
+    
+    return """
     
     // Where the \(term) data will be read from.
     auto \(term)_block = (threadgroup float*)(threadgroup_block);
@@ -358,99 +384,99 @@ extension AttentionKernel {
   }
   
   fileprivate func declareDirectLocation(term: AttentionOperand) -> String {
-    """
+    guard case .backwardKeyValue = type else {
+      fatalError("This function should not have been called.")
+    }
+    
+    return """
     
     // Where the \(term) data will be read from.
     auto \(term)_src = \(term) + \(traversalOffset) + morton_offset.x;
     
     """
   }
-  
-  // Whether the L/D_terms can be read directly from RAM.
-  fileprivate var directLoadCondition: String {
-    if preferAsyncLoad {
-      return "false"
-    } else {
+}
+
+extension AttentionKernel {
+  // A softmax where the per-row statistics have been reduced beforehand.
+  //
+  // Parameters:
+  // - derivative: Whether this is the derivative softmax.
+  func checkpointSoftmax(derivative: Bool) -> String {
+    func allocateOutput() -> String {
+      let name = derivative ? "dS" : "P"
       let blockDim = blockDimensions.traversal
-      return "\(traversalOffset) + \(blockDim) <= \(traversalDimension)"
+      return """
+      
+      simdgroup_matrix_storage<float> \(name)_sram[\(blockDim) / 8];
+      
+      """
     }
-  }
-  
-  
-  
-  // TODO: Merge these functions into one.
-  
-  func checkpointSoftmaxT() -> String {
-    // Accepts L_terms_elements and outputs P_sram.
+    
     func computeSoftmax() -> String {
+      if derivative {
+        return """
+        
+        float2 P_elements = float2(*(P_sram[c / 8].thread_elements()));
+        float2 dP_elements = float2(*(dP_sram[c / 8].thread_elements()));
+        float2 dS_elements = dP_elements * \(backwardScale) - D_terms_elements;
+        dS_elements *= P_elements;
+        *(dS_sram[c / 8].thread_elements()) = dS_elements;
+        
+        """
+      } else {
+        return """
+        
+        float2 S_elements = float2(*(S_sram[c / 8].thread_elements()));
+        float2 P_elements = fast::exp2(
+          S_elements * \(forwardScale) - L_terms_elements);
+        *(P_sram[c / 8].thread_elements()) = P_elements;
+        
+        """
+      }
+    }
+    
+    func directBranch() -> String {
       """
       
-      float2 S_elements = float2(*(S_sram[r / 8].thread_elements()));
-      float2 P_elements = fast::exp2(
-        S_elements * \(forwardScale) - L_terms_elements);
-      *(P_sram[r / 8].thread_elements()) = P_elements;
+      #pragma clang loop unroll(full)
+      for (ushort c = 0; c < \(blockDimensions.traversal); c += 8) {
+        \(computeSoftmax())
+      }
       
       """
     }
     
-    // The high-level source code specification.
-    return """
-    
-    simdgroup_matrix_storage<float> P_sram[\(blockDimensions.traversal) / 8];
-    {
-      \(loadAsync(term: .LTerms))
-      \(declareAsyncLocation(term: .LTerms))
+    func asyncBranch() -> String {
+      let term: AttentionOperand = derivative ? .DTerms : .LTerms
+      
+      return """
+      
+      \(loadAsync(term: term))
+      \(declareAsyncLocation(term: term))
       threadgroup_barrier(mem_flags::mem_threadgroup);
       
       #pragma clang loop unroll(full)
-      for (ushort r = 0; r < \(blockDimensions.traversal); r += 8) {
-        ushort2 origin(r, 0);
-        simdgroup_matrix_storage<float> L_terms;
-        L_terms.load(L_terms_block, 1, origin, false);
-        float2 L_terms_elements = *(L_terms.thread_elements());
+      for (ushort c = 0; c < \(blockDimensions.traversal); c += 8) {
+        ushort2 origin(c, 0);
+        simdgroup_matrix_storage<float> \(term);
+        \(term).load(\(term)_block, 1, origin, false);
+        float2 \(term)_elements = *(\(term).thread_elements());
         
         \(computeSoftmax())
       }
-    }
-    
-    """
-  }
-  
-  func derivativeSoftmaxT() -> String {
-    // Accepts D_terms_elements and outputs dS_sram.
-    func computeDerivativeSoftmax() -> String {
-      """
-      
-      float2 P_elements = float2(*(P_sram[r / 8].thread_elements()));
-      float2 dP_elements = float2(*(dP_sram[r / 8].thread_elements()));
-      float2 dS_elements = dP_elements * \(backwardScale) - D_terms_elements;
-      dS_elements *= P_elements;
-      *(dS_sram[r / 8].thread_elements()) = dS_elements;
       
       """
+      
     }
     
-    // The high-level source code specification.
     return """
     
-    simdgroup_matrix_storage<float> dS_sram[\(blockDimensions.traversal) / 8];
+    \(allocateOutput())
     {
-      \(loadAsync(term: .DTerms))
-      \(declareAsyncLocation(term: .DTerms))
-      threadgroup_barrier(mem_flags::mem_threadgroup);
-      
-      #pragma clang loop unroll(full)
-      for (ushort r = 0; r < \(blockDimensions.traversal); r += 8) {
-        ushort2 origin(r, 0);
-        simdgroup_matrix_storage<float> D_terms;
-        D_terms.load(D_terms_block, 1, origin, false);
-        float2 D_terms_elements = *(D_terms.thread_elements());
-        
-        \(computeDerivativeSoftmax())
-      }
+      \(asyncBranch())
     }
-
+    
     """
   }
 }
-
