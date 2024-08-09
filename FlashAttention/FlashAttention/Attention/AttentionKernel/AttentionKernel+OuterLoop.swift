@@ -164,10 +164,19 @@ extension AttentionKernel {
     for (uint c = 0; c < C; c += \(blockDimensions.traversal)) {
       // S = Q * K^T
       \(QKT)
-      
-      // (m, l, P) = softmax(m, l, S * scaleFactor)
       \(maskAttentionMatrixEdge())
-      \(onlineSoftmax())
+      
+      // m = reduce(m)
+      \(onlineReduceMaximum())
+      
+      // correction = exp(m_old) / exp(m_new)
+      \(onlineCorrectO())
+      
+      // P = softmax(S * scaleFactor)
+      \(checkpointSoftmax(derivative: false))
+      
+      // l = reduce(l)
+      \(onlineReduceSum())
       
       // O *= correction
       // O += P * V
@@ -205,13 +214,13 @@ extension AttentionKernel {
       \(QKT)
       
       // P = softmax(S * scaleFactor)
-      \(checkpointSoftmax())
+      \(checkpointSoftmax(derivative: false))
       
       // dP = dO * V^T
       \(dOVT)
       
       // dS = P * (dP - D) * scaleFactor
-      \(derivativeSoftmax())
+      \(checkpointSoftmax(derivative: true))
       
       // dQ += dS * K
       \(dSK)
@@ -253,7 +262,7 @@ extension AttentionKernel {
       \(KQT)
       
       // P^T = exp(S^T - L)
-      \(checkpointSoftmaxT())
+      \(checkpointSoftmax(derivative: false))
       
       // dV += P^T * dO
       \(PTdO)
@@ -262,7 +271,7 @@ extension AttentionKernel {
       \(VdOT)
       
       // dS^T = P^T * (dP^T - D) * scaleFactor
-      \(derivativeSoftmaxT())
+      \(checkpointSoftmax(derivative: true))
       
       // dK += dS^T * Q
       \(dSTQ)

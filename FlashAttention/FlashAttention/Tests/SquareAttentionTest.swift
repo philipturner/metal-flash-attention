@@ -465,8 +465,16 @@ func profileProblemSize(N: Int, D: Int) -> Int {
     for i in expected.indices {
       let error = (expected[i] - actual[i]).magnitude
       if error > errorThreshold || error.isNaN {
+        // Don't report errors in this case.
+        if expected[i].isNaN, actual[i].isNaN {
+          continue
+        }
+        if expected[i].isInfinite, actual[i].isInfinite {
+          continue
+        }
+        
+        // Update the error count in the outer scope.
         if errorCount < 10 {
-          // Update the error count in the outer scope.
           errorCount += 1
           print("error: \(error) / ~1.000")
           print("- expected[\(i)] =", expected[i])
