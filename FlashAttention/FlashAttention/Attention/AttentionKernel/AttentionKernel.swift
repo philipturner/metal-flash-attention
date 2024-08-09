@@ -72,7 +72,7 @@ struct AttentionKernel {
         2 * blockDimensions.parallelization * 8 * 4)
     }
     if case .backwardKeyValue = type {
-      // load L[i] or D[i]
+      // load L or D[i]
       threadgroupMemoryAllocation = max(
         threadgroupMemoryAllocation,
         blockDimensions.traversal * 4)
@@ -243,19 +243,19 @@ extension AttentionKernel {
     // What operands does the kernel use?
     var operands: [AttentionOperand] = []
     switch type {
-    case .forward(let computeLTerms):
+    case .forward(let computeL):
       operands += [.Q, .K, .V, .O]
-      if computeLTerms {
-        operands += [.LTerms]
+      if computeL {
+        operands += [.L]
       }
     case .backwardQuery:
       operands += [.Q, .K, .V, .O]
       operands += [.dO, .dQ]
-      operands += [.LTerms, .DTerms]
+      operands += [.L, .D]
     case .backwardKeyValue:
       operands += [.Q, .K, .V]
       operands += [.dO, .dV, .dK]
-      operands += [.LTerms, .DTerms]
+      operands += [.L, .D]
     }
     operands.sort {
       $0.bufferBinding! < $1.bufferBinding!

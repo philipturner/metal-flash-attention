@@ -6,25 +6,23 @@
 //
 
 /// The memory allocations used in attention kernels.
-///
-/// The raw value is the buffer binding.
 enum AttentionOperand: Hashable, Equatable, CustomStringConvertible {
   case Q
   case K
-  case S // only materialized in registers
-  case P // only materialized in registers
+  case S
+  case P
   case V
   case O
   
+  case L
+  case D
+  
   case dO
   case dV
-  case dP // only materialized in registers
-  case dS // only materialized in registers
+  case dP
+  case dS
   case dK
   case dQ
-  
-  case LTerms
-  case DTerms
   
   /// The name in the shader source.
   ///
@@ -39,15 +37,15 @@ enum AttentionOperand: Hashable, Equatable, CustomStringConvertible {
     case .V: return "V"
     case .O: return "O"
       
+    case .L: return "L"
+    case .D: return "D"
+      
     case .dO: return "dO"
     case .dV: return "dV"
     case .dP: return "dP"
     case .dS: return "dS"
     case .dK: return "dK"
     case .dQ: return "dQ"
-      
-    case .LTerms: return "L_terms"
-    case .DTerms: return "D_terms"
     }
   }
   
@@ -55,18 +53,20 @@ enum AttentionOperand: Hashable, Equatable, CustomStringConvertible {
     switch self {
     case .Q: return 0
     case .K: return 1
+    case .S: return nil
+    case .P: return nil
     case .V: return 2
     case .O: return 3
       
-    case .dO: return 4
-    case .dV: return 5
-    case .dK: return 6
-    case .dQ: return 7
+    case .L: return 4
+    case .D: return 5
       
-    case .LTerms: return 10
-    case .DTerms: return 11
-      
-    default: return nil
+    case .dO: return 6
+    case .dV: return 7
+    case .dP: return nil
+    case .dS: return nil
+    case .dK: return 8
+    case .dQ: return 9
     }
   }
 }

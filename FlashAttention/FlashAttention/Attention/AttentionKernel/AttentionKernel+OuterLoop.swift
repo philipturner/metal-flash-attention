@@ -173,7 +173,7 @@ extension AttentionKernel {
       \(onlineCorrectO())
       
       // P = softmax(S * scaleFactor)
-      \(checkpointSoftmax(derivative: false))
+      \(softmax(derivative: false))
       
       // l = reduce(l)
       \(onlineReduceSum())
@@ -214,13 +214,13 @@ extension AttentionKernel {
       \(QKT)
       
       // P = softmax(S * scaleFactor)
-      \(checkpointSoftmax(derivative: false))
+      \(softmax(derivative: false))
       
       // dP = dO * V^T
       \(dOVT)
       
       // dS = P * (dP - D) * scaleFactor
-      \(checkpointSoftmax(derivative: true))
+      \(softmax(derivative: true))
       
       // dQ += dS * K
       \(dSK)
@@ -262,7 +262,7 @@ extension AttentionKernel {
       \(KQT)
       
       // P^T = exp(S^T - L)
-      \(checkpointSoftmax(derivative: false))
+      \(softmax(derivative: false))
       
       // dV += P^T * dO
       \(PTdO)
@@ -271,7 +271,7 @@ extension AttentionKernel {
       \(VdOT)
       
       // dS^T = P^T * (dP^T - D) * scaleFactor
-      \(checkpointSoftmax(derivative: true))
+      \(softmax(derivative: true))
       
       // dK += dS^T * Q
       \(dSTQ)

@@ -13,23 +13,23 @@ import Metal
 #if true
 func executeScript() {
   // Automate the execution of the test suite.
-  profileProblemSize(N: 10, D: 3)
-  profileProblemSize(N: 10, D: 80)
-  profileProblemSize(N: 8, D: 2)
-  profileProblemSize(N: 9, D: 2)
-  profileProblemSize(N: 23, D: 2)
-  profileProblemSize(N: 24, D: 2)
-  profileProblemSize(N: 25, D: 2)
-  profileProblemSize(N: 192, D: 77)
-  profileProblemSize(N: 192, D: 80)
-  profileProblemSize(N: 93, D: 32)
-  profileProblemSize(N: 99, D: 35)
-  profileProblemSize(N: 64, D: 32)
-  profileProblemSize(N: 32, D: 64)
-  profileProblemSize(N: 4, D: 1)
-  profileProblemSize(N: 4, D: 2)
-  profileProblemSize(N: 384, D: 95)
-  profileProblemSize(N: 777, D: 199)
+  profileProblemSize(sequenceDimension: 10, headDimension: 3)
+  profileProblemSize(sequenceDimension: 10, headDimension: 80)
+  profileProblemSize(sequenceDimension: 8, headDimension: 2)
+  profileProblemSize(sequenceDimension: 9, headDimension: 2)
+  profileProblemSize(sequenceDimension: 23, headDimension: 2)
+  profileProblemSize(sequenceDimension: 24, headDimension: 2)
+  profileProblemSize(sequenceDimension: 25, headDimension: 2)
+  profileProblemSize(sequenceDimension: 192, headDimension: 77)
+  profileProblemSize(sequenceDimension: 192, headDimension: 80)
+  profileProblemSize(sequenceDimension: 93, headDimension: 32)
+  profileProblemSize(sequenceDimension: 99, headDimension: 35)
+  profileProblemSize(sequenceDimension: 64, headDimension: 32)
+  profileProblemSize(sequenceDimension: 32, headDimension: 64)
+  profileProblemSize(sequenceDimension: 4, headDimension: 1)
+  profileProblemSize(sequenceDimension: 4, headDimension: 2)
+  profileProblemSize(sequenceDimension: 384, headDimension: 95)
+  profileProblemSize(sequenceDimension: 777, headDimension: 199)
   
   #if false
   // let N_array = [4096, 8192]
@@ -140,10 +140,13 @@ func executeScript() {
 
 // Returns: Throughput in GINSTRS.
 @discardableResult
-func profileProblemSize(N: Int, D: Int) -> Int {
+func profileProblemSize(
+  sequenceDimension: Int,
+  headDimension: Int
+) -> Int {
   var networkDesc = NetworkDescriptor()
-  networkDesc.N = N
-  networkDesc.D = D
+  networkDesc.N = sequenceDimension
+  networkDesc.D = headDimension
   let network = Network(descriptor: networkDesc)
   
   /*
@@ -198,17 +201,18 @@ func profileProblemSize(N: Int, D: Int) -> Int {
   let bufferV = MTLContext.global.createBuffer(network.V, .FP32)
   let bufferDerivativeO = MTLContext.global.createBuffer(network.C, .FP32)
   
-  var resultO = [Float](repeating: .zero, count: N * D)
-  var resultLTerms = [Float](repeating: .zero, count: N)
-  var resultDTerms = [Float](repeating: .zero, count: N)
-  var resultDerivativeV = [Float](repeating: .zero, count: N * D)
-  var resultDerivativeK = [Float](repeating: .zero, count: N * D)
-  var resultDerivativeQ = [Float](repeating: .zero, count: N * D)
+  let operandSize = sequenceDimension * headDimension
+  var resultO = [Float](repeating: .zero, count: operandSize)
+  var resultL = [Float](repeating: .zero, count: sequenceDimension)
+  var resultD = [Float](repeating: .zero, count: sequenceDimension)
+  var resultDerivativeV = [Float](repeating: .zero, count: operandSize)
+  var resultDerivativeK = [Float](repeating: .zero, count: operandSize)
+  var resultDerivativeQ = [Float](repeating: .zero, count: operandSize)
   resultO[0] = .nan
   
   let bufferO = MTLContext.global.createBuffer(resultO, .FP32)
-  let bufferLTerms = MTLContext.global.createBuffer(resultLTerms, .FP32)
-  let bufferDTerms = MTLContext.global.createBuffer(resultDTerms, .FP32)
+  let bufferL = MTLContext.global.createBuffer(resultL, .FP32)
+  let bufferD = MTLContext.global.createBuffer(resultD, .FP32)
   let bufferDerivativeV = MTLContext.global
     .createBuffer(resultDerivativeV, .FP32)
   let bufferDerivativeK = MTLContext.global
@@ -219,7 +223,10 @@ func profileProblemSize(N: Int, D: Int) -> Int {
   // MARK: - Kernels
   
   var attentionDesc = AttentionDescriptor()
-  attentionDesc.matrixDimensions = (R: UInt32(N), C: UInt32(N), D: UInt16(D))
+  attentionDesc.matrixDimensions = (
+    R: UInt32(sequenceDimension),
+    C: UInt32(sequenceDimension),
+    D: UInt16(headDimension))
   attentionDesc.transposeState = (Q: false, K: false, V: false, O: false)
   
   func createKernel(type: AttentionKernelType) -> AttentionKernel {
@@ -295,13 +302,14 @@ func profileProblemSize(N: Int, D: Int) -> Int {
     encoder.setBuffer(bufferK, offset: 0, index: 1)
     encoder.setBuffer(bufferV, offset: 0, index: 2)
     encoder.setBuffer(bufferO, offset: 0, index: 3)
-    encoder.setBuffer(bufferDerivativeO, offset: 0, index: 4)
-    encoder.setBuffer(bufferDerivativeV, offset: 0, index: 5)
-    encoder.setBuffer(bufferDerivativeK, offset: 0, index: 6)
-    encoder.setBuffer(bufferDerivativeQ, offset: 0, index: 7)
     
-    encoder.setBuffer(bufferLTerms, offset: 0, index: 10)
-    encoder.setBuffer(bufferDTerms, offset: 0, index: 11)
+    encoder.setBuffer(bufferL, offset: 0, index: 4)
+    encoder.setBuffer(bufferD, offset: 0, index: 5)
+    
+    encoder.setBuffer(bufferDerivativeO, offset: 0, index: 6)
+    encoder.setBuffer(bufferDerivativeV, offset: 0, index: 7)
+    encoder.setBuffer(bufferDerivativeK, offset: 0, index: 8)
+    encoder.setBuffer(bufferDerivativeQ, offset: 0, index: 9)
     
     for _ in 0..<dispatchCount {
       if dispatchCount > 1 {
@@ -309,20 +317,20 @@ func profileProblemSize(N: Int, D: Int) -> Int {
         dispatch(
           kernel: kernelBackwardKeyValue,
           pipeline: pipelineBackwardKeyValue,
-          along: N)
+          along: sequenceDimension)
       } else {
         dispatch(
           kernel: kernelForward,
           pipeline: pipelineForward,
-          along: N)
+          along: sequenceDimension)
         dispatch(
           kernel: kernelBackwardQuery,
           pipeline: pipelineBackwardQuery,
-          along: N)
+          along: sequenceDimension)
         dispatch(
           kernel: kernelBackwardKeyValue,
           pipeline: pipelineBackwardKeyValue,
-          along: N)
+          along: sequenceDimension)
       }
     }
     
@@ -343,21 +351,21 @@ func profileProblemSize(N: Int, D: Int) -> Int {
   
 #if true
   let O = network.inferenceAttention()
-  let LTerms = (0..<N).map(network.createLTerm(rowID:))
-  let DTerms = (0..<N).map(network.createDTerm(rowID:))
+  let L = (0..<sequenceDimension).map(network.createLTerm(rowID:))
+  let D = (0..<sequenceDimension).map(network.createDTerm(rowID:))
   let dV = network.derivativeV()
   let dK = network.derivativeK()
   let dQ = network.derivativeQ()
   
   // Copy the results.
   MTLContext.copy(bufferO, into: &resultO)
-  MTLContext.copy(bufferLTerms, into: &resultLTerms)
-  MTLContext.copy(bufferDTerms, into: &resultDTerms)
-  for i in resultLTerms.indices {
-    resultLTerms[i] /= 1.44269504089
+  MTLContext.copy(bufferL, into: &resultL)
+  MTLContext.copy(bufferD, into: &resultD)
+  for i in resultL.indices {
+    resultL[i] /= 1.44269504089
   }
-  for i in resultDTerms.indices {
-    resultDTerms[i] /= 1 / Float(D).squareRoot()
+  for i in resultD.indices {
+    resultD[i] /= 1 / Float(headDimension).squareRoot()
   }
   MTLContext.copy(bufferDerivativeV, into: &resultDerivativeV)
   MTLContext.copy(bufferDerivativeK, into: &resultDerivativeK)
@@ -379,9 +387,9 @@ func profileProblemSize(N: Int, D: Int) -> Int {
   
   // Displays a matrix with dimensions N * D.
   func printMatrix(_ matrix: [Float]) {
-    for d in 0..<min(D, 5) {
+    for d in 0..<min(headDimension, 5) {
       for n in 0..<min(N, 10) {
-        let matrixAddress = n * D + d
+        let matrixAddress = n * headDimension + d
         let matrixValue = matrix[matrixAddress]
         var repr = String(format: "%.3f", matrixValue)
         while repr.count < 8 {
@@ -410,20 +418,20 @@ func profileProblemSize(N: Int, D: Int) -> Int {
   printMatrix(resultO)
   
   print()
-  print("L_terms:")
-  printVector(LTerms)
+  print("L:")
+  printVector(L)
   
   print()
-  print("L_terms:")
-  printVector(resultLTerms)
+  print("L:")
+  printVector(resultL)
   
   print()
-  print("D_terms:")
-  printVector(DTerms)
+  print("D:")
+  printVector(D)
   
   print()
-  print("D_terms:")
-  printVector(resultDTerms)
+  print("D:")
+  printVector(resultD)
   
   print()
   print("dV:")
@@ -485,8 +493,8 @@ func profileProblemSize(N: Int, D: Int) -> Int {
   }
   
   check(expected: O, actual: resultO)
-  check(expected: LTerms, actual: resultLTerms)
-  check(expected: DTerms, actual: resultDTerms)
+  check(expected: L, actual: resultL)
+  check(expected: D, actual: resultD)
   check(expected: dV, actual: resultDerivativeV)
   check(expected: dK, actual: resultDerivativeK)
   check(expected: dQ, actual: resultDerivativeQ)

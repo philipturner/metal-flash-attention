@@ -7,10 +7,29 @@
 
 // Elementwise operations on the attention matrix.
 
-// MARK: - D[i] Computation
+// MARK: - Scale Factor
 
 extension AttentionKernel {
-  func computeDTerm() -> String {
+  // The scale factor in scaled dot product attention.
+  //
+  // Parameters:
+  // - derivative: Whether this is the derivative softmax.
+  func dotProductScale(derivative: Bool) -> Float {
+    let logBase2E: Float = 1.442695041
+    let rsqrtD = 1 / Float(headDimension).squareRoot()
+    
+    if !derivative {
+      return logBase2E * rsqrtD
+    } else {
+      return rsqrtD
+    }
+  }
+}
+
+// MARK: - Compute D (dO * O)
+
+extension AttentionKernel {
+  func computeD() -> String {
     // Parts of the dO * O reduction that fall within block bounds.
     func bulkContributions(truncatedHeadDimension: UInt16) -> String {
       // Recycle most of the cached values for dO.
@@ -73,7 +92,7 @@ extension AttentionKernel {
         // Perform the pointwise multiplication.
         float2 dO_value = *(dO.thread_elements());
         float2 O_value = *(O.thread_elements());
-        D_term_accumulator += dO_value * O_value;
+        D_accumulator += dO_value * O_value;
       }
 
       """
@@ -155,7 +174,7 @@ extension AttentionKernel {
       // Perform the pointwise multiplication.
       float2 dO_value = *(dO.thread_elements());
       float2 O_value = *(O.thread_elements());
-      D_term_accumulator += dO_value * O_value;
+      D_accumulator += dO_value * O_value;
       
       """
     }
@@ -164,7 +183,7 @@ extension AttentionKernel {
     let loopEndFloor = headDimension - headDimension % 8
     return """
     
-    float2 D_term_accumulator(0);
+    float2 D_accumulator(0);
     {
       \(bulkContributions(truncatedHeadDimension: loopEndFloor))
     }
@@ -172,35 +191,16 @@ extension AttentionKernel {
       \(edgeContributions(truncatedHeadDimension: loopEndFloor))
     }
     
-    D_term = D_term_accumulator[0] + D_term_accumulator[1];
-    D_term += simd_shuffle_xor(D_term, 1);
-    D_term += simd_shuffle_xor(D_term, 8);
-    D_term *= \(dotProductScale(derivative: true));
+    float D_sram = D_accumulator[0] + D_accumulator[1];
+    D_sram += simd_shuffle_xor(D_sram, 1);
+    D_sram += simd_shuffle_xor(D_sram, 8);
+    D_sram *= \(dotProductScale(derivative: true));
     
     """
   }
 }
 
-// MARK: - Scale Factors
-
-extension AttentionKernel {
-  // The scale factor in scaled dot product attention.
-  //
-  // Parameters:
-  // - derivative: Whether this is the derivative softmax.
-  func dotProductScale(derivative: Bool) -> Float {
-    let logBase2E: Float = 1.442695041
-    let rsqrtD = 1 / Float(headDimension).squareRoot()
-    
-    if !derivative {
-      return logBase2E * rsqrtD
-    } else {
-      return rsqrtD
-    }
-  }
-}
-
-// MARK: - Online Softmax
+// MARK: - Mask
 
 extension AttentionKernel {
   // Prevent the zero padding from changing the values of 'm' and 'l'.
@@ -236,7 +236,11 @@ extension AttentionKernel {
     
     """
   }
-  
+}
+
+// MARK: - Reduce
+
+extension AttentionKernel {
   // Reduce maximum during the online softmax.
   func onlineReduceMaximum() -> String {
     """
@@ -298,12 +302,12 @@ extension AttentionKernel {
   }
 }
 
-// MARK: - Parallelized Along Columns
+// MARK: - Softmax
+
+/*
 
 extension AttentionKernel {
-  // MARK: - Utilities that will soon become nested functions.
-  
-  // Whether the L/D_terms can be read directly from RAM.
+  // Whether the L/D can be read directly from RAM.
   fileprivate var directLoadCondition: String {
     if preferAsyncLoad {
       return "false"
@@ -326,24 +330,35 @@ extension AttentionKernel {
     """
   }
 }
+ 
+ */
 
 extension AttentionKernel {
   // A softmax where the per-row statistics have been reduced beforehand.
   //
   // Parameters:
   // - derivative: Whether this is the derivative softmax.
-  func checkpointSoftmax(derivative: Bool) -> String {
+  func softmax(derivative: Bool) -> String {
+    let operand: AttentionOperand = derivative ? .D : .L
+    
     func allocateOutput() -> String {
-      let name = derivative ? "dS" : "P"
       let blockDim = blockDimensions.traversal
-      return """
-      
-      simdgroup_matrix_storage<float> \(name)_sram[\(blockDim) / 8];
-      
-      """
+      if !derivative {
+        return """
+        
+        simdgroup_matrix_storage<float> P_sram[\(blockDim) / 8];
+        
+        """
+      } else {
+        return """
+        
+        simdgroup_matrix_storage<float> dS_sram[\(blockDim) / 8];
+        
+        """
+      }
     }
     
-    func computeSoftmax() -> String {
+    func innerLoop() -> String {
       let scale = dotProductScale(derivative: derivative)
       
       if !derivative {
@@ -374,18 +389,17 @@ extension AttentionKernel {
         #pragma clang loop unroll(full)
         for (ushort c = 0; c < \(blockDimensions.traversal); c += 8) {
           auto L = m;
-          \(computeSoftmax())
+          \(innerLoop())
         }
         
         """
       case .backwardQuery:
-        let name = derivative ? "D" : "L"
         return """
         
         #pragma clang loop unroll(full)
         for (ushort c = 0; c < \(blockDimensions.traversal); c += 8) {
-          auto \(name) = \(name)_term;
-          \(computeSoftmax())
+          auto \(operand) = \(operand)_sram;
+          \(innerLoop())
         }
         
         """
@@ -394,53 +408,48 @@ extension AttentionKernel {
       }
     }
     
-    func asyncBranch() -> String {
-      let term: AttentionOperand = derivative ? .DTerms : .LTerms
+    func loadOperand() -> String {
+      """
       
-      func loadTerm() -> String {
-        """
+      threadgroup_barrier(mem_flags::mem_threadgroup);
+      if (sidx == 0) {
+        // Locate the \(operand)[i] in device and threadgroup memory.
+        auto \(operand)_src = \(operand) + \(traversalOffset);
+        auto \(operand)_dst = (threadgroup float*)(threadgroup_block);
         
-        threadgroup_barrier(mem_flags::mem_threadgroup);
-        if (sidx == 0) {
-          // Locate the \(term)[i] in device and threadgroup memory.
-          auto \(term)_src = \(term) + \(traversalOffset);
-          auto \(term)_dst = (threadgroup float*)(threadgroup_block);
-          
-          ushort R_src_dimension = min(
-            uint(\(blockDimensions.traversal)),
-            uint(\(traversalDimension) - \(traversalOffset)));
-          ushort R_dst_dimension = max(
-            ushort(\(paddedTraversalEdge)),
-            ushort(R_src_dimension));
-          
-          // Issue an async copy.
-          simdgroup_event event;
-          event.async_copy(
-            \(term)_dst, 1, ushort2(R_dst_dimension, 1),
-            \(term)_src, 1, ushort2(R_src_dimension, 1));
-          simdgroup_event::wait(1, &event);
-        }
+        ushort R_src_dimension = min(
+          uint(\(blockDimensions.traversal)),
+          uint(\(traversalDimension) - \(traversalOffset)));
+        ushort R_dst_dimension = max(
+          ushort(\(paddedTraversalEdge)),
+          ushort(R_src_dimension));
         
-        """
+        // Issue an async copy.
+        simdgroup_event event;
+        event.async_copy(
+          \(operand)_dst, 1, ushort2(R_dst_dimension, 1),
+          \(operand)_src, 1, ushort2(R_src_dimension, 1));
+        simdgroup_event::wait(1, &event);
       }
       
-      let name = derivative ? "D" : "L"
-      return """
+      """
+    }
+    
+    func asyncBranch() -> String {
+      """
       
-      \(loadTerm())
-      
-      auto \(term)_block = (threadgroup float*)(threadgroup_block);
-      \(term)_block += morton_offset.x;
+      auto \(operand)_block = (threadgroup float*)(threadgroup_block);
+      \(operand)_block += morton_offset.x;
       threadgroup_barrier(mem_flags::mem_threadgroup);
       
       #pragma clang loop unroll(full)
       for (ushort c = 0; c < \(blockDimensions.traversal); c += 8) {
         ushort2 origin(c, 0);
-        simdgroup_matrix_storage<float> \(term);
-        \(term).load(\(term)_block, 1, origin, false);
-        float2 \(name) = *(\(term).thread_elements());
+        simdgroup_matrix_storage<float> \(operand)_sram;
+        \(operand)_sram.load(\(operand)_block, 1, origin, false);
+        float2 \(operand) = *(\(operand)_sram.thread_elements());
         
-        \(computeSoftmax())
+        \(innerLoop())
       }
       
       """
@@ -461,6 +470,7 @@ extension AttentionKernel {
       
       \(allocateOutput())
       {
+        \(loadOperand())
         \(asyncBranch())
       }
       

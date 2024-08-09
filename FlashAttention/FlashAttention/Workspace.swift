@@ -25,5 +25,5 @@ import QuartzCore
 //   - Most severe impact is when the D block is very small
 //
 // To implement the pathways:
-// - start by modifying the L_term/D_term code to rely on 'preferAsyncLoad'
+// - start by modifying the L/D code to rely on 'preferAsyncLoad'
 // - benchmark the impact on occupancy

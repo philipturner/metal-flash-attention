@@ -178,10 +178,10 @@ extension AttentionKernel {
         output += allocateCache(operand: .O)
       }
       output += """
-
+      
       float m = -numeric_limits<float>::max();
       float l = numeric_limits<float>::denorm_min();
-
+      
       """
       
     case .backwardQuery:
@@ -196,11 +196,13 @@ extension AttentionKernel {
       }
       output += """
       
-      float L_term = L_terms[\(parallelizationThreadOffset)];
-      float D_term;
-      \(computeDTerm())
+      float L_sram = L[\(parallelizationThreadOffset)];
+      \(computeD())
+      
+      // Store D[i] in memory sooner rather than later. That way, the compiler
+      // has a chance to deallocate the parallelization offset.
       if (\(parallelizationThreadOffset) < R) {
-        D_terms[\(parallelizationThreadOffset)] = D_term;
+        D[\(parallelizationThreadOffset)] = D_sram;
       }
       
       """
@@ -238,8 +240,8 @@ extension AttentionKernel {
         
         if (\(parallelizationThreadOffset) < R) {
           // Premultiplied by M_LOG2E_F.
-          float L_term = m + fast::log2(l);
-          L_terms[\(parallelizationThreadOffset)] = L_term;
+          float L_sram = m + fast::log2(l);
+          L[\(parallelizationThreadOffset)] = L_sram;
         }
         
         """
