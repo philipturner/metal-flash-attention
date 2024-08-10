@@ -130,29 +130,6 @@ extension AttentionKernel {
     
     // MARK: - RHS
     
-    // When does the code fall into each branch?
-    // - direct
-    //   - sequence length is in-bounds
-    //   - head dimension is in-bounds
-    // - async
-    //   - any other situation
-    //
-    // Where can these checks be performed?
-    // - before any of the code in this loop
-    //   - if r/c falls out of bounds, or d_outer falls out of bounds
-    // - duplicate the entire piece of code, just to handle the case
-    //   with threadgroup memory instead of device memory
-    //   - that means the access type should be an argument to every function
-    //   - or part of the descriptor
-    //
-    // First step:
-    // - if/else branch that just dives into the same exact code
-    //
-    // Next step:
-    // - clean up the code from debugging
-    // - remove dead assembly code from paths that are already
-    //   forbidden for 'device' read
-    
     func loadRHS(
       descriptor: LoopIterationDescriptor
     ) -> String {

@@ -17,7 +17,7 @@ extension AttentionKernel {
       for (ushort d = 0; d < \(registerSize); d += 8) {
         ushort2 origin(d, 0);
         \(operand)_sram[(d_outer + d) / 8].load(
-          \(operand)_block, \(leadingBlockDimension(operand)),
+          \(operand)_src, \(leadingBlockDimension(operand)),
           origin, \(transposed(operand)));
       }
       
@@ -30,9 +30,9 @@ extension AttentionKernel {
 {
   // Where the \(operand) data will be read from.
   ushort2 \(operand)_block_offset(morton_offset.x, morton_offset.y + sidx * 8);
-  auto \(operand)_block = (threadgroup float*)(threadgroup_block);
-  \(operand)_block = simdgroup_matrix_storage<float>::apply_offset(
-    \(operand)_block, \(leadingBlockDimension(operand)),
+  auto \(operand)_src = (threadgroup float*)(threadgroup_block);
+  \(operand)_src = simdgroup_matrix_storage<float>::apply_offset(
+    \(operand)_src, \(leadingBlockDimension(operand)),
     \(operand)_block_offset, \(transposed(operand)));
   
   // Outer loop over the head dimension.
@@ -91,7 +91,7 @@ extension AttentionKernel {
       for (ushort d = 0; d < \(registerSize); d += 8) {
         ushort2 origin(d, 0);
         \(operand)_sram[(d_outer + d) / 8].store(
-          \(operand)_block, \(leadingBlockDimension(operand)),
+          \(operand)_src, \(leadingBlockDimension(operand)),
           origin, \(transposed(operand)));
       }
       
@@ -103,9 +103,9 @@ extension AttentionKernel {
 {
   // Where the \(operand) data will be written to.
   ushort2 \(operand)_block_offset(morton_offset.x, morton_offset.y + sidx * 8);
-  auto \(operand)_block = (threadgroup float*)(threadgroup_block);
-  \(operand)_block = simdgroup_matrix_storage<float>::apply_offset(
-    \(operand)_block, \(leadingBlockDimension(operand)),
+  auto \(operand)_src = (threadgroup float*)(threadgroup_block);
+  \(operand)_src = simdgroup_matrix_storage<float>::apply_offset(
+    \(operand)_src, \(leadingBlockDimension(operand)),
     \(operand)_block_offset, \(transposed(operand)));
   
     // Outer loop over the head dimension.

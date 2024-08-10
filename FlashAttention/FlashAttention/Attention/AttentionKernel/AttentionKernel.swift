@@ -288,6 +288,8 @@ extension AttentionKernel {
       ushort2 morton_offset = morton_order(lane_id);
       uint parallelization_thread_offset = parallelization_group_offset;
       parallelization_thread_offset += sidx * 8 + morton_offset.y;
+      parallelization_thread_offset = min(
+        parallelization_thread_offset, \(parallelizationDimension));
       
       """
     }

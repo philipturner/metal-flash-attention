@@ -28,6 +28,18 @@ import QuartzCore
 // - start by modifying the L/D code to rely on 'preferAsyncLoad'
 // - benchmark the impact on occupancy
 // - expand 'preferAsyncLoad' to the following specific areas:
-//   - dO * O (RHS)
+//   - dO * O (RHS) [NOT NEEDED]
 //   - outer product (RHS) [DONE]
-//   - accumulate (RHS)
+//   - accumulate (RHS) [DONE]
+// - compress the threads along the parallelization dimension
+//   - when writing at a matrix edge, we now need SIMD barrier(device) instead
+//     of threadgroup barrier(threadgroup)
+// - where might preferAsyncCache apply?
+//   - when loading/storing any cached variables
+//     - O(n), so we can just always use device memory for these
+//     - NO - there was a performance regression with GEMM bias, when switching
+//       from threadgroup load to device load on M3. Allow the option to use
+//       threadgroup memory here. If it succeeds, we may need to change the
+//       dO * O computation to allow this option as well.
+//   - when loading the LHS in outer product
+//   - when paging the accumulator during accumulate
