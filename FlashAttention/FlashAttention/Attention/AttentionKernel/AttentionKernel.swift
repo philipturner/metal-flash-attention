@@ -191,8 +191,12 @@ extension AttentionKernel {
     "parallelization_group_offset"
   }
   
-  var parallelizationThreadOffset: String {
-    "parallelization_thread_offset"
+  var unsafeParallelizationThreadOffset: String {
+    "\(parallelizationOffset) + sidx * 8 + morton_offset.y"
+  }
+  
+  var clampedParallelizationThreadOffset: String {
+    "min(\(unsafeParallelizationThreadOffset), \(parallelizationDimension))"
   }
   
   var traversalDimension: String {
@@ -211,10 +215,6 @@ extension AttentionKernel {
     case .backwardKeyValue:
       return "r"
     }
-  }
-  
-  var traversalThreadOffset: String {
-    "\(traversalOffset) + morton_offset.x"
   }
   
   var paddedTraversalEdge: String {
@@ -276,24 +276,6 @@ extension AttentionKernel {
       return output
     }
     
-    // Declare the memory offsets.
-    func declareOffsets() -> String {
-      """
-      
-      // Base address for async copies.
-      uint parallelization_group_offset = gid;
-      parallelization_group_offset *= \(blockDimensions.parallelization);
-      
-      // Base address for directly accessing RAM.
-      ushort2 morton_offset = morton_order(lane_id);
-      uint parallelization_thread_offset = parallelization_group_offset;
-      parallelization_thread_offset += sidx * 8 + morton_offset.y;
-      parallelization_thread_offset = min(
-        parallelization_thread_offset, \(parallelizationDimension) - 1);
-      
-      """
-    }
-    
     // Generate the full signature.
     return """
     
@@ -311,7 +293,9 @@ extension AttentionKernel {
       ushort sidx [[simdgroup_index_in_threadgroup]],
       ushort lane_id [[thread_index_in_simdgroup]]
     ) {
-      \(declareOffsets())
+      ushort2 morton_offset = morton_order(lane_id);
+      uint parallelization_group_offset = gid;
+      parallelization_group_offset *= \(blockDimensions.parallelization);
       
       // Return early if the entire SIMD is out of bounds.
       if (\(parallelizationOffset) >= \(parallelizationDimension)) {

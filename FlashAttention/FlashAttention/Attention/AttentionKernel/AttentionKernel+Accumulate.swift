@@ -264,13 +264,7 @@ extension AttentionKernel {
       }
     }
     
-    // MARK: - Loop
-    
-    struct LoopIterationDescriptor {
-      var addressSpace: MTLAddressSpace = .threadgroup
-      var registerOffset: String = ""
-      var registerSize: UInt16 = .zero
-    }
+    // MARK: - Inner Loop
     
     func innerLoopHead(
       headStart: UInt16,
@@ -332,6 +326,14 @@ extension AttentionKernel {
         
         """
       }
+    }
+    
+    // MARK: - Outer Loop
+    
+    struct LoopIterationDescriptor {
+      var addressSpace: MTLAddressSpace = .threadgroup
+      var registerOffset: String = ""
+      var registerSize: UInt16 = .zero
     }
     
     func loopIteration(

@@ -35,12 +35,6 @@ import QuartzCore
 //   - when writing at a matrix edge, we now need SIMD barrier(device) instead
 //     of threadgroup barrier(threadgroup)
 // - where might preferAsyncCache apply?
-//   - when loading/storing any cached variables
-//     - O(n), so we can just always use device memory for these
-//     - NO - there was a performance regression with GEMM bias, when switching
-//       from threadgroup load to device load on M3. Allow the option to use
-//       threadgroup memory here.
-//     - To save time, we will not correct dO * O to match the data about
-//       the optimal access pattern.
+//   - when loading/storing any cached variables [DONE]
 //   - when loading the LHS in outer product
 //   - when paging the accumulator during accumulate

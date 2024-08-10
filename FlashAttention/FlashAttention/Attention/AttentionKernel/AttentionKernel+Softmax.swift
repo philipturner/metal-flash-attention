@@ -70,7 +70,7 @@ extension AttentionKernel {
       // Threads outside of the matrix along the row dimension,
       // have their origin shifted in-bounds.
       uint D_offset = morton_offset.x;
-      uint R_offset = min(R, \(parallelizationThreadOffset));
+      uint R_offset = \(clampedParallelizationThreadOffset);
       uint2 offset_src(D_offset, R_offset);
       
       \(declareDerivativeOLocation())
@@ -364,7 +364,7 @@ extension AttentionKernel {
         return """
         
         auto \(operand)_src = \(operand);
-        \(operand)_src += \(traversalThreadOffset);
+        \(operand)_src += \(traversalOffset) + morton_offset.x;
         
         """
       } else {

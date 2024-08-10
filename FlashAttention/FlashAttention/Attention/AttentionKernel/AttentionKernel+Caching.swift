@@ -9,6 +9,7 @@
 // parallelization x head
 
 extension AttentionKernel {
+  // Enumeration that encapsulates both loading and storing.
   enum CachingOperationType {
     case load
     case store
@@ -18,6 +19,8 @@ extension AttentionKernel {
     operand: AttentionOperand,
     type: CachingOperationType
   ) -> String {
+    // MARK: - Operand
+    
     func allocateOperand() -> String {
       if type == .load {
         return """
@@ -95,23 +98,51 @@ extension AttentionKernel {
       }
     }
     
-    func declareOperandLocation() -> String {
-      """
-      
-      ushort2 \(operand)_block_offset(
-        morton_offset.x, morton_offset.y + sidx * 8);
-      auto \(operand)_src = (threadgroup float*)(threadgroup_block);
-      \(operand)_src = simdgroup_matrix_storage<float>::apply_offset(
-        \(operand)_src, \(leadingBlockDimension(operand)),
-        \(operand)_block_offset, \(transposed(operand)));
-      threadgroup_barrier(mem_flags::mem_threadgroup);
-      
-      """
+    func leadingDimensionOperand(
+      _ descriptor: LoopIterationDescriptor
+    ) -> String {
+      if descriptor.addressSpace == .device {
+        return leadingDimension(operand)
+      } else {
+        return "\(leadingBlockDimension(operand))"
+      }
     }
+    
+    func declareOperandLocation(
+      descriptor: LoopIterationDescriptor
+    ) -> String {
+      if descriptor.addressSpace == .device {
+        return """
+        
+        uint2 \(operand)_src_offset(
+          morton_offset.x + d_outer,
+          morton_offset.y + sidx * 8 + \(parallelizationOffset));
+        auto \(operand)_src = simdgroup_matrix_storage<float>::apply_offset(
+          \(operand), \(leadingDimension(operand)),
+          \(operand)_src_offset, \(transposed(operand)));
+        
+        """
+      } else {
+        return """
+        
+        ushort2 \(operand)_block_offset(
+          morton_offset.x, morton_offset.y + sidx * 8);
+        auto \(operand)_src = (threadgroup float*)(threadgroup_block);
+        \(operand)_src = simdgroup_matrix_storage<float>::apply_offset(
+          \(operand)_src, \(leadingBlockDimension(operand)),
+          \(operand)_block_offset, \(transposed(operand)));
+        threadgroup_barrier(mem_flags::mem_threadgroup);
+        
+        """
+      }
+    }
+    
+    // MARK: - Inner Loop
     
     func innerLoopHead(
       headStart: UInt16,
-      headEnd: UInt16
+      headEnd: UInt16,
+      descriptor: LoopIterationDescriptor
     ) -> String {
       if type == .load {
         return """
@@ -120,7 +151,7 @@ extension AttentionKernel {
         for (ushort d = \(headStart); d < \(headEnd); d += 8) {
           ushort2 origin(d, 0);
           \(operand)_sram[(d_outer + d) / 8].load(
-            \(operand)_src, \(leadingBlockDimension(operand)),
+            \(operand)_src, \(leadingDimensionOperand(descriptor)),
             origin, \(transposed(operand)));
         }
         
@@ -132,7 +163,7 @@ extension AttentionKernel {
         for (ushort d = \(headStart); d < \(headEnd); d += 8) {
           ushort2 origin(d, 0);
           \(operand)_sram[(d_outer + d) / 8].store(
-            \(operand)_src, \(leadingBlockDimension(operand)),
+            \(operand)_src, \(leadingDimensionOperand(descriptor)),
             origin, \(transposed(operand)));
         }
         
@@ -140,7 +171,15 @@ extension AttentionKernel {
       }
     }
     
-    func loopIteration() -> String {
+    // MARK: - Outer Loop
+    
+    struct LoopIterationDescriptor {
+      var addressSpace: MTLAddressSpace = .threadgroup
+    }
+    
+    func loopIteration(
+      descriptor: LoopIterationDescriptor
+    ) -> String {
       func loadOperand() -> String {
         if type == .load {
           return asyncAccessOperand()
@@ -157,20 +196,60 @@ extension AttentionKernel {
         }
       }
       
+      if descriptor.addressSpace == .device {
+        return """
+        
+        \(declareOperandLocation(descriptor: descriptor))
+        \(innerLoopHead(
+            headStart: 0,
+            headEnd: blockDimensions.head,
+            descriptor: descriptor))
+        
+        """
+      } else {
+        return """
+        
+        \(loadOperand())
+        \(declareOperandLocation(descriptor: descriptor))
+        if (d_outer + \(blockDimensions.head) <= \(headDimension)) {
+          \(innerLoopHead(
+              headStart: 0,
+              headEnd: blockDimensions.head,
+              descriptor: descriptor))
+        } else {
+          \(innerLoopHead(
+              headStart: 0,
+              headEnd: headDimension % blockDimensions.head,
+              descriptor: descriptor))
+        }
+        \(storeOperand())
+        
+        """
+      }
+    }
+    
+    func gatedLoopIteration() -> String {
+      var descriptorDevice = LoopIterationDescriptor()
+      var descriptorThreadgroup = LoopIterationDescriptor()
+      descriptorDevice.addressSpace = .device
+      descriptorThreadgroup.addressSpace = .threadgroup
+      
+      let condition = """
+      \(!preferAsyncCache) && (
+        (\(headDimension) % \(blockDimensions.head) == 0) ||
+        (d_outer + \(blockDimensions.head) <= \(headDimension))
+      )
+      """
+      
       return """
       
-      \(loadOperand())
-      \(declareOperandLocation())
-      if (d_outer + \(blockDimensions.head) <= \(headDimension)) {
-        \(innerLoopHead(
-            headStart: 0,
-            headEnd: blockDimensions.head))
+      if (\(condition)) {
+        if (\(unsafeParallelizationThreadOffset) < \(parallelizationDimension)) {
+          \(loopIteration(descriptor: descriptorDevice))
+        }
       } else {
-        \(innerLoopHead(
-            headStart: 0,
-            headEnd: headDimension % blockDimensions.head))
+        \(loopIteration(descriptor: descriptorThreadgroup))
       }
-      \(storeOperand())
       
       """
     }
@@ -185,7 +264,7 @@ extension AttentionKernel {
       d_outer < \(headDimension);
       d_outer += \(blockDimensions.head)
     ) {
-      \(loopIteration())
+      \(gatedLoopIteration())
     }
     
     """
@@ -235,14 +314,8 @@ extension AttentionKernel {
       }
       output += """
       
-      float L_sram = L[\(parallelizationThreadOffset)];
+      float L_sram = L[\(clampedParallelizationThreadOffset)];
       \(computeD())
-      
-      // Store D[i] in memory sooner rather than later. That way, the compiler
-      // has a chance to deallocate the parallelization offset.
-      if (\(parallelizationOffset) + sidx * 8 + morton_offset.y < R) {
-        D[\(parallelizationThreadOffset)] = D_sram;
-      }
       
       """
       
@@ -277,10 +350,10 @@ extension AttentionKernel {
       if computeL {
         output += """
         
-        if (\(parallelizationOffset) + sidx * 8 + morton_offset.y < R) {
+        if (\(unsafeParallelizationThreadOffset) < \(parallelizationDimension)) {
           // Premultiplied by M_LOG2E_F.
           float L_sram = m + fast::log2(l);
-          L[\(parallelizationThreadOffset)] = L_sram;
+          L[\(clampedParallelizationThreadOffset)] = L_sram;
         }
         
         """
@@ -290,6 +363,13 @@ extension AttentionKernel {
       if cached(.dQ) {
         output += cache(operand: .dQ, type: .store)
       }
+      output += """
+      
+      if (\(unsafeParallelizationThreadOffset) < \(parallelizationDimension)) {
+        D[\(clampedParallelizationThreadOffset)] = D_sram;
+      }
+      
+      """
       
     case .backwardKeyValue:
       if cached(.dK) {

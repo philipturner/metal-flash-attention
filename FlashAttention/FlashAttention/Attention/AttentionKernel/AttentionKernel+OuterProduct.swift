@@ -211,14 +211,7 @@ extension AttentionKernel {
       }
     }
     
-    // MARK: - Loop
-    
-    struct LoopIterationDescriptor {
-      // Whether to accumulate in the SIMD matmul.
-      var accumulateConditional: String = ""
-      var addressSpace: MTLAddressSpace = .threadgroup
-      var registerOffset: String = ""
-    }
+    // MARK: - Inner Loop
     
     func innerLoopTraversal(
       traversalStart: String,
@@ -282,6 +275,15 @@ extension AttentionKernel {
         
         """
       }
+    }
+    
+    // MARK: - Outer Loop
+    
+    struct LoopIterationDescriptor {
+      // Whether to accumulate in the SIMD matmul.
+      var accumulateConditional: String = ""
+      var addressSpace: MTLAddressSpace = .threadgroup
+      var registerOffset: String = ""
     }
     
     func loopIteration(
