@@ -289,7 +289,7 @@ extension AttentionKernel {
       uint parallelization_thread_offset = parallelization_group_offset;
       parallelization_thread_offset += sidx * 8 + morton_offset.y;
       parallelization_thread_offset = min(
-        parallelization_thread_offset, \(parallelizationDimension));
+        parallelization_thread_offset, \(parallelizationDimension) - 1);
       
       """
     }

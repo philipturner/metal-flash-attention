@@ -39,7 +39,8 @@ import QuartzCore
 //     - O(n), so we can just always use device memory for these
 //     - NO - there was a performance regression with GEMM bias, when switching
 //       from threadgroup load to device load on M3. Allow the option to use
-//       threadgroup memory here. If it succeeds, we may need to change the
-//       dO * O computation to allow this option as well.
+//       threadgroup memory here.
+//     - To save time, we will not correct dO * O to match the data about
+//       the optimal access pattern.
 //   - when loading the LHS in outer product
 //   - when paging the accumulator during accumulate
