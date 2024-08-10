@@ -153,8 +153,6 @@ extension AttentionKernel {
     // - remove dead assembly code from paths that are already
     //   forbidden for 'device' read
     
-    // NOTE: Affected by preferAsyncLoad
-    // - omitted completely
     func loadRHS(
       descriptor: LoopIterationDescriptor
     ) -> String {
@@ -238,8 +236,6 @@ extension AttentionKernel {
     
     // MARK: - Loop
     
-    // NOTE: Affected by preferAsyncLoad
-    // - might include an option for whether this branch is async
     struct LoopIterationDescriptor {
       // Whether to accumulate in the SIMD matmul.
       var accumulateConditional: String = ""
@@ -247,8 +243,6 @@ extension AttentionKernel {
       var registerOffset: String = ""
     }
     
-    // NOTE: Affected by preferAsyncLoad
-    // - leading dimension changes
     func innerLoopTraversal(
       traversalStart: String,
       traversalEnd: String,
@@ -258,10 +252,7 @@ extension AttentionKernel {
       
       #pragma clang loop unroll(full)
       for (ushort c = \(traversalStart); c < \(traversalEnd); c += 8) {
-        // Load the RHS from threadgroup memory.
-        // loop type: \(descriptor.addressSpace)
-        //
-        // NO LONGER THREADGROUP MEMORY!
+        // Load the RHS from memory.
         ushort2 origin(c, d);
         simdgroup_matrix_storage<float> \(B);
         \(B).load(
@@ -277,65 +268,89 @@ extension AttentionKernel {
       """
     }
     
-    // NOTE: Affected by preferAsyncLoad
     func innerLoopHead(
       headStart: UInt16,
       headEnd: UInt16,
       descriptor: LoopIterationDescriptor
     ) -> String {
-      // TODO: Remove the if statements for the device codepath.
-      """
-      
-      // iteration type: \(descriptor.addressSpace)
-      #pragma clang loop unroll(full)
-      for (ushort d = \(headStart); d < \(headEnd); d += 8) {
-        // iteration type: \(descriptor.addressSpace)
-        \(innerLoopTraversal(
-            traversalStart: "0",
-            traversalEnd: paddedTraversalEdge,
-            descriptor: descriptor))
-        if (\(traversalOffset) + \(blockDimensions.traversal)
-            < \(traversalDimension)) {
+      if descriptor.addressSpace == .device {
+        return """
+        
+        #pragma clang loop unroll(full)
+        for (ushort d = \(headStart); d < \(headEnd); d += 8) {
           \(innerLoopTraversal(
-              traversalStart: paddedTraversalEdge,
+              traversalStart: "0",
               traversalEnd: "\(blockDimensions.traversal)",
               descriptor: descriptor))
         }
+        
+        """
+      } else {
+        return """
+        
+        #pragma clang loop unroll(full)
+        for (ushort d = \(headStart); d < \(headEnd); d += 8) {
+          \(innerLoopTraversal(
+              traversalStart: "0",
+              traversalEnd: paddedTraversalEdge,
+              descriptor: descriptor))
+          if (\(traversalOffset) + \(blockDimensions.traversal)
+              < \(traversalDimension)) {
+            \(innerLoopTraversal(
+                traversalStart: paddedTraversalEdge,
+                traversalEnd: "\(blockDimensions.traversal)",
+                descriptor: descriptor))
+          }
+        }
+        
+        """
       }
-      
-      """
     }
     
-    // NOTE: Affected by preferAsyncLoad
     func loopIteration(
       descriptor: LoopIterationDescriptor
     ) -> String {
-      // TODO: Remove the if statements for the device codepath.
-      """
-      
-      // Load the left-hand side.
-      // iteration type: \(descriptor.addressSpace)
-      \(allocateLHS(descriptor: descriptor))
-      \(loadLHS(descriptor: descriptor))
-      
-      // Load the right-hand side.
-      // iteration type: \(descriptor.addressSpace)
-      \(loadRHS(descriptor: descriptor))
-      \(declareRHSLocation(descriptor: descriptor))
-      
-      // iteration type: \(descriptor.addressSpace)
-      \(innerLoopHead(
-          headStart: 0,
-          headEnd: paddedHeadEdge,
-          descriptor: descriptor))
-      if (d_outer + \(blockDimensions.head) < \(headDimension)) {
-        \(innerLoopHead(
-            headStart: paddedHeadEdge,
-            headEnd: blockDimensions.head,
-            descriptor: descriptor))
+      func loadOperands() -> String {
+        """
+        
+        // Load the left-hand side.
+        \(allocateLHS(descriptor: descriptor))
+        \(loadLHS(descriptor: descriptor))
+        
+        // Load the right-hand side.
+        \(loadRHS(descriptor: descriptor))
+        \(declareRHSLocation(descriptor: descriptor))
+        
+        """
       }
       
-      """
+      if descriptor.addressSpace == .device {
+        return """
+        
+        \(loadOperands())
+        \(innerLoopHead(
+            headStart: 0,
+            headEnd: blockDimensions.head,
+            descriptor: descriptor))
+        
+        """
+      } else {
+        return """
+        
+        \(loadOperands())
+        \(innerLoopHead(
+            headStart: 0,
+            headEnd: paddedHeadEdge,
+            descriptor: descriptor))
+        if (d_outer + \(blockDimensions.head) < \(headDimension)) {
+          \(innerLoopHead(
+              headStart: paddedHeadEdge,
+              headEnd: blockDimensions.head,
+              descriptor: descriptor))
+        }
+        
+        """
+      }
     }
     
     func gatedLoopIteration(
@@ -348,12 +363,10 @@ extension AttentionKernel {
       
       let blockDim = blockDimensions.traversal
       let condition = """
-      \(!preferAsyncLoad)
-      && (
+      \(!preferAsyncLoad) && (
         (\(traversalDimension) % \(blockDim) == 0) ||
         (\(traversalOffset) + \(blockDim) <= \(traversalDimension))
-      )
-      && (
+      ) && (
         (\(headDimension) % \(blockDimensions.head) == 0) ||
         (d_outer + \(blockDimensions.head) <= \(headDimension))
       )
@@ -372,7 +385,6 @@ extension AttentionKernel {
     
     // Outer loop over the head dimension.
     var outerIterationDesc = LoopIterationDescriptor()
-    
     if cached(A) {
       let loopEnd = paddedHeadDimension
       let loopEndFloor = loopEnd - loopEnd % blockDimensions.head
@@ -390,8 +402,7 @@ extension AttentionKernel {
         d_outer < \(loopEndFloor);
         d_outer += \(blockDimensions.head)
       ) {
-        // TODO: Add the gated loop iteration here, after debugging.
-        \(loopIteration(descriptor: outerIterationDesc))
+        \(gatedLoopIteration(descriptor: outerIterationDesc))
       }
       
       """

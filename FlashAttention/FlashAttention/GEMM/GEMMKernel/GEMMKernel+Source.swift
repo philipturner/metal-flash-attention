@@ -59,11 +59,9 @@ kernel void gemm(device \(memoryName("A")) *A [[buffer(0)]],
   // the reason for the early exit.
   uint M_offset = gid.y * M_group;
   uint N_offset = gid.x * N_group;
-  {
-    if (M_offset + sid.y * \(registerM) >= M ||
-        N_offset + sid.x * \(registerN) >= N) {
-      return;
-    }
+  if (M_offset + sid.y * \(registerM) >= M ||
+      N_offset + sid.x * \(registerN) >= N) {
+    return;
   }
   ushort2 offset_in_group(sid.x * \(registerN) + morton_offset.x,
                           sid.y * \(registerM) + morton_offset.y);

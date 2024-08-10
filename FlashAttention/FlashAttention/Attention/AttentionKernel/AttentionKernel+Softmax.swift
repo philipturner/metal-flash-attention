@@ -453,8 +453,7 @@ extension AttentionKernel {
     case .backwardKeyValue:
       let blockDim = blockDimensions.traversal
       let condition = """
-      \(!preferAsyncLoad)
-      && (
+      \(!preferAsyncLoad) && (
         (\(traversalDimension) % \(blockDim) == 0) ||
         (\(traversalOffset) + \(blockDim) <= \(traversalDimension))
       )

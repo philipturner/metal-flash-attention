@@ -46,7 +46,12 @@ Documentation:
 - Explain how the rooflines are calculated.
 - Publish the performance data.
 - Provide example code for encoding attention kernels.
-
+- Explain the reason for removing the sparse blockmask, noting its recent addition to PyTorch.
+  - Explain how someone would implement the sparse blockmask: two-level hierarchy of sparsity.
+  - Explain that 128 + 1024 is not a viable pair of block sizes. Native GEMM block sizes were designed to be used instead of 128, targeting a mega-block size of 960. The native GEMM block sizes would divide evenly into 960, which has more prime factors than 1024.
+  - This design choice for block sizes was made, so that if someone did implement blockmasking, it would integrate seamlessly.
+  - Repo owner encourages people to try modifying this code, to defeat the quadratic scaling compute cost of attention. Due to time constraints, the author could not try this himself.
+  
 Performance:
 - Optimization that blocks some operands along the D dimension, and avoids caching them in registers.
 - Fix performance when operands are not aligned to the block size.
@@ -56,3 +61,4 @@ Portability:
 - Support mixed precision.
 - Optimize performance on M3.
 - Test problems where the attention matrix is not a square.
+- Support a dense mask that safely handles unaligned matrix edges.

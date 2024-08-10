@@ -310,6 +310,11 @@ extension AttentionKernel {
       ushort lane_id [[thread_index_in_simdgroup]]
     ) {
       \(declareOffsets())
+      
+      // Return early if the entire SIMD is out of bounds.
+      if (\(parallelizationOffset) >= \(parallelizationDimension)) {
+        return;
+      }
     
     """
   }
