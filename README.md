@@ -48,14 +48,11 @@ Documentation:
 - Provide example code for encoding attention kernels.
 - Explain the reason for removing the sparse blockmask, noting its recent addition to PyTorch.
   - Explain how someone would implement the sparse blockmask: two-level hierarchy of sparsity. Attention mask decomposed into block-aligned, zero-padded chunks, with one level of indirection to access via pointers.
-  - Explain that 128 + 1024 is not a viable pair of block sizes. Native GEMM block sizes were designed to be used instead of 128. The native GEMM block sizes would divide evenly into 960, which has more prime factors than 1024.
-  - This design choice for block sizes was made, so that if someone did implement blockmasking, it would integrate seamlessly.
+  - PyTorch's initial implementation of FlexAttention restricted problem sizes to those that divide by 128. MFA was designed with first-class support for odd and strange block sizes. It is okay if the block size does not divide evenly into the sequence length.
+  - Explain that 128x128 + 1024x1024 is not a viable pair of block sizes. The small block size should equal the native GEMM block size (e.g. 32x64, 16x96). The native GEMM block all divide evenly into 960x960, which has more prime factors.
+  - 960 is divisible by 64.
+  - 960 is not divisible by 128. Instead, replace 128 with 120 in all block size selection heuristics. 120 still divides by 8 (the SIMD-group matrix square side length).
   - Repo owner encourages people to try modifying this code, to defeat the quadratic scaling compute cost of attention. Due to time constraints, the author could not try this himself.
-  
-Performance:
-- Optimization that blocks some operands along the D dimension, and avoids caching them in registers.
-- Fix performance when operands are not aligned to the block size.
-- Compare both FlashAttention variants to standard attention.
 
 Portability:
 - Support mixed precision.

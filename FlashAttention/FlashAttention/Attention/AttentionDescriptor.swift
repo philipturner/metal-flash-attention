@@ -90,7 +90,7 @@ extension AttentionDescriptor {
     // Block sizes for the case where nothing is cached.
     if mtlDevice.supportsFamily(.apple9) {
       output.blockDimensions = (
-        parallelization: 16, traversal: 120, head: 8)
+        parallelization: 16, traversal: 128, head: 8)
     } else {
       output.blockDimensions = (
         parallelization: 32, traversal: 64, head: 32)

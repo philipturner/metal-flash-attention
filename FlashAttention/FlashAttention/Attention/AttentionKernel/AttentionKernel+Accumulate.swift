@@ -38,8 +38,7 @@ extension AttentionKernel {
       }
       return """
       
-      // Where the \(C) data will be written to.
-      simdgroup_matrix_storage<float>
+      simdgroup_matrix_storage<float> \
       \(C)_sram[\(blockDimensions.head) / 8];
       
       """
@@ -68,7 +67,6 @@ extension AttentionKernel {
       }
       return """
       
-      // Inner loop over the head dimension.
       #pragma clang loop unroll(full)
       for (ushort d = 0; d < \(descriptor.registerSize); d += 8) {
         auto \(C) = \(C)_sram + (\(descriptor.registerOffset) + d) / 8;
@@ -87,21 +85,16 @@ extension AttentionKernel {
       case .device:
         return """
         
-        // Where the \(C) data will be read from.
-        ushort2 \(C)_block_offset(
-          morton_offset.x,
-          morton_offset.y + sidx * 8);
-        auto \(C)_src = (threadgroup float*)(threadgroup_block);
-        \(C)_src = simdgroup_matrix_storage<float>::apply_offset(
-          \(C)_src, \(leadingBlockDimension(C)),
-          \(C)_block_offset, \(transposed(C)));
-        threadgroup_barrier(mem_flags::mem_threadgroup);
+        uint2 \(C)_src_offset(
+          morton_offset.x + d_outer,
+          \(clampedParallelizationThreadOffset));
+        auto \(C)_src = simdgroup_matrix_storage<float>::apply_offset(
+          \(C), \(leadingDimension(C)), \(C)_src_offset, \(transposed(C)));
         
         """
       case .threadgroup:
         return """
         
-        // Where the \(C) data will be read from.
         ushort2 \(C)_block_offset(
           morton_offset.x,
           morton_offset.y + sidx * 8);
@@ -174,40 +167,72 @@ extension AttentionKernel {
     func loadAccumulator(
       descriptor: LoopIterationDescriptor
     ) -> String {
-      """
-      
-      \(asyncLoadAccumulator())
-      \(declareAccumulatorLocation(descriptor: descriptor))
-      
-      // Inner loop over the head dimension.
-      #pragma clang loop unroll(full)
-      for (ushort d = 0; d < \(blockDimensions.head); d += 8) {
-        ushort2 origin(d, 0);
-        \(C)_sram[d / 8].load(
-          \(C)_src, \(leadingBlockDimension(C)), origin, \(transposed(C)));
+      switch descriptor.addressSpaceLHS! {
+      case .device:
+        return """
+        
+        \(declareAccumulatorLocation(descriptor: descriptor))
+        
+        #pragma clang loop unroll(full)
+        for (ushort d = 0; d < \(blockDimensions.head); d += 8) {
+          ushort2 origin(d, 0);
+          \(C)_sram[d / 8].load(
+            \(C)_src, \(leadingDimension(C)), origin, \(transposed(C)));
+        }
+        
+        """
+      case .threadgroup:
+        return """
+        
+        \(asyncLoadAccumulator())
+        \(declareAccumulatorLocation(descriptor: descriptor))
+        
+        #pragma clang loop unroll(full)
+        for (ushort d = 0; d < \(blockDimensions.head); d += 8) {
+          ushort2 origin(d, 0);
+          \(C)_sram[d / 8].load(
+            \(C)_src, \(leadingBlockDimension(C)), origin, \(transposed(C)));
+        }
+        
+        """
       }
-      
-      """
     }
     
     func storeAccumulator(
       descriptor: LoopIterationDescriptor
     ) -> String {
-      """
-      
-      \(declareAccumulatorLocation(descriptor: descriptor))
-      
-      // Inner loop over the head dimension.
-      #pragma clang loop unroll(full)
-      for (ushort d = 0; d < \(blockDimensions.head); d += 8) {
-        ushort2 origin(d, 0);
-        \(C)_sram[d / 8].store(
-          \(C)_src, \(leadingBlockDimension(C)), origin, \(transposed(C)));
+      switch descriptor.addressSpaceLHS! {
+      case .device:
+        return """
+        
+        \(declareAccumulatorLocation(descriptor: descriptor))
+        
+        if (\(unsafeParallelizationThreadOffset) < \(parallelizationDimension)) {
+          #pragma clang loop unroll(full)
+          for (ushort d = 0; d < \(blockDimensions.head); d += 8) {
+            ushort2 origin(d, 0);
+            \(C)_sram[d / 8].store(
+              \(C)_src, \(leadingDimension(C)), origin, \(transposed(C)));
+          }
+        }
+        
+        """
+      case .threadgroup:
+        return """
+        
+        \(declareAccumulatorLocation(descriptor: descriptor))
+        
+        #pragma clang loop unroll(full)
+        for (ushort d = 0; d < \(blockDimensions.head); d += 8) {
+          ushort2 origin(d, 0);
+          \(C)_sram[d / 8].store(
+            \(C)_src, \(leadingBlockDimension(C)), origin, \(transposed(C)));
+        }
+        
+        \(asyncStoreAccumulator())
+        
+        """
       }
-      
-      \(asyncStoreAccumulator())
-      
-      """
     }
     
     func cacheAccumulator(

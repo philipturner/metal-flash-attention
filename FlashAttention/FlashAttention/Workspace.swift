@@ -15,14 +15,17 @@ import QuartzCore
 
 // Tasks for M3 optimization:
 // - change the attention kernel to rely on a two-level descriptor API [DONE]
-// - add two optional pathways to elide async copies
-//   - reads that would be shared among threads (like GEMM load)
+// - add two optional pathways to elide async copies [DONE]
+//   - reads that would be shared among threads (like GEMM load) [DONE]
 //     - L and D terms during backward key-value
-//   - reads that have one-to-one mapping to threads (like GEMM store)
+//   - reads that have one-to-one mapping to threads (like GEMM store) [DONE]
 //     - applies to anything that is cacheable
 // - Find a way to benchmark the 90% iterations direct, 10% iterations async
 //   case on M4, when the problem size is divisible by the block size.
 //   - Most severe impact is when the D block is very small
+//   - Figure out which option is fastest on M1, as well.
+// - Add a randomized correctness test for combinations of AttentionKernel
+//   config options, problem sizes, and eventually precisions.
 //
 // To implement the pathways:
 // - start by modifying the L/D code to rely on 'preferAsyncLoad'
@@ -32,9 +35,21 @@ import QuartzCore
 //   - outer product (RHS) [DONE]
 //   - accumulate (RHS) [DONE]
 // - compress the threads along the parallelization dimension
-//   - when writing at a matrix edge, we now need SIMD barrier(device) instead
-//     of threadgroup barrier(threadgroup)
 // - where might preferAsyncCache apply?
 //   - when loading/storing any cached variables [DONE]
 //   - when loading the LHS in outer product [DONE]
-//   - when paging the accumulator during accumulate
+//   - when paging the accumulator during accumulate [DONE]
+//
+// To benchmark the pathways:
+// - Check for correctness regressions on M3.
+// - Confirm the effectiveness of async copy elisions.
+//   - M1 performance should not regress (addressSpace = threadgroup).
+//   - M3 performance should improve (addressSpace = device).
+//   - Find optimal address spaces on each architecture.
+// - Check for performance regressions with indivisible problem sizes.
+//   - Compare side by side:
+//   - One less than the power of 2 (both sequence and head decrease)
+//   - The power of 2
+// - Test for coupling betwen optimal address space and problem divisibility.
+//   - Is this affected by whether the problem size is divisible? If so,
+//     something is going wrong.

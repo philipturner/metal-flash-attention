@@ -200,10 +200,15 @@ extension AttentionKernel {
         return """
         
         \(declareOperandLocation(descriptor: descriptor))
+        if (
+          \(type == .load) ||
+          (\(unsafeParallelizationThreadOffset) < \(parallelizationDimension))
+        ) {
         \(innerLoopHead(
             headStart: 0,
             headEnd: blockDimensions.head,
             descriptor: descriptor))
+        }
         
         """
       } else {
@@ -244,9 +249,7 @@ extension AttentionKernel {
       return """
       
       if (\(condition)) {
-        if (\(unsafeParallelizationThreadOffset) < \(parallelizationDimension)) {
-          \(loopIteration(descriptor: descriptorDevice))
-        }
+        \(loopIteration(descriptor: descriptorDevice))
       } else {
         \(loopIteration(descriptor: descriptorThreadgroup))
       }

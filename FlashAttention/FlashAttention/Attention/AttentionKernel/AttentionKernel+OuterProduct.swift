@@ -29,7 +29,6 @@ extension AttentionKernel {
     func allocateAccumulator() -> String {
       """
       
-      // Where the \(C) data will be written to.
       simdgroup_matrix_storage<float> \
       \(C)_sram[\(blockDimensions.traversal) / 8];
       
@@ -53,8 +52,7 @@ extension AttentionKernel {
       }
       return """
       
-      // Where the \(A) data will be written to.
-      simdgroup_matrix_storage<float>
+      simdgroup_matrix_storage<float> \
       \(A)_sram[\(blockDimensions.head) / 8];
       
       """
@@ -137,13 +135,11 @@ extension AttentionKernel {
         
         \(declareLHSLocation(descriptor: descriptor))
         
-        if (\(unsafeParallelizationThreadOffset) < \(parallelizationDimension)) {
-          #pragma clang loop unroll(full)
-          for (ushort d = 0; d < \(blockDimensions.head); d += 8) {
-            ushort2 origin(d, 0);
-            \(A)_sram[d / 8].load(
-              \(A)_src, \(leadingDimension(A)), origin, \(transposed(A)));
-          }
+        #pragma clang loop unroll(full)
+        for (ushort d = 0; d < \(blockDimensions.head); d += 8) {
+          ushort2 origin(d, 0);
+          \(A)_sram[d / 8].load(
+            \(A)_src, \(leadingDimension(A)), origin, \(transposed(A)));
         }
         
         """
