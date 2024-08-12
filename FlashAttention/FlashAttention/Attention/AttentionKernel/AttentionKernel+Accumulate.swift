@@ -80,9 +80,7 @@ extension AttentionKernel {
       """
     }
     
-    func asyncLoadAccumulator(
-      descriptor: LoopIterationDescriptor
-    ) -> String {
+    func asyncLoadAccumulator() -> String {
       guard !cached(C) else {
         return ""
       }
@@ -124,9 +122,7 @@ extension AttentionKernel {
       """
     }
     
-    func asyncStoreAccumulator(
-      descriptor: LoopIterationDescriptor
-    ) -> String {
+    func asyncStoreAccumulator() -> String {
       guard !cached(C) else {
         return ""
       }
@@ -347,7 +343,7 @@ extension AttentionKernel {
         if (\(traversalOffset) == 0) {
           \(initializeAccumulator(descriptor: descriptor))
         } else {
-          \(asyncLoadAccumulator(descriptor: descriptor))
+          \(asyncLoadAccumulator())
           \(scaleAccumulator(
               by: accumulateDesc.everyIterationScale,
               descriptor: descriptor))
@@ -377,7 +373,7 @@ extension AttentionKernel {
                by: accumulateDesc.lastIterationScale,
                descriptor: descriptor))
         }
-        \(asyncStoreAccumulator(descriptor: descriptor))
+        \(asyncStoreAccumulator())
         
         """
       } else {
@@ -399,7 +395,7 @@ extension AttentionKernel {
               by: accumulateDesc.lastIterationScale,
               descriptor: descriptor))
         }
-        \(asyncStoreAccumulator(descriptor: descriptor))
+        \(asyncStoreAccumulator())
         
         """
       }

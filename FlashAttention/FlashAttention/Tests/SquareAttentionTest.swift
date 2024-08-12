@@ -13,23 +13,23 @@ import Metal
 #if true
 func executeScript() {
   // Automate the execution of the test suite.
-//  profileProblemSize(sequenceDimension: 10, headDimension: 3)
-//  profileProblemSize(sequenceDimension: 10, headDimension: 80)
-//  profileProblemSize(sequenceDimension: 8, headDimension: 2)
-//  profileProblemSize(sequenceDimension: 9, headDimension: 2)
-//  profileProblemSize(sequenceDimension: 23, headDimension: 2)
-//  profileProblemSize(sequenceDimension: 24, headDimension: 2)
-//  profileProblemSize(sequenceDimension: 25, headDimension: 2)
-//  profileProblemSize(sequenceDimension: 192, headDimension: 77)
-//  profileProblemSize(sequenceDimension: 192, headDimension: 80)
+  profileProblemSize(sequenceDimension: 10, headDimension: 3)
+  profileProblemSize(sequenceDimension: 10, headDimension: 80)
+  profileProblemSize(sequenceDimension: 8, headDimension: 2)
+  profileProblemSize(sequenceDimension: 9, headDimension: 2)
+  profileProblemSize(sequenceDimension: 23, headDimension: 2)
+  profileProblemSize(sequenceDimension: 24, headDimension: 2)
+  profileProblemSize(sequenceDimension: 25, headDimension: 2)
+  profileProblemSize(sequenceDimension: 192, headDimension: 77)
+  profileProblemSize(sequenceDimension: 192, headDimension: 80)
   profileProblemSize(sequenceDimension: 93, headDimension: 32)
-//  profileProblemSize(sequenceDimension: 99, headDimension: 35)
-//  profileProblemSize(sequenceDimension: 64, headDimension: 32)
-//  profileProblemSize(sequenceDimension: 32, headDimension: 64)
-//  profileProblemSize(sequenceDimension: 4, headDimension: 1)
-//  profileProblemSize(sequenceDimension: 4, headDimension: 2)
-//  profileProblemSize(sequenceDimension: 384, headDimension: 95)
-//  profileProblemSize(sequenceDimension: 777, headDimension: 199)
+  profileProblemSize(sequenceDimension: 99, headDimension: 35)
+  profileProblemSize(sequenceDimension: 64, headDimension: 32)
+  profileProblemSize(sequenceDimension: 32, headDimension: 64)
+  profileProblemSize(sequenceDimension: 4, headDimension: 1)
+  profileProblemSize(sequenceDimension: 4, headDimension: 2)
+  profileProblemSize(sequenceDimension: 384, headDimension: 95)
+  profileProblemSize(sequenceDimension: 777, headDimension: 199)
   
   #if false
   let N_array = [128, 160, 192]
@@ -120,13 +120,15 @@ func profileProblemSize(
     var attentionKernelDesc = attentionDesc.kernelDescriptor(type: type)
     
     // Change the default kernel settings here.
-    attentionKernelDesc.preferAsyncCache = true
-    attentionKernelDesc.preferAsyncLoad = true
+    attentionKernelDesc.preferAsyncCache = false // false
+    attentionKernelDesc.preferAsyncLoad = true // true
+    
 //    attentionKernelDesc.cacheState[.Q] = true
 //    attentionKernelDesc.cacheState[.K] = true
 //    attentionKernelDesc.cacheState[.V] = true
-//    attentionKernelDesc.cacheState[.O] = true
 //    attentionKernelDesc.cacheState[.dO] = true
+    
+//    attentionKernelDesc.cacheState[.O] = true
 //    attentionKernelDesc.cacheState[.dV] = true
 //    attentionKernelDesc.cacheState[.dK] = true
 //    attentionKernelDesc.cacheState[.dQ] = true
@@ -389,11 +391,11 @@ func profileProblemSize(
   }
   
   check(expected: O, actual: resultO)
-//  check(expected: L, actual: resultL)
-//  check(expected: D, actual: resultD)
-//  check(expected: dV, actual: resultDerivativeV)
-//  check(expected: dK, actual: resultDerivativeK)
-//  check(expected: dQ, actual: resultDerivativeQ)
+  check(expected: L, actual: resultL)
+  check(expected: D, actual: resultD)
+  check(expected: dV, actual: resultDerivativeV)
+  check(expected: dK, actual: resultDerivativeK)
+  check(expected: dQ, actual: resultDerivativeQ)
 #endif
   
   // MARK: - Profiling

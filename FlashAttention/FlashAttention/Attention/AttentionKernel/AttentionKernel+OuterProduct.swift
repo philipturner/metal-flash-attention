@@ -64,13 +64,8 @@ extension AttentionKernel {
       """
     }
     
-    func asyncLoadLHS(
-      descriptor: LoopIterationDescriptor
-    ) -> String {
-      guard descriptor.addressSpaceLHS == .threadgroup else {
-        return ""
-      }
-      return """
+    func asyncLoadLHS() -> String {
+      """
       
       threadgroup_barrier(mem_flags::mem_threadgroup);
       if (sidx == 0) {
@@ -151,7 +146,6 @@ extension AttentionKernel {
       if descriptor.addressSpaceLHS == .device {
         return """
         
-        \(asyncLoadLHS(descriptor: descriptor))
         \(declareLHSLocation(descriptor: descriptor))
         
         #pragma clang loop unroll(full)
@@ -166,7 +160,7 @@ extension AttentionKernel {
       } else {
         return """
         
-        \(asyncLoadLHS(descriptor: descriptor))
+        \(asyncLoadLHS())
         \(declareLHSLocation(descriptor: descriptor))
         
         #pragma clang loop unroll(full)
@@ -183,7 +177,7 @@ extension AttentionKernel {
     
     // MARK: - RHS
     
-    func loadRHS(
+    func asyncLoadRHS(
       descriptor: LoopIterationDescriptor
     ) -> String {
       guard descriptor.addressSpaceRHS == .threadgroup else {
@@ -264,6 +258,26 @@ extension AttentionKernel {
       }
     }
     
+    func loadRHS(
+      descriptor: LoopIterationDescriptor
+    ) -> String {
+      if descriptor.addressSpaceRHS == .device {
+        return """
+        
+        \(asyncLoadRHS(descriptor: descriptor))
+        \(declareRHSLocation(descriptor: descriptor))
+        
+        """
+      } else {
+        return """
+        
+        \(asyncLoadRHS(descriptor: descriptor))
+        \(declareRHSLocation(descriptor: descriptor))
+        
+        """
+      }
+    }
+    
     // MARK: - Inner Loop
     
     func innerLoopTraversal(
@@ -273,56 +287,20 @@ extension AttentionKernel {
     ) -> String {
       """
       
-      // CULPRIT START
-      
-      threadgroup_barrier(mem_flags::mem_threadgroup | mem_flags::mem_device);
-      
-      #pragma clang loop unroll(disable)
+      #pragma clang loop unroll(full)
       for (ushort c = \(traversalStart); c < \(traversalEnd); c += 8) {
+        // Load the RHS from memory.
         ushort2 origin(c, d);
-      
-        if (\(descriptor.accumulateConditional) == false) {
-          // Load the RHS from memory.
-          
-          simdgroup_matrix_storage<float> \(B);
-          \(B).load(
-            \(B)_src, \(leadingDimensionRHS(descriptor)),
-            origin, \(!transposed(B)));
-          
-          // Issue one SIMD matmul instruction.
-          \(C)_sram[c / 8].multiply(
-            \(A)_sram[(\(descriptor.registerOffset) + d) / 8],
-            \(B), \(descriptor.accumulateConditional));
-        } else if (morton_offset.y < 4) {
-          // Load the RHS from memory.
-          
-          simdgroup_matrix_storage<float> \(B);
-          \(B).load(
-            \(B)_src, \(leadingDimensionRHS(descriptor)),
-            origin, \(!transposed(B)));
-          
-          // Issue one SIMD matmul instruction.
-          \(C)_sram[c / 8].multiply(
-            \(A)_sram[(\(descriptor.registerOffset) + d) / 8],
-            \(B), true);
-        } else {
-          // Load the RHS from memory.
-          
-          simdgroup_matrix_storage<float> \(B);
-          \(B).load(
-            \(B)_src, \(leadingDimensionRHS(descriptor)),
-            origin, \(!transposed(B)));
-          
-          // Issue one SIMD matmul instruction.
-          \(C)_sram[c / 8].multiply(
-            \(A)_sram[(\(descriptor.registerOffset) + d) / 8],
-            \(B), true);
-        }
+        simdgroup_matrix_storage<float> \(B);
+        \(B).load(
+          \(B)_src, \(leadingDimensionRHS(descriptor)),
+          origin, \(!transposed(B)));
+        
+        // Issue one SIMD matmul instruction.
+        \(C)_sram[c / 8].multiply(
+          \(A)_sram[(\(descriptor.registerOffset) + d) / 8],
+          \(B), \(descriptor.accumulateConditional));
       }
-      
-      threadgroup_barrier(mem_flags::mem_threadgroup | mem_flags::mem_device);
-      
-      // CULPRIT END
       
       """
     }
@@ -379,26 +357,19 @@ extension AttentionKernel {
     
     func loopIteration(
       descriptor: LoopIterationDescriptor
-    ) -> String {
-      func loadOperands() -> String {
-        """
-        
-        // Load the left-hand side.
-        \(allocateLHS(descriptor: descriptor))
-        \(loadLHS(descriptor: descriptor))
-        
-        // Load the right-hand side.
-        \(loadRHS(descriptor: descriptor))
-        \(declareRHSLocation(descriptor: descriptor))
-        
-        """
-      }
-      
+    ) -> String {      
       if descriptor.addressSpaceLHS == .device ||
           descriptor.addressSpaceRHS == .device {
         return """
         
-        \(loadOperands())
+        \(allocateLHS(descriptor: descriptor))
+        
+        // We cannot put this guard in the outer scope, because of a compiler
+        // bug when only some of the threads participate in SIMD matmul.
+        if (\(unsafeParallelizationThreadOffset) < \(parallelizationDimension)) {
+          \(loadLHS(descriptor: descriptor))
+        }
+        \(loadRHS(descriptor: descriptor))
         \(innerLoopHead(
             headStart: 0,
             headEnd: blockDimensions.head,
@@ -408,7 +379,9 @@ extension AttentionKernel {
       } else {
         return """
         
-        \(loadOperands())
+        \(allocateLHS(descriptor: descriptor))
+        \(loadLHS(descriptor: descriptor))
+        \(loadRHS(descriptor: descriptor))
         \(innerLoopHead(
             headStart: 0,
             headEnd: paddedHeadEdge,
