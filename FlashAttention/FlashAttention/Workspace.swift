@@ -24,8 +24,10 @@ import QuartzCore
 //   case on M4, when the problem size is divisible by the block size.
 //   - Most severe impact is when the D block is very small
 //   - Figure out which option is fastest on M1, as well.
+// - Specify the usage of async load/store on a per-operand level,
+//   in attention kernel.
 // - Add a randomized correctness test for combinations of AttentionKernel
-//   config options, problem sizes, and eventually precisions.
+//   config options, problem sizes, and eventually precisions. [DONE]
 //
 // To implement the pathways:
 // - start by modifying the L/D code to rely on 'preferAsyncLoad'
@@ -41,7 +43,7 @@ import QuartzCore
 //   - when paging the accumulator during accumulate [DONE]
 //
 // To benchmark the pathways:
-// - Check for correctness regressions on M3.
+// - Check for correctness regressions on M3. [DONE]
 // - Confirm the effectiveness of async copy elisions.
 //   - M1 performance should not regress (addressSpace = threadgroup).
 //   - M3 performance should improve (addressSpace = device).

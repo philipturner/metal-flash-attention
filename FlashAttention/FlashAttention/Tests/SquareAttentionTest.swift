@@ -12,24 +12,26 @@ import Metal
 
 #if true
 func executeScript() {
-  // Automate the execution of the test suite.
-  profileProblemSize(sequenceDimension: 10, headDimension: 3)
-  profileProblemSize(sequenceDimension: 10, headDimension: 80)
-  profileProblemSize(sequenceDimension: 8, headDimension: 2)
-  profileProblemSize(sequenceDimension: 9, headDimension: 2)
-  profileProblemSize(sequenceDimension: 23, headDimension: 2)
-  profileProblemSize(sequenceDimension: 24, headDimension: 2)
-  profileProblemSize(sequenceDimension: 25, headDimension: 2)
-  profileProblemSize(sequenceDimension: 192, headDimension: 77)
-  profileProblemSize(sequenceDimension: 192, headDimension: 80)
-  profileProblemSize(sequenceDimension: 93, headDimension: 32)
-  profileProblemSize(sequenceDimension: 99, headDimension: 35)
-  profileProblemSize(sequenceDimension: 64, headDimension: 32)
-  profileProblemSize(sequenceDimension: 32, headDimension: 64)
-  profileProblemSize(sequenceDimension: 4, headDimension: 1)
-  profileProblemSize(sequenceDimension: 4, headDimension: 2)
-  profileProblemSize(sequenceDimension: 384, headDimension: 95)
-  profileProblemSize(sequenceDimension: 777, headDimension: 199)
+  for _ in 0..<5 {
+    // Automate the execution of the test suite.
+    profileProblemSize(sequenceDimension: 10, headDimension: 3)
+    profileProblemSize(sequenceDimension: 10, headDimension: 80)
+    profileProblemSize(sequenceDimension: 8, headDimension: 2)
+    profileProblemSize(sequenceDimension: 9, headDimension: 2)
+    profileProblemSize(sequenceDimension: 23, headDimension: 2)
+    profileProblemSize(sequenceDimension: 24, headDimension: 2)
+    profileProblemSize(sequenceDimension: 25, headDimension: 2)
+    profileProblemSize(sequenceDimension: 192, headDimension: 77)
+    profileProblemSize(sequenceDimension: 192, headDimension: 80)
+    profileProblemSize(sequenceDimension: 93, headDimension: 32)
+    profileProblemSize(sequenceDimension: 99, headDimension: 35)
+    profileProblemSize(sequenceDimension: 64, headDimension: 32)
+    profileProblemSize(sequenceDimension: 32, headDimension: 64)
+    profileProblemSize(sequenceDimension: 4, headDimension: 1)
+    profileProblemSize(sequenceDimension: 4, headDimension: 2)
+    profileProblemSize(sequenceDimension: 384, headDimension: 95)
+    profileProblemSize(sequenceDimension: 777, headDimension: 199)
+  }
   
   #if false
   let N_array = [128, 160, 192]
@@ -68,25 +70,38 @@ func profileProblemSize(
   networkDesc.D = headDimension
   let network = Network(descriptor: networkDesc)
   
+  let transposeQ: Bool = .random()
+  let transposeK: Bool = .random()
+  let transposeV: Bool = .random()
+  let transposeO: Bool = .random()
+  
   // MARK: - Buffers
   
-  func transpose(_ matrix: [Float]) -> [Float] {
+  func transpose(_ input: [Float], transposed: Bool) -> [Float] {
+    guard transposed else {
+      return input
+    }
+    
     var output = [Float](
       repeating: .zero, count: sequenceDimension * headDimension)
     for n in 0..<sequenceDimension {
       for d in 0..<headDimension {
         let sourceAddress = n * headDimension + d
         let destinationAddress = d * sequenceDimension + n
-        output[destinationAddress] = matrix[sourceAddress]
+        output[destinationAddress] = input[sourceAddress]
       }
     }
     return output
   }
   
-  let bufferQ = MTLContext.global.createBuffer(network.Q, .FP32)
-  let bufferK = MTLContext.global.createBuffer(network.K, .FP32)
-  let bufferV = MTLContext.global.createBuffer(network.V, .FP32)
-  let bufferDerivativeO = MTLContext.global.createBuffer(network.C, .FP32)
+  let bufferQ = MTLContext.global.createBuffer(
+    transpose(network.Q, transposed: transposeQ), .FP32)
+  let bufferK = MTLContext.global.createBuffer(
+    transpose(network.K, transposed: transposeK), .FP32)
+  let bufferV = MTLContext.global.createBuffer(
+    transpose(network.V, transposed: transposeV), .FP32)
+  let bufferDerivativeO = MTLContext.global.createBuffer(
+    transpose(network.C, transposed: transposeO), .FP32)
   
   let operandSize = sequenceDimension * headDimension
   var resultO = [Float](repeating: .zero, count: operandSize)
@@ -114,18 +129,25 @@ func profileProblemSize(
     R: UInt32(sequenceDimension),
     C: UInt32(sequenceDimension),
     D: UInt16(headDimension))
-  attentionDesc.transposeState = (Q: false, K: false, V: false, O: false)
+  attentionDesc.transposeState = (
+    Q: transposeQ, K: transposeK, V: transposeV, O: transposeO)
   
   func createKernel(type: AttentionKernelType) -> AttentionKernel {
     var attentionKernelDesc = attentionDesc.kernelDescriptor(type: type)
     
     // Change the default kernel settings here.
-    attentionKernelDesc.preferAsyncCache = false // false
-    attentionKernelDesc.preferAsyncLoad = false // true
-    attentionKernelDesc.cacheState[.K] = true
-    attentionKernelDesc.cacheState[.V] = true
-    attentionKernelDesc.cacheState[.O] = true
-    attentionKernelDesc.cacheState[.dK] = true
+    attentionKernelDesc.preferAsyncCache = .random()
+    attentionKernelDesc.preferAsyncLoad = .random()
+    
+    attentionKernelDesc.cacheState[.Q] = .random()
+    attentionKernelDesc.cacheState[.K] = .random()
+    attentionKernelDesc.cacheState[.V] = .random()
+    attentionKernelDesc.cacheState[.O] = .random()
+    
+    attentionKernelDesc.cacheState[.dO] = .random()
+    attentionKernelDesc.cacheState[.dV] = .random()
+    attentionKernelDesc.cacheState[.dK] = .random()
+    attentionKernelDesc.cacheState[.dQ] = .random()
     
     let attentionKernel = AttentionKernel(descriptor: attentionKernelDesc)
     return attentionKernel
@@ -242,12 +264,12 @@ func profileProblemSize(
   // MARK: - Validation
   
 #if true
-  let O = network.inferenceAttention()
+  let O = transpose(network.inferenceAttention(), transposed: transposeO)
   let L = (0..<sequenceDimension).map(network.createLTerm(rowID:))
   let D = (0..<sequenceDimension).map(network.createDTerm(rowID:))
-  let dV = network.derivativeV()
-  let dK = network.derivativeK()
-  let dQ = network.derivativeQ()
+  let dV = transpose(network.derivativeV(), transposed: transposeV)
+  let dK = transpose(network.derivativeK(), transposed: transposeK)
+  let dQ = transpose(network.derivativeQ(), transposed: transposeQ)
   
   // Copy the results.
   MTLContext.copy(bufferO, into: &resultO)

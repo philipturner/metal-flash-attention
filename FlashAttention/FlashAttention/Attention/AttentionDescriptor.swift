@@ -152,6 +152,5 @@ extension AttentionDescriptor {
     var C = matrixDimensions.C
     constants.setConstantValue(&R, type: .uint, index: 0)
     constants.setConstantValue(&C, type: .uint, index: 1)
-
   }
 }
