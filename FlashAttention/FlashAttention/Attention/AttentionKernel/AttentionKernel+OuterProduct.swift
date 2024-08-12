@@ -49,9 +49,7 @@ extension AttentionKernel {
     
     // MARK: - LHS
     
-    func allocateLHS(
-      descriptor: LoopIterationDescriptor
-    ) -> String {
+    func allocateLHS() -> String {
       guard !cached(A) else {
         return ""
       }
@@ -148,12 +146,14 @@ extension AttentionKernel {
         
         \(declareLHSLocation(descriptor: descriptor))
         
-        #pragma clang loop unroll(full)
-        for (ushort d = 0; d < \(blockDimensions.head); d += 8) {
-          ushort2 origin(d, 0);
-          \(A)_sram[d / 8].load(
-            \(A)_src, \(leadingDimensionLHS(descriptor)),
-            origin, \(transposed(A)));
+        if (\(unsafeParallelizationThreadOffset) < \(parallelizationDimension)) {
+          #pragma clang loop unroll(full)
+          for (ushort d = 0; d < \(blockDimensions.head); d += 8) {
+            ushort2 origin(d, 0);
+            \(A)_sram[d / 8].load(
+              \(A)_src, \(leadingDimensionLHS(descriptor)),
+              origin, \(transposed(A)));
+          }
         }
         
         """
@@ -177,13 +177,7 @@ extension AttentionKernel {
     
     // MARK: - RHS
     
-    func asyncLoadRHS(
-      descriptor: LoopIterationDescriptor
-    ) -> String {
-      guard descriptor.addressSpaceRHS == .threadgroup else {
-        return ""
-      }
-      
+    func asyncLoadRHS() -> String {
       return """
       
       threadgroup_barrier(mem_flags::mem_threadgroup);
@@ -228,9 +222,6 @@ extension AttentionKernel {
       }
     }
     
-    // Declares the source of the B matrix.
-    //
-    // Also guards against unsafe accesses to the declared pointer (barrier).
     func declareRHSLocation(
       descriptor: LoopIterationDescriptor
     ) -> String {
@@ -264,14 +255,13 @@ extension AttentionKernel {
       if descriptor.addressSpaceRHS == .device {
         return """
         
-        \(asyncLoadRHS(descriptor: descriptor))
         \(declareRHSLocation(descriptor: descriptor))
         
         """
       } else {
         return """
         
-        \(asyncLoadRHS(descriptor: descriptor))
+        \(asyncLoadRHS())
         \(declareRHSLocation(descriptor: descriptor))
         
         """
@@ -357,18 +347,13 @@ extension AttentionKernel {
     
     func loopIteration(
       descriptor: LoopIterationDescriptor
-    ) -> String {      
+    ) -> String {
       if descriptor.addressSpaceLHS == .device ||
           descriptor.addressSpaceRHS == .device {
         return """
         
-        \(allocateLHS(descriptor: descriptor))
-        
-        // We cannot put this guard in the outer scope, because of a compiler
-        // bug when only some of the threads participate in SIMD matmul.
-        if (\(unsafeParallelizationThreadOffset) < \(parallelizationDimension)) {
-          \(loadLHS(descriptor: descriptor))
-        }
+        \(allocateLHS())
+        \(loadLHS(descriptor: descriptor))
         \(loadRHS(descriptor: descriptor))
         \(innerLoopHead(
             headStart: 0,
@@ -379,7 +364,7 @@ extension AttentionKernel {
       } else {
         return """
         
-        \(allocateLHS(descriptor: descriptor))
+        \(allocateLHS())
         \(loadLHS(descriptor: descriptor))
         \(loadRHS(descriptor: descriptor))
         \(innerLoopHead(
