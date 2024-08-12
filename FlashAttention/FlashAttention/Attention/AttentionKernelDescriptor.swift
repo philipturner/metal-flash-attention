@@ -33,6 +33,7 @@ struct AttentionKernelDescriptor {
   /// Whether each operand is cached in registers.
   var cacheState: [AttentionOperand: Bool] = [:]
   
+  /// Required. The problem size along the head dimension.
   var headDimension: UInt16?
   
   /// Reads with a one-to-one mapping to threads (like GEMM store) and writes.

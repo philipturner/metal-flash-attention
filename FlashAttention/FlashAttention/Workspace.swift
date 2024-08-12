@@ -36,5 +36,5 @@ import QuartzCore
 //     of threadgroup barrier(threadgroup)
 // - where might preferAsyncCache apply?
 //   - when loading/storing any cached variables [DONE]
-//   - when loading the LHS in outer product
+//   - when loading the LHS in outer product [DONE]
 //   - when paging the accumulator during accumulate

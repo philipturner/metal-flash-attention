@@ -64,6 +64,43 @@ extension AttentionKernel {
       """
     }
     
+    func asyncAccessLHS(
+      descriptor: LoopIterationDescriptor
+    ) -> String {
+      guard descriptor.addressSpaceLHS == .threadgroup else {
+        return ""
+      }
+      return """
+      
+      threadgroup_barrier(mem_flags::mem_threadgroup);
+      if (sidx == 0) {
+        uint2 \(A)_offset(d_outer, \(parallelizationOffset));
+        auto src = simdgroup_matrix_storage<float>::apply_offset(
+          \(A), \(leadingDimension(A)), \(A)_offset, \(transposed(A)));
+        auto dst = (threadgroup float*)(threadgroup_block);
+        
+        ushort D_src_dimension = min(
+          ushort(\(blockDimensions.head)),
+          ushort(\(headDimension) - d_outer));
+        ushort D_dst_dimension = max(
+          ushort(\(paddedHeadEdge)),
+          ushort(D_src_dimension));
+        ushort R_dimension = min(
+          uint(\(blockDimensions.parallelization)),
+          uint(\(parallelizationDimension) - \(parallelizationOffset)));
+        ushort2 tile_src(D_src_dimension, R_dimension);
+        ushort2 tile_dst(D_dst_dimension, R_dimension);
+        
+        simdgroup_event event;
+        event.async_copy(
+          dst, \(leadingBlockDimension(A)), tile_dst,
+          src, \(leadingDimension(A)), tile_src, \(transposed(A)));
+        simdgroup_event::wait(1, &event);
+      }
+      
+      """
+    }
+    
     func leadingDimensionLHS(
       _ descriptor: LoopIterationDescriptor
     ) -> String {
@@ -102,43 +139,6 @@ extension AttentionKernel {
         
         """
       }
-    }
-    
-    func asyncAccessLHS(
-      descriptor: LoopIterationDescriptor
-    ) -> String {
-      guard descriptor.addressSpaceLHS == .threadgroup else {
-        return ""
-      }
-      return """
-      
-      threadgroup_barrier(mem_flags::mem_threadgroup);
-      if (sidx == 0) {
-        uint2 \(A)_offset(d_outer, \(parallelizationOffset));
-        auto src = simdgroup_matrix_storage<float>::apply_offset(
-          \(A), \(leadingDimension(A)), \(A)_offset, \(transposed(A)));
-        auto dst = (threadgroup float*)(threadgroup_block);
-        
-        ushort D_src_dimension = min(
-          ushort(\(blockDimensions.head)),
-          ushort(\(headDimension) - d_outer));
-        ushort D_dst_dimension = max(
-          ushort(\(paddedHeadEdge)),
-          ushort(D_src_dimension));
-        ushort R_dimension = min(
-          uint(\(blockDimensions.parallelization)),
-          uint(\(parallelizationDimension) - \(parallelizationOffset)));
-        ushort2 tile_src(D_src_dimension, R_dimension);
-        ushort2 tile_dst(D_dst_dimension, R_dimension);
-        
-        simdgroup_event event;
-        event.async_copy(
-          dst, \(leadingBlockDimension(A)), tile_dst,
-          src, \(leadingDimension(A)), tile_src, \(transposed(A)));
-        simdgroup_event::wait(1, &event);
-      }
-      
-      """
     }
     
     func loadLHS(

@@ -70,6 +70,19 @@ func profileProblemSize(
   
   // MARK: - Buffers
   
+  func transpose(_ matrix: [Float]) -> [Float] {
+    var output = [Float](
+      repeating: .zero, count: sequenceDimension * headDimension)
+    for n in 0..<sequenceDimension {
+      for d in 0..<headDimension {
+        let sourceAddress = n * headDimension + d
+        let destinationAddress = d * sequenceDimension + n
+        output[destinationAddress] = matrix[sourceAddress]
+      }
+    }
+    return output
+  }
+  
   let bufferQ = MTLContext.global.createBuffer(network.Q, .FP32)
   let bufferK = MTLContext.global.createBuffer(network.K, .FP32)
   let bufferV = MTLContext.global.createBuffer(network.V, .FP32)
