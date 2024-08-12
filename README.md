@@ -63,5 +63,4 @@ Portability:
 - Test problems where the attention matrix is not a square.
 - Support some critical features:
   - Dense mask that safely handles unaligned matrix edges.
-  - Multi-head attention with the head count properly handled (function constants? hard-coded into the shader?)
-  - Measure the impact of pointer modification on register pressure, for MHA and batching.
+  - Leading dimension to handle multi-head attention.

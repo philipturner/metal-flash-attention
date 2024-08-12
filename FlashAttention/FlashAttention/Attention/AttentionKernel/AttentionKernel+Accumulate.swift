@@ -30,7 +30,7 @@ extension AttentionKernel {
       fatalError("Descriptor was incomplete.")
     }
     
-    // MARK: - Accumulator
+    // MARK: - Initialize
     
     func allocateAccumulator() -> String {
       guard !cached(C) else {
@@ -51,9 +51,9 @@ extension AttentionKernel {
       """
       
       #pragma clang loop unroll(full)
-      for (ushort c = 0; c < \(descriptor.registerSize); c += 8) {
-        \(C)_sram[(\(descriptor.registerOffset) + c) / 8] =
-        simdgroup_matrix_storage<float>(0);
+      for (ushort d = 0; d < \(descriptor.registerSize); d += 8) {
+        auto \(C) = \(C)_sram + (\(descriptor.registerOffset) + d) / 8;
+        *\(C) = simdgroup_matrix_storage<float>(0);
       }
       
       """
@@ -71,25 +71,48 @@ extension AttentionKernel {
       // Inner loop over the head dimension.
       #pragma clang loop unroll(full)
       for (ushort d = 0; d < \(descriptor.registerSize); d += 8) {
-        *(\(C)_sram[(\(descriptor.registerOffset) + d) / 8]
-          .thread_elements()) *= \(scale);
+        auto \(C) = \(C)_sram + (\(descriptor.registerOffset) + d) / 8;
+        *(\(C)->thread_elements()) *= \(scale);
       }
       
       """
     }
     
-    func declareAccumulatorLocation() -> String {
-      """
-      
-      // Where the \(C) data will be read from.
-      ushort2 \(C)_block_offset(morton_offset.x, morton_offset.y + sidx * 8);
-      auto \(C)_block = (threadgroup float*)(threadgroup_block);
-      \(C)_block = simdgroup_matrix_storage<float>::apply_offset(
-        \(C)_block, \(leadingBlockDimension(C)),
-        \(C)_block_offset, \(transposed(C)));
-      threadgroup_barrier(mem_flags::mem_threadgroup);
-      
-      """
+    // MARK: - Load/Store Accumulator
+    
+    func declareAccumulatorLocation(
+      descriptor: LoopIterationDescriptor
+    ) -> String {
+      switch descriptor.addressSpaceLHS! {
+      case .device:
+        return """
+        
+        // Where the \(C) data will be read from.
+        ushort2 \(C)_block_offset(
+          morton_offset.x,
+          morton_offset.y + sidx * 8);
+        auto \(C)_src = (threadgroup float*)(threadgroup_block);
+        \(C)_src = simdgroup_matrix_storage<float>::apply_offset(
+          \(C)_src, \(leadingBlockDimension(C)),
+          \(C)_block_offset, \(transposed(C)));
+        threadgroup_barrier(mem_flags::mem_threadgroup);
+        
+        """
+      case .threadgroup:
+        return """
+        
+        // Where the \(C) data will be read from.
+        ushort2 \(C)_block_offset(
+          morton_offset.x,
+          morton_offset.y + sidx * 8);
+        auto \(C)_src = (threadgroup float*)(threadgroup_block);
+        \(C)_src = simdgroup_matrix_storage<float>::apply_offset(
+          \(C)_src, \(leadingBlockDimension(C)),
+          \(C)_block_offset, \(transposed(C)));
+        threadgroup_barrier(mem_flags::mem_threadgroup);
+        
+        """
+      }
     }
     
     func asyncLoadAccumulator() -> String {
@@ -154,15 +177,14 @@ extension AttentionKernel {
       """
       
       \(asyncLoadAccumulator())
-      \(declareAccumulatorLocation())
+      \(declareAccumulatorLocation(descriptor: descriptor))
       
       // Inner loop over the head dimension.
       #pragma clang loop unroll(full)
       for (ushort d = 0; d < \(blockDimensions.head); d += 8) {
         ushort2 origin(d, 0);
         \(C)_sram[d / 8].load(
-          \(C)_block, \(leadingBlockDimension(C)),
-          origin, \(transposed(C)));
+          \(C)_src, \(leadingBlockDimension(C)), origin, \(transposed(C)));
       }
       
       """
@@ -173,14 +195,14 @@ extension AttentionKernel {
     ) -> String {
       """
       
-      \(declareAccumulatorLocation())
+      \(declareAccumulatorLocation(descriptor: descriptor))
       
       // Inner loop over the head dimension.
       #pragma clang loop unroll(full)
       for (ushort d = 0; d < \(blockDimensions.head); d += 8) {
         ushort2 origin(d, 0);
         \(C)_sram[d / 8].store(
-          \(C)_block, \(leadingBlockDimension(C)), origin, \(transposed(C)));
+          \(C)_src, \(leadingBlockDimension(C)), origin, \(transposed(C)));
       }
       
       \(asyncStoreAccumulator())
@@ -203,14 +225,15 @@ extension AttentionKernel {
       }
     }
     
-    // MARK: - RHS
+    // MARK: - Load RHS
     
     func leadingDimensionRHS(
       _ descriptor: LoopIterationDescriptor
     ) -> String {
-      if descriptor.addressSpace == .device {
+      switch descriptor.addressSpaceRHS! {
+      case .device:
         return leadingDimension(B)
-      } else {
+      case .threadgroup:
         return "\(leadingBlockDimension(B))"
       }
     }
@@ -218,7 +241,8 @@ extension AttentionKernel {
     func declareRHSLocation(
       descriptor: LoopIterationDescriptor
     ) -> String {
-      if descriptor.addressSpace == .device {
+      switch descriptor.addressSpaceRHS! {
+      case .device:
         return """
         
         uint2 \(B)_src_offset(
@@ -228,7 +252,7 @@ extension AttentionKernel {
           \(B), \(leadingDimension(B)), \(B)_src_offset, \(transposed(B)));
         
         """
-      } else {
+      case .threadgroup:
         return """
         
         ushort2 \(B)_block_offset(morton_offset.x, morton_offset.y);
@@ -245,9 +269,10 @@ extension AttentionKernel {
     func loadRHS(
       descriptor: LoopIterationDescriptor
     ) -> String {
-      if descriptor.addressSpace == .device {
+      switch descriptor.addressSpaceRHS! {
+      case .device:
         return declareRHSLocation(descriptor: descriptor)
-      } else {
+      case .threadgroup:
         return """
         
         threadgroup_barrier(mem_flags::mem_threadgroup);
@@ -313,7 +338,8 @@ extension AttentionKernel {
       traversalEnd: String,
       descriptor: LoopIterationDescriptor
     ) -> String {
-      if descriptor.addressSpace == .device {
+      if descriptor.addressSpaceLHS! == .device ||
+          descriptor.addressSpaceRHS! == .device {
         return """
         
         #pragma clang loop unroll(full)
@@ -349,7 +375,8 @@ extension AttentionKernel {
     // MARK: - Outer Loop
     
     struct LoopIterationDescriptor {
-      var addressSpace: MTLAddressSpace = .threadgroup
+      var addressSpaceLHS: MTLAddressSpace?
+      var addressSpaceRHS: MTLAddressSpace?
       var registerOffset: String = ""
       var registerSize: UInt16 = .zero
     }
@@ -358,7 +385,8 @@ extension AttentionKernel {
       descriptor: LoopIterationDescriptor
     ) -> String {
       func multiplyAB() -> String {
-        if descriptor.addressSpace == .device {
+        if descriptor.addressSpaceLHS! == .device ||
+            descriptor.addressSpaceRHS! == .device {
           let blockDim = blockDimensions.traversal
           return """
           
@@ -424,10 +452,24 @@ extension AttentionKernel {
     func gatedLoopIteration(
       descriptor: LoopIterationDescriptor
     ) -> String {
-      var descriptorDevice = descriptor
       var descriptorThreadgroup = descriptor
-      descriptorDevice.addressSpace = .device
-      descriptorThreadgroup.addressSpace = .threadgroup
+      descriptorThreadgroup.addressSpaceLHS = .threadgroup
+      descriptorThreadgroup.addressSpaceRHS = .threadgroup
+      if preferAsyncCache && preferAsyncLoad {
+        return loopIteration(descriptor: descriptorThreadgroup)
+      }
+      
+      var descriptorDevice = descriptor
+      if preferAsyncCache {
+        descriptorDevice.addressSpaceLHS = .threadgroup
+      } else {
+        descriptorDevice.addressSpaceLHS = .device
+      }
+      if preferAsyncLoad {
+        descriptorDevice.addressSpaceRHS = .threadgroup
+      } else {
+        descriptorDevice.addressSpaceRHS = .device
+      }
       
       let blockDim = blockDimensions.traversal
       let condition = """
@@ -475,6 +517,8 @@ extension AttentionKernel {
       
       // Add the last iteration, if unaligned.
       if loopEndFloor < loopEnd {
+        outerIterationDesc.addressSpaceLHS = .threadgroup
+        outerIterationDesc.addressSpaceRHS = .threadgroup
         outerIterationDesc.registerSize = paddedHeadEdge
         output += """
         {

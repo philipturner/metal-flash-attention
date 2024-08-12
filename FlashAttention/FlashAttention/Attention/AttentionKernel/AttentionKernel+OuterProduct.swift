@@ -24,7 +24,7 @@ extension AttentionKernel {
       fatalError("Descriptor was incomplete.")
     }
     
-    // MARK: - Accumulator
+    // MARK: - Initialize
     
     func allocateAccumulator() -> String {
       """
@@ -47,8 +47,6 @@ extension AttentionKernel {
       """
     }
     
-    // MARK: - LHS
-    
     func allocateLHS() -> String {
       guard !cached(A) else {
         return ""
@@ -60,6 +58,38 @@ extension AttentionKernel {
       \(A)_sram[\(blockDimensions.head) / 8];
       
       """
+    }
+    
+    // MARK: - Load LHS
+    
+    func declareLHSLocation(
+      descriptor: LoopIterationDescriptor
+    ) -> String {
+      switch descriptor.addressSpaceLHS! {
+      case .device:
+        return """
+        
+        uint2 \(A)_src_offset(
+          morton_offset.x + d_outer,
+          \(clampedParallelizationThreadOffset));
+        auto \(A)_src = simdgroup_matrix_storage<float>::apply_offset(
+          \(A), \(leadingDimension(A)), \(A)_src_offset, \(transposed(A)));
+        
+        """
+      case .threadgroup:
+        return """
+        
+        ushort2 \(A)_block_offset(
+          morton_offset.x, 
+          morton_offset.y + sidx * 8);
+        auto \(A)_src = (threadgroup float*)(threadgroup_block);
+        \(A)_src = simdgroup_matrix_storage<float>::apply_offset(
+          \(A)_src, \(leadingBlockDimension(A)),
+          \(A)_block_offset, \(transposed(A)));
+        threadgroup_barrier(mem_flags::mem_threadgroup);
+        
+        """
+      }
     }
     
     func asyncLoadLHS() -> String {
@@ -94,46 +124,6 @@ extension AttentionKernel {
       """
     }
     
-    func leadingDimensionLHS(
-      _ descriptor: LoopIterationDescriptor
-    ) -> String {
-      if descriptor.addressSpaceLHS == .device {
-        return leadingDimension(A)
-      } else {
-        return "\(leadingBlockDimension(A))"
-      }
-    }
-    
-    func declareLHSLocation(
-      descriptor: LoopIterationDescriptor
-    ) -> String {
-      if descriptor.addressSpaceLHS == .device {
-        return """
-        
-        uint2 \(A)_src_offset(
-          morton_offset.x + d_outer,
-          \(clampedParallelizationThreadOffset));
-        auto \(A)_src = simdgroup_matrix_storage<float>::apply_offset(
-          \(A), \(leadingDimension(A)),
-          \(A)_src_offset, \(transposed(A)));
-        
-        """
-      } else {
-        return """
-        
-        ushort2 \(A)_block_offset(
-          morton_offset.x, 
-          morton_offset.y + sidx * 8);
-        auto \(A)_src = (threadgroup float*)(threadgroup_block);
-        \(A)_src = simdgroup_matrix_storage<float>::apply_offset(
-          \(A)_src, \(leadingBlockDimension(A)),
-          \(A)_block_offset, \(transposed(A)));
-        threadgroup_barrier(mem_flags::mem_threadgroup);
-        
-        """
-      }
-    }
-    
     func loadLHS(
       descriptor: LoopIterationDescriptor
     ) -> String {
@@ -141,7 +131,8 @@ extension AttentionKernel {
         return ""
       }
       
-      if descriptor.addressSpaceLHS == .device {
+      switch descriptor.addressSpaceLHS! {
+      case .device:
         return """
         
         \(declareLHSLocation(descriptor: descriptor))
@@ -151,13 +142,12 @@ extension AttentionKernel {
           for (ushort d = 0; d < \(blockDimensions.head); d += 8) {
             ushort2 origin(d, 0);
             \(A)_sram[d / 8].load(
-              \(A)_src, \(leadingDimensionLHS(descriptor)),
-              origin, \(transposed(A)));
+              \(A)_src, \(leadingDimension(A)), origin, \(transposed(A)));
           }
         }
         
         """
-      } else {
+      case .threadgroup:
         return """
         
         \(asyncLoadLHS())
@@ -167,22 +157,22 @@ extension AttentionKernel {
         for (ushort d = 0; d < \(blockDimensions.head); d += 8) {
           ushort2 origin(d, 0);
           \(A)_sram[d / 8].load(
-            \(A)_src, \(leadingDimensionLHS(descriptor)),
-            origin, \(transposed(A)));
+            \(A)_src, \(leadingBlockDimension(A)), origin, \(transposed(A)));
         }
         
         """
       }
     }
     
-    // MARK: - RHS
+    // MARK: - Load RHS
     
     func leadingDimensionRHS(
       _ descriptor: LoopIterationDescriptor
     ) -> String {
-      if descriptor.addressSpaceRHS == .device {
+      switch descriptor.addressSpaceRHS! {
+      case .device:
         return leadingDimension(B)
-      } else {
+      case .threadgroup:
         return "\(leadingBlockDimension(B))"
       }
     }
@@ -190,7 +180,8 @@ extension AttentionKernel {
     func declareRHSLocation(
       descriptor: LoopIterationDescriptor
     ) -> String {
-      if descriptor.addressSpaceRHS == .device {
+      switch descriptor.addressSpaceRHS! {
+      case .device:
         return """
         
         uint2 \(B)_src_offset(
@@ -200,7 +191,7 @@ extension AttentionKernel {
           \(B), \(leadingDimension(B)), \(B)_src_offset, \(transposed(B)));
         
         """
-      } else {
+      case .threadgroup:
         return """
         
         ushort2 \(B)_block_offset(morton_offset.x, morton_offset.y);
@@ -217,9 +208,10 @@ extension AttentionKernel {
     func loadRHS(
       descriptor: LoopIterationDescriptor
     ) -> String {
-      if descriptor.addressSpaceRHS == .device {
+      switch descriptor.addressSpaceRHS! {
+      case .device:
         return declareRHSLocation(descriptor: descriptor)
-      } else {
+      case .threadgroup:
         return """
         
         threadgroup_barrier(mem_flags::mem_threadgroup);
@@ -289,8 +281,8 @@ extension AttentionKernel {
       headEnd: UInt16,
       descriptor: LoopIterationDescriptor
     ) -> String {
-      if descriptor.addressSpaceLHS == .device ||
-          descriptor.addressSpaceRHS == .device {
+      if descriptor.addressSpaceLHS! == .device ||
+          descriptor.addressSpaceRHS! == .device {
         return """
         
         #pragma clang loop unroll(full)
@@ -329,16 +321,16 @@ extension AttentionKernel {
     struct LoopIterationDescriptor {
       // Whether to accumulate in the SIMD matmul.
       var accumulateConditional: String = ""
-      var addressSpaceLHS: MTLAddressSpace!
-      var addressSpaceRHS: MTLAddressSpace!
+      var addressSpaceLHS: MTLAddressSpace?
+      var addressSpaceRHS: MTLAddressSpace?
       var registerOffset: String = ""
     }
     
     func loopIteration(
       descriptor: LoopIterationDescriptor
     ) -> String {
-      if descriptor.addressSpaceLHS == .device ||
-          descriptor.addressSpaceRHS == .device {
+      if descriptor.addressSpaceLHS! == .device ||
+          descriptor.addressSpaceRHS! == .device {
         return """
         
         \(allocateLHS())

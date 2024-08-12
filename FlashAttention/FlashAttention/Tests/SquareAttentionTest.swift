@@ -121,7 +121,7 @@ func profileProblemSize(
     
     // Change the default kernel settings here.
     attentionKernelDesc.preferAsyncCache = false // false
-    attentionKernelDesc.preferAsyncLoad = true // true
+    attentionKernelDesc.preferAsyncLoad = false // true
     
     attentionKernelDesc.cacheState[.Q] = true
     attentionKernelDesc.cacheState[.dO] = true
