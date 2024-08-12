@@ -32,7 +32,8 @@ func executeScript() {
 //  profileProblemSize(sequenceDimension: 777, headDimension: 199)
   
   #if true
-  let N_array = [128, 256, 512, 1024, 2048, 4096, 8192]
+  let N_array = [8, 16, 32]
+  let D_block_array = [8, 16, 32, 64, 96]
   let D_array = [32, 48, 64, 80, 96, 128, 160, 192, 256]
   
   // Loop over the configurations.
@@ -41,9 +42,16 @@ func executeScript() {
     outputString += "\(N), "
     print("N =", N, terminator: ", ")
     
-    for D in D_array {
-      let metric = profileProblemSize(
-        sequenceDimension: N, headDimension: D)
+    for D_block in D_block_array {
+      var metric: Int = .max
+      for D in D_array {
+        let oneOfTheMetrics = profileProblemSize(
+          sequenceDimension: 192,
+          headDimension: D,
+          traversalBlockDimension: N,
+          headBlockDimension: D_block)
+        metric = min(metric, oneOfTheMetrics)
+      }
       outputString += "\(metric), "
       print(metric, terminator: ", ")
     }
@@ -61,14 +69,16 @@ func executeScript() {
 @discardableResult
 func profileProblemSize(
   sequenceDimension: Int,
-  headDimension: Int
+  headDimension: Int,
+  traversalBlockDimension: Int,
+  headBlockDimension: Int
 ) -> Int {
   var networkDesc = NetworkDescriptor()
   networkDesc.N = sequenceDimension
   networkDesc.D = headDimension
   let network = Network(descriptor: networkDesc)
   
-  let benchmarkedKernel: AttentionKernelType = .forward(true)
+  let benchmarkedKernel: AttentionKernelType = .backwardKeyValue
   
   // MARK: - Buffers
   
@@ -106,7 +116,12 @@ func profileProblemSize(
   attentionDesc.transposeState = (Q: false, K: false, V: false, O: false)
   
   func createKernel(type: AttentionKernelType) -> AttentionKernel {
-    let attentionKernelDesc = attentionDesc.kernelDescriptor(type: type)
+    var attentionKernelDesc = attentionDesc.kernelDescriptor(type: type)
+    attentionKernelDesc.blockDimensions!
+      .traversal = UInt16(traversalBlockDimension)
+    attentionKernelDesc.blockDimensions!
+      .head = UInt16(headBlockDimension)
+    
     let attentionKernel = AttentionKernel(descriptor: attentionKernelDesc)
     return attentionKernel
   }
@@ -234,7 +249,7 @@ func profileProblemSize(
   
   // MARK: - Validation
   
-#if false
+#if true
   let O = network.inferenceAttention()
   let L = (0..<sequenceDimension).map(network.createLTerm(rowID:))
   let D = (0..<sequenceDimension).map(network.createDTerm(rowID:))
@@ -383,7 +398,7 @@ func profileProblemSize(
   
   // MARK: - Profiling
   
-#if true
+#if false
   // Benchmark performance.
   var maxGINSTRS: Int = .zero
   for _ in 0..<5 {

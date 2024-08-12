@@ -58,3 +58,7 @@ import QuartzCore
 // - Test for coupling betwen optimal address space and problem divisibility.
 //   - Is this affected by whether the problem size is divisible? If so,
 //     something is going wrong.
+
+// TODO: Currently figure out why there is an occupancy regression on M1,
+// when async copies are avoided. The regression happens for both loops, when
+// the RHS is read from device memory. It scales linearly with D_block.

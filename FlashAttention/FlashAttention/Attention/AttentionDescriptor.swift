@@ -93,7 +93,7 @@ extension AttentionDescriptor {
         parallelization: 16, traversal: 128, head: 8)
     } else {
       output.blockDimensions = (
-        parallelization: 32, traversal: 64, head: 32)
+        parallelization: 32, traversal: 64, head: 64)
     }
     
     // Assign the transpose state.
