@@ -78,11 +78,22 @@ extension AttentionKernel {
       """
     }
     
+    func declareAccumulatorLocation() -> String {
+      """
+      
+      // Where the \(C) data will be read from.
+      ushort2 \(C)_block_offset(morton_offset.x, morton_offset.y + sidx * 8);
+      auto \(C)_block = (threadgroup float*)(threadgroup_block);
+      \(C)_block = simdgroup_matrix_storage<float>::apply_offset(
+        \(C)_block, \(leadingBlockDimension(C)),
+        \(C)_block_offset, \(transposed(C)));
+      threadgroup_barrier(mem_flags::mem_threadgroup);
+      
+      """
+    }
+    
     func asyncLoadAccumulator() -> String {
-      guard !cached(C) else {
-        return ""
-      }
-      return """
+      """
       
       threadgroup_barrier(mem_flags::mem_threadgroup);
       if (sidx == 0) {
@@ -106,36 +117,13 @@ extension AttentionKernel {
         simdgroup_event::wait(1, &event);
       }
       
-      \(declareAccumulatorLocation())
-      
-      // Inner loop over the head dimension.
-      #pragma clang loop unroll(full)
-      for (ushort d = 0; d < \(blockDimensions.head); d += 8) {
-        ushort2 origin(d, 0);
-        \(C)_sram[d / 8].load(
-          \(C)_block, \(leadingBlockDimension(C)), origin, \(transposed(C)));
-      }
-      
       """
     }
     
     func asyncStoreAccumulator() -> String {
-      guard !cached(C) else {
-        return ""
-      }
-      return """
+      """
       
-      \(declareAccumulatorLocation())
-      
-      // Inner loop over the head dimension.
-      #pragma clang loop unroll(full)
-      for (ushort d = 0; d < \(blockDimensions.head); d += 8) {
-        ushort2 origin(d, 0);
-        \(C)_sram[d / 8].store(
-          \(C)_block, \(leadingBlockDimension(C)), origin, \(transposed(C)));
-      }
       threadgroup_barrier(mem_flags::mem_threadgroup);
-      
       if (sidx == 0) {
         uint2 \(C)_offset(d_outer, \(parallelizationGroupOffset));
         auto src = (threadgroup float*)(threadgroup_block);
@@ -160,19 +148,42 @@ extension AttentionKernel {
       """
     }
     
-    func declareAccumulatorLocation() -> String {
-      guard !cached(C) else {
-        return ""
-      }
-      return """
+    func loadAccumulator(
+      descriptor: LoopIterationDescriptor
+    ) -> String {
+      """
       
-      // Where the \(C) data will be read from.
-      ushort2 \(C)_block_offset(morton_offset.x, morton_offset.y + sidx * 8);
-      auto \(C)_block = (threadgroup float*)(threadgroup_block);
-      \(C)_block = simdgroup_matrix_storage<float>::apply_offset(
-        \(C)_block, \(leadingBlockDimension(C)),
-        \(C)_block_offset, \(transposed(C)));
-      threadgroup_barrier(mem_flags::mem_threadgroup);
+      \(asyncLoadAccumulator())
+      \(declareAccumulatorLocation())
+      
+      // Inner loop over the head dimension.
+      #pragma clang loop unroll(full)
+      for (ushort d = 0; d < \(blockDimensions.head); d += 8) {
+        ushort2 origin(d, 0);
+        \(C)_sram[d / 8].load(
+          \(C)_block, \(leadingBlockDimension(C)),
+          origin, \(transposed(C)));
+      }
+      
+      """
+    }
+    
+    func storeAccumulator(
+      descriptor: LoopIterationDescriptor
+    ) -> String {
+      """
+      
+      \(declareAccumulatorLocation())
+      
+      // Inner loop over the head dimension.
+      #pragma clang loop unroll(full)
+      for (ushort d = 0; d < \(blockDimensions.head); d += 8) {
+        ushort2 origin(d, 0);
+        \(C)_sram[d / 8].store(
+          \(C)_block, \(leadingBlockDimension(C)), origin, \(transposed(C)));
+      }
+      
+      \(asyncStoreAccumulator())
       
       """
     }
@@ -181,55 +192,18 @@ extension AttentionKernel {
       descriptor: LoopIterationDescriptor,
       type: CachingOperationType
     ) -> String {
-      // TODO: Higher-level abstraction. Elevate the checks for cached(C) to
-      // here.
+      guard !cached(C) else {
+        return ""
+      }
       
       if type == .load {
-        return asyncLoadAccumulator()
+        return loadAccumulator(descriptor: descriptor)
       } else {
-        return asyncStoreAccumulator()
+        return storeAccumulator(descriptor: descriptor)
       }
     }
     
     // MARK: - RHS
-    
-    func asyncLoadRHS(
-      descriptor: LoopIterationDescriptor
-    ) -> String {
-      guard descriptor.addressSpace == .threadgroup else {
-        return ""
-      }
-      
-      return """
-      
-      threadgroup_barrier(mem_flags::mem_threadgroup);
-      if (sidx == 0) {
-        uint2 \(B)_offset(d_outer, \(traversalOffset));
-        auto src = simdgroup_matrix_storage<float>::apply_offset(
-          \(B), \(leadingDimension(B)), \(B)_offset, \(transposed(B)));
-        auto dst = (threadgroup float*)(threadgroup_block);
-        
-        ushort D_dimension = min(
-          ushort(\(blockDimensions.head)),
-          ushort(\(headDimension) - d_outer));
-        ushort C_src_dimension = min(
-          uint(\(blockDimensions.traversal)),
-          uint(\(traversalDimension) - \(traversalOffset)));
-        ushort C_dst_dimension = max(
-          ushort(\(paddedTraversalEdge)),
-          ushort(C_src_dimension));
-        ushort2 tile_src(D_dimension, C_src_dimension);
-        ushort2 tile_dst(D_dimension, C_dst_dimension);
-        
-        simdgroup_event event;
-        event.async_copy(
-          dst, \(leadingBlockDimension(B)), tile_dst,
-          src, \(leadingDimension(B)), tile_src, \(transposed(B)));
-        simdgroup_event::wait(1, &event);
-      }
-      
-      """
-    }
     
     func leadingDimensionRHS(
       _ descriptor: LoopIterationDescriptor
@@ -272,15 +246,36 @@ extension AttentionKernel {
       descriptor: LoopIterationDescriptor
     ) -> String {
       if descriptor.addressSpace == .device {
-        return """
-        
-        \(declareRHSLocation(descriptor: descriptor))
-        
-        """
+        return declareRHSLocation(descriptor: descriptor)
       } else {
         return """
         
-        \(asyncLoadRHS(descriptor: descriptor))
+        threadgroup_barrier(mem_flags::mem_threadgroup);
+        if (sidx == 0) {
+          uint2 \(B)_offset(d_outer, \(traversalOffset));
+          auto src = simdgroup_matrix_storage<float>::apply_offset(
+            \(B), \(leadingDimension(B)), \(B)_offset, \(transposed(B)));
+          auto dst = (threadgroup float*)(threadgroup_block);
+          
+          ushort D_dimension = min(
+            ushort(\(blockDimensions.head)),
+            ushort(\(headDimension) - d_outer));
+          ushort C_src_dimension = min(
+            uint(\(blockDimensions.traversal)),
+            uint(\(traversalDimension) - \(traversalOffset)));
+          ushort C_dst_dimension = max(
+            ushort(\(paddedTraversalEdge)),
+            ushort(C_src_dimension));
+          ushort2 tile_src(D_dimension, C_src_dimension);
+          ushort2 tile_dst(D_dimension, C_dst_dimension);
+          
+          simdgroup_event event;
+          event.async_copy(
+            dst, \(leadingBlockDimension(B)), tile_dst,
+            src, \(leadingDimension(B)), tile_src, \(transposed(B)));
+          simdgroup_event::wait(1, &event);
+        }
+        
         \(declareRHSLocation(descriptor: descriptor))
         
         """

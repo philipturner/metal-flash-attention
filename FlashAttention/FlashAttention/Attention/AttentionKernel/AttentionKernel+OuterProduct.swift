@@ -177,41 +177,6 @@ extension AttentionKernel {
     
     // MARK: - RHS
     
-    func asyncLoadRHS() -> String {
-      return """
-      
-      threadgroup_barrier(mem_flags::mem_threadgroup);
-      if (sidx == 0) {
-        uint2 \(B)_offset(d_outer, \(traversalOffset));
-        auto src = simdgroup_matrix_storage<float>::apply_offset(
-          \(B), \(leadingDimension(B)), \(B)_offset, \(transposed(B)));
-        auto dst = (threadgroup float*)(threadgroup_block);
-        
-        ushort D_src_dimension = min(
-          ushort(\(blockDimensions.head)),
-          ushort(\(headDimension) - d_outer));
-        ushort D_dst_dimension = max(
-          ushort(\(paddedHeadEdge)),
-          ushort(D_src_dimension));
-        ushort C_src_dimension = min(
-          uint(\(blockDimensions.traversal)),
-          uint(\(traversalDimension) - \(traversalOffset)));
-        ushort C_dst_dimension = max(
-          ushort(\(paddedTraversalEdge)),
-          ushort(C_src_dimension));
-        ushort2 tile_src(D_src_dimension, C_src_dimension);
-        ushort2 tile_dst(D_dst_dimension, C_dst_dimension);
-        
-        simdgroup_event event;
-        event.async_copy(
-          dst, \(leadingBlockDimension(B)), tile_dst,
-          src, \(leadingDimension(B)), tile_src, \(transposed(B)));
-        simdgroup_event::wait(1, &event);
-      }
-      
-      """
-    }
-    
     func leadingDimensionRHS(
       _ descriptor: LoopIterationDescriptor
     ) -> String {
@@ -253,15 +218,39 @@ extension AttentionKernel {
       descriptor: LoopIterationDescriptor
     ) -> String {
       if descriptor.addressSpaceRHS == .device {
-        return """
-        
-        \(declareRHSLocation(descriptor: descriptor))
-        
-        """
+        return declareRHSLocation(descriptor: descriptor)
       } else {
         return """
         
-        \(asyncLoadRHS())
+        threadgroup_barrier(mem_flags::mem_threadgroup);
+        if (sidx == 0) {
+          uint2 \(B)_offset(d_outer, \(traversalOffset));
+          auto src = simdgroup_matrix_storage<float>::apply_offset(
+            \(B), \(leadingDimension(B)), \(B)_offset, \(transposed(B)));
+          auto dst = (threadgroup float*)(threadgroup_block);
+          
+          ushort D_src_dimension = min(
+            ushort(\(blockDimensions.head)),
+            ushort(\(headDimension) - d_outer));
+          ushort D_dst_dimension = max(
+            ushort(\(paddedHeadEdge)),
+            ushort(D_src_dimension));
+          ushort C_src_dimension = min(
+            uint(\(blockDimensions.traversal)),
+            uint(\(traversalDimension) - \(traversalOffset)));
+          ushort C_dst_dimension = max(
+            ushort(\(paddedTraversalEdge)),
+            ushort(C_src_dimension));
+          ushort2 tile_src(D_src_dimension, C_src_dimension);
+          ushort2 tile_dst(D_dst_dimension, C_dst_dimension);
+          
+          simdgroup_event event;
+          event.async_copy(
+            dst, \(leadingBlockDimension(B)), tile_dst,
+            src, \(leadingDimension(B)), tile_src, \(transposed(B)));
+          simdgroup_event::wait(1, &event);
+        }
+        
         \(declareRHSLocation(descriptor: descriptor))
         
         """
