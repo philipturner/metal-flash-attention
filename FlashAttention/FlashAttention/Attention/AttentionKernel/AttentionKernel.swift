@@ -187,16 +187,16 @@ extension AttentionKernel {
     }
   }
   
-  var parallelizationOffset: String {
+  var parallelizationGroupOffset: String {
     "parallelization_group_offset"
   }
   
   var unsafeParallelizationThreadOffset: String {
-    "\(parallelizationOffset) + sidx * 8 + morton_offset.y"
+    "\(parallelizationGroupOffset) + sidx * 8 + morton_offset.y"
   }
   
   var clampedParallelizationThreadOffset: String {
-    "min(\(unsafeParallelizationThreadOffset), \(parallelizationDimension))"
+    "min(\(unsafeParallelizationThreadOffset), \(parallelizationDimension) - 1)"
   }
   
   var traversalDimension: String {
@@ -298,7 +298,7 @@ extension AttentionKernel {
       parallelization_group_offset *= \(blockDimensions.parallelization);
       
       // Return early if the entire SIMD is out of bounds.
-      if (\(parallelizationOffset) >= \(parallelizationDimension)) {
+      if (\(parallelizationGroupOffset) >= \(parallelizationDimension)) {
         return;
       }
     

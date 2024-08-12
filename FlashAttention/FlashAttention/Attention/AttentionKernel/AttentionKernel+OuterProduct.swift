@@ -64,7 +64,7 @@ extension AttentionKernel {
       """
     }
     
-    func asyncAccessLHS(
+    func asyncLoadLHS(
       descriptor: LoopIterationDescriptor
     ) -> String {
       guard descriptor.addressSpaceLHS == .threadgroup else {
@@ -74,7 +74,7 @@ extension AttentionKernel {
       
       threadgroup_barrier(mem_flags::mem_threadgroup);
       if (sidx == 0) {
-        uint2 \(A)_offset(d_outer, \(parallelizationOffset));
+        uint2 \(A)_offset(d_outer, \(parallelizationGroupOffset));
         auto src = simdgroup_matrix_storage<float>::apply_offset(
           \(A), \(leadingDimension(A)), \(A)_offset, \(transposed(A)));
         auto dst = (threadgroup float*)(threadgroup_block);
@@ -87,7 +87,7 @@ extension AttentionKernel {
           ushort(D_src_dimension));
         ushort R_dimension = min(
           uint(\(blockDimensions.parallelization)),
-          uint(\(parallelizationDimension) - \(parallelizationOffset)));
+          uint(\(parallelizationDimension) - \(parallelizationGroupOffset)));
         ushort2 tile_src(D_src_dimension, R_dimension);
         ushort2 tile_dst(D_dst_dimension, R_dimension);
         
@@ -119,7 +119,7 @@ extension AttentionKernel {
         
         uint2 \(A)_src_offset(
           morton_offset.x + d_outer,
-          morton_offset.y + sidx * 8 + \(parallelizationOffset));
+          \(clampedParallelizationThreadOffset));
         auto \(A)_src = simdgroup_matrix_storage<float>::apply_offset(
           \(A), \(leadingDimension(A)),
           \(A)_src_offset, \(transposed(A)));
@@ -148,20 +148,37 @@ extension AttentionKernel {
         return ""
       }
       
-      return """
-      
-      \(asyncAccessLHS(descriptor: descriptor))
-      \(declareLHSLocation(descriptor: descriptor))
-      
-      #pragma clang loop unroll(full)
-      for (ushort d = 0; d < \(blockDimensions.head); d += 8) {
-        ushort2 origin(d, 0);
-        \(A)_sram[d / 8].load(
-          \(A)_src, \(leadingDimensionLHS(descriptor)),
-          origin, \(transposed(A)));
+      if descriptor.addressSpaceLHS == .device {
+        return """
+        
+        \(asyncLoadLHS(descriptor: descriptor))
+        \(declareLHSLocation(descriptor: descriptor))
+        
+        #pragma clang loop unroll(full)
+        for (ushort d = 0; d < \(blockDimensions.head); d += 8) {
+          ushort2 origin(d, 0);
+          \(A)_sram[d / 8].load(
+            \(A)_src, \(leadingDimensionLHS(descriptor)),
+            origin, \(transposed(A)));
+        }
+        
+        """
+      } else {
+        return """
+        
+        \(asyncLoadLHS(descriptor: descriptor))
+        \(declareLHSLocation(descriptor: descriptor))
+        
+        #pragma clang loop unroll(full)
+        for (ushort d = 0; d < \(blockDimensions.head); d += 8) {
+          ushort2 origin(d, 0);
+          \(A)_sram[d / 8].load(
+            \(A)_src, \(leadingDimensionLHS(descriptor)),
+            origin, \(transposed(A)));
+        }
+        
+        """
       }
-      
-      """
     }
     
     // MARK: - RHS
@@ -256,20 +273,56 @@ extension AttentionKernel {
     ) -> String {
       """
       
-      #pragma clang loop unroll(full)
+      // CULPRIT START
+      
+      threadgroup_barrier(mem_flags::mem_threadgroup | mem_flags::mem_device);
+      
+      #pragma clang loop unroll(disable)
       for (ushort c = \(traversalStart); c < \(traversalEnd); c += 8) {
-        // Load the RHS from memory.
         ushort2 origin(c, d);
-        simdgroup_matrix_storage<float> \(B);
-        \(B).load(
-          \(B)_src, \(leadingDimensionRHS(descriptor)),
-          origin, \(!transposed(B)));
-        
-        // Issue one SIMD matmul instruction.
-        \(C)_sram[c / 8].multiply(
-          \(A)_sram[(\(descriptor.registerOffset) + d) / 8],
-          \(B), \(descriptor.accumulateConditional));
+      
+        if (\(descriptor.accumulateConditional) == false) {
+          // Load the RHS from memory.
+          
+          simdgroup_matrix_storage<float> \(B);
+          \(B).load(
+            \(B)_src, \(leadingDimensionRHS(descriptor)),
+            origin, \(!transposed(B)));
+          
+          // Issue one SIMD matmul instruction.
+          \(C)_sram[c / 8].multiply(
+            \(A)_sram[(\(descriptor.registerOffset) + d) / 8],
+            \(B), \(descriptor.accumulateConditional));
+        } else if (morton_offset.y < 4) {
+          // Load the RHS from memory.
+          
+          simdgroup_matrix_storage<float> \(B);
+          \(B).load(
+            \(B)_src, \(leadingDimensionRHS(descriptor)),
+            origin, \(!transposed(B)));
+          
+          // Issue one SIMD matmul instruction.
+          \(C)_sram[c / 8].multiply(
+            \(A)_sram[(\(descriptor.registerOffset) + d) / 8],
+            \(B), true);
+        } else {
+          // Load the RHS from memory.
+          
+          simdgroup_matrix_storage<float> \(B);
+          \(B).load(
+            \(B)_src, \(leadingDimensionRHS(descriptor)),
+            origin, \(!transposed(B)));
+          
+          // Issue one SIMD matmul instruction.
+          \(C)_sram[c / 8].multiply(
+            \(A)_sram[(\(descriptor.registerOffset) + d) / 8],
+            \(B), true);
+        }
       }
+      
+      threadgroup_barrier(mem_flags::mem_threadgroup | mem_flags::mem_device);
+      
+      // CULPRIT END
       
       """
     }

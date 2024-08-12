@@ -118,7 +118,7 @@ extension AttentionKernel {
       threadgroup_barrier(mem_flags::mem_threadgroup);
       if (sidx == 0) {
         uint D_offset = \(truncatedHeadDimension);
-        uint R_offset = \(parallelizationOffset);
+        uint R_offset = \(parallelizationGroupOffset);
         uint2 offset_src(D_offset, R_offset);
         
         auto dO_src = simdgroup_matrix_storage<float>::apply_offset(
@@ -133,7 +133,7 @@ extension AttentionKernel {
         ushort D_dst_dimension = 8;
         ushort R_dimension = min(
           uint(\(blockDimensions.parallelization)),
-          uint(\(parallelizationDimension) - \(parallelizationOffset)));
+          uint(\(parallelizationDimension) - \(parallelizationGroupOffset)));
         ushort2 tile_src(D_src_dimension, R_dimension);
         ushort2 tile_dst(D_dst_dimension, R_dimension);
         

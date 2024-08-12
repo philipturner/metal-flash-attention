@@ -40,7 +40,7 @@ extension AttentionKernel {
         
         threadgroup_barrier(mem_flags::mem_threadgroup);
         if (sidx == 0) {
-          uint2 \(operand)_offset(d_outer, \(parallelizationOffset));
+          uint2 \(operand)_offset(d_outer, \(parallelizationGroupOffset));
           auto src = simdgroup_matrix_storage<float>::apply_offset(
             \(operand), \(leadingDimension(operand)),
             \(operand)_offset, \(transposed(operand)));
@@ -54,7 +54,7 @@ extension AttentionKernel {
             ushort(\(paddedHeadDimension) - d_outer));
           ushort R_dimension = min(
             uint(\(blockDimensions.parallelization)),
-            uint(\(parallelizationDimension) - \(parallelizationOffset)));
+            uint(\(parallelizationDimension) - \(parallelizationGroupOffset)));
           ushort2 tile_src(D_src_dimension, R_dimension);
           ushort2 tile_dst(D_dst_dimension, R_dimension);
           
@@ -72,7 +72,7 @@ extension AttentionKernel {
         
         threadgroup_barrier(mem_flags::mem_threadgroup);
         if (sidx == 0) {
-          uint2 \(operand)_offset(d_outer, \(parallelizationOffset));
+          uint2 \(operand)_offset(d_outer, \(parallelizationGroupOffset));
           auto src = (threadgroup float*)(threadgroup_block);
           auto dst = simdgroup_matrix_storage<float>::apply_offset(
             \(operand), \(leadingDimension(operand)),
@@ -83,7 +83,7 @@ extension AttentionKernel {
             ushort(\(headDimension) - d_outer));
           ushort R_dimension = min(
             uint(\(blockDimensions.parallelization)),
-            uint(\(parallelizationDimension) - \(parallelizationOffset)));
+            uint(\(parallelizationDimension) - \(parallelizationGroupOffset)));
           ushort2 tile(D_dimension, R_dimension);
           
           simdgroup_event event;
@@ -116,7 +116,7 @@ extension AttentionKernel {
         
         uint2 \(operand)_src_offset(
           morton_offset.x + d_outer,
-          morton_offset.y + sidx * 8 + \(parallelizationOffset));
+          \(clampedParallelizationThreadOffset));
         auto \(operand)_src = simdgroup_matrix_storage<float>::apply_offset(
           \(operand), \(leadingDimension(operand)),
           \(operand)_src_offset, \(transposed(operand)));

@@ -61,23 +61,26 @@ extension AttentionKernel {
       """
     }
     
-    func declareAccumulatorLocation() -> String {
-      guard !cached(C) else {
+    func scaleAccumulator(
+      by scale: String?,
+      descriptor: LoopIterationDescriptor
+    ) -> String {
+      guard let scale else {
         return ""
       }
       return """
       
-      // Where the \(C) data will be read from.
-      ushort2 \(C)_block_offset(morton_offset.x, morton_offset.y + sidx * 8);
-      auto \(C)_block = (threadgroup float*)(threadgroup_block);
-      \(C)_block = simdgroup_matrix_storage<float>::apply_offset(
-        \(C)_block, \(leadingBlockDimension(C)),
-        \(C)_block_offset, \(transposed(C)));
+      // Inner loop over the head dimension.
+      #pragma clang loop unroll(full)
+      for (ushort d = 0; d < \(descriptor.registerSize); d += 8) {
+        *(\(C)_sram[(\(descriptor.registerOffset) + d) / 8]
+          .thread_elements()) *= \(scale);
+      }
       
       """
     }
     
-    func loadAccumulator(
+    func asyncLoadAccumulator(
       descriptor: LoopIterationDescriptor
     ) -> String {
       guard !cached(C) else {
@@ -87,7 +90,7 @@ extension AttentionKernel {
       
       threadgroup_barrier(mem_flags::mem_threadgroup);
       if (sidx == 0) {
-        uint2 C_offset(d_outer, \(parallelizationOffset));
+        uint2 C_offset(d_outer, \(parallelizationGroupOffset));
         auto src = simdgroup_matrix_storage<float>::apply_offset(
           \(C), \(leadingDimension(C)), C_offset, \(transposed(C)));
         auto dst = (threadgroup float*)(threadgroup_block);
@@ -97,7 +100,7 @@ extension AttentionKernel {
           ushort(\(headDimension) - d_outer));
         ushort R_dimension = min(
           uint(\(blockDimensions.parallelization)),
-          uint(\(parallelizationDimension) - \(parallelizationOffset)));
+          uint(\(parallelizationDimension) - \(parallelizationGroupOffset)));
         ushort2 tile(D_dimension, R_dimension);
         
         simdgroup_event event;
@@ -121,26 +124,7 @@ extension AttentionKernel {
       """
     }
     
-    func scaleAccumulator(
-      by scale: String?,
-      descriptor: LoopIterationDescriptor
-    ) -> String {
-      guard let scale else {
-        return ""
-      }
-      return """
-      
-      // Inner loop over the head dimension.
-      #pragma clang loop unroll(full)
-      for (ushort d = 0; d < \(descriptor.registerSize); d += 8) {
-        *(\(C)_sram[(\(descriptor.registerOffset) + d) / 8]
-          .thread_elements()) *= \(scale);
-      }
-      
-      """
-    }
-    
-    func storeAccumulator(
+    func asyncStoreAccumulator(
       descriptor: LoopIterationDescriptor
     ) -> String {
       guard !cached(C) else {
@@ -161,7 +145,7 @@ extension AttentionKernel {
       threadgroup_barrier(mem_flags::mem_threadgroup);
       
       if (sidx == 0) {
-        uint2 \(C)_offset(d_outer, \(parallelizationOffset));
+        uint2 \(C)_offset(d_outer, \(parallelizationGroupOffset));
         auto src = (threadgroup float*)(threadgroup_block);
         auto dst = simdgroup_matrix_storage<float>::apply_offset(
           \(C), \(leadingDimension(C)), \(C)_offset, \(transposed(C)));
@@ -171,7 +155,7 @@ extension AttentionKernel {
           ushort(\(headDimension) - d_outer));
         ushort R_dimension = min(
           uint(\(blockDimensions.parallelization)),
-          uint(\(parallelizationDimension) - \(parallelizationOffset)));
+          uint(\(parallelizationDimension) - \(parallelizationGroupOffset)));
         ushort2 tile(D_dimension, R_dimension);
         
         simdgroup_event event;
@@ -184,9 +168,25 @@ extension AttentionKernel {
       """
     }
     
+    func declareAccumulatorLocation() -> String {
+      guard !cached(C) else {
+        return ""
+      }
+      return """
+      
+      // Where the \(C) data will be read from.
+      ushort2 \(C)_block_offset(morton_offset.x, morton_offset.y + sidx * 8);
+      auto \(C)_block = (threadgroup float*)(threadgroup_block);
+      \(C)_block = simdgroup_matrix_storage<float>::apply_offset(
+        \(C)_block, \(leadingBlockDimension(C)),
+        \(C)_block_offset, \(transposed(C)));
+      
+      """
+    }
+    
     // MARK: - RHS
     
-    func loadRHS(
+    func asyncLoadRHS(
       descriptor: LoopIterationDescriptor
     ) -> String {
       guard descriptor.addressSpace == .threadgroup else {
@@ -347,14 +347,14 @@ extension AttentionKernel {
         if (\(traversalOffset) == 0) {
           \(initializeAccumulator(descriptor: descriptor))
         } else {
-          \(loadAccumulator(descriptor: descriptor))
+          \(asyncLoadAccumulator(descriptor: descriptor))
           \(scaleAccumulator(
               by: accumulateDesc.everyIterationScale,
               descriptor: descriptor))
         }
         
         // Load the right-hand side.
-        \(loadRHS(descriptor: descriptor))
+        \(asyncLoadRHS(descriptor: descriptor))
         \(declareRHSLocation(descriptor: descriptor))
         
         """
@@ -377,7 +377,7 @@ extension AttentionKernel {
                by: accumulateDesc.lastIterationScale,
                descriptor: descriptor))
         }
-        \(storeAccumulator(descriptor: descriptor))
+        \(asyncStoreAccumulator(descriptor: descriptor))
         
         """
       } else {
@@ -399,7 +399,7 @@ extension AttentionKernel {
               by: accumulateDesc.lastIterationScale,
               descriptor: descriptor))
         }
-        \(storeAccumulator(descriptor: descriptor))
+        \(asyncStoreAccumulator(descriptor: descriptor))
         
         """
       }
