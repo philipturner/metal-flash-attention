@@ -48,7 +48,10 @@ import QuartzCore
 //   - M1 performance should not regress (addressSpace = threadgroup).
 //   - M3 performance should improve (addressSpace = device).
 //   - Find optimal address spaces on each architecture.
-// - Check for performance regressions with indivisible problem sizes.
+// - Find the reason for oscillatory performance that suspiciously looks like
+//   the compute work along the head edge, is not being elided.
+//   - Can we find a patch that doesn't harm occupancy?
+// - Find additional regressions due to indivisible problem sizes.
 //   - Compare side by side:
 //   - One less than the power of 2 (both sequence and head decrease)
 //   - The power of 2

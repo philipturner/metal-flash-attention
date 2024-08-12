@@ -498,7 +498,7 @@ extension AttentionKernel {
       
       let blockDim = blockDimensions.traversal
       let condition = """
-      \(!preferAsyncLoad) && (
+      (
         (\(traversalDimension) % \(blockDim) == 0) ||
         (\(traversalOffset) + \(blockDim) <= \(traversalDimension))
       ) && (

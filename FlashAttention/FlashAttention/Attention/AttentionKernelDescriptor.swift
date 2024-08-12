@@ -37,10 +37,10 @@ struct AttentionKernelDescriptor {
   var headDimension: UInt16?
   
   /// Reads with a one-to-one mapping to threads (like GEMM store) and writes.
-  var preferAsyncCache: Bool = true
+  var preferAsyncCache: Bool?
   
   /// Reads that are shared among threads (like GEMM load).
-  var preferAsyncLoad: Bool = true
+  var preferAsyncLoad: Bool?
   
   /// Whether each operand is transposed in RAM.
   ///

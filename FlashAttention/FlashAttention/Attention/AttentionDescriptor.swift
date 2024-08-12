@@ -133,6 +133,10 @@ extension AttentionDescriptor {
       output.cacheState[.dK] = cacheOutputs
     }
     
+    // TODO: Specify the usage of async load/store on a per-operand level.
+    output.preferAsyncCache = true
+    output.preferAsyncLoad = true
+    
     return output
   }
 }

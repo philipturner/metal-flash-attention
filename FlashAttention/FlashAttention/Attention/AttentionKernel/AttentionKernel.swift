@@ -48,6 +48,8 @@ struct AttentionKernel {
   init(descriptor: AttentionKernelDescriptor) {
     guard let blockDimensions = descriptor.blockDimensions,
           let headDimension = descriptor.headDimension,
+          let preferAsyncCache = descriptor.preferAsyncCache,
+          let preferAsyncLoad = descriptor.preferAsyncLoad,
           let type = descriptor.type else {
       fatalError("Descriptor was incomplete.")
     }
@@ -55,8 +57,8 @@ struct AttentionKernel {
     self.headDimension = headDimension
     
     self.cacheState = descriptor.cacheState
-    self.preferAsyncCache = descriptor.preferAsyncCache
-    self.preferAsyncLoad = descriptor.preferAsyncLoad
+    self.preferAsyncCache = preferAsyncCache
+    self.preferAsyncLoad = preferAsyncLoad
     self.transposeState = descriptor.transposeState
     self.type = type
     

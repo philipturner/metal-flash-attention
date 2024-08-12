@@ -12,29 +12,27 @@ import Metal
 
 #if true
 func executeScript() {
-  for _ in 0..<5 {
-    // Automate the execution of the test suite.
-    profileProblemSize(sequenceDimension: 10, headDimension: 3)
-    profileProblemSize(sequenceDimension: 10, headDimension: 80)
-    profileProblemSize(sequenceDimension: 8, headDimension: 2)
-    profileProblemSize(sequenceDimension: 9, headDimension: 2)
-    profileProblemSize(sequenceDimension: 23, headDimension: 2)
-    profileProblemSize(sequenceDimension: 24, headDimension: 2)
-    profileProblemSize(sequenceDimension: 25, headDimension: 2)
-    profileProblemSize(sequenceDimension: 192, headDimension: 77)
-    profileProblemSize(sequenceDimension: 192, headDimension: 80)
-    profileProblemSize(sequenceDimension: 93, headDimension: 32)
-    profileProblemSize(sequenceDimension: 99, headDimension: 35)
-    profileProblemSize(sequenceDimension: 64, headDimension: 32)
-    profileProblemSize(sequenceDimension: 32, headDimension: 64)
-    profileProblemSize(sequenceDimension: 4, headDimension: 1)
-    profileProblemSize(sequenceDimension: 4, headDimension: 2)
-    profileProblemSize(sequenceDimension: 384, headDimension: 95)
-    profileProblemSize(sequenceDimension: 777, headDimension: 199)
-  }
+  // Automate the execution of the test suite.
+//  profileProblemSize(sequenceDimension: 10, headDimension: 3)
+//  profileProblemSize(sequenceDimension: 10, headDimension: 80)
+//  profileProblemSize(sequenceDimension: 8, headDimension: 2)
+//  profileProblemSize(sequenceDimension: 9, headDimension: 2)
+//  profileProblemSize(sequenceDimension: 23, headDimension: 2)
+//  profileProblemSize(sequenceDimension: 24, headDimension: 2)
+//  profileProblemSize(sequenceDimension: 25, headDimension: 2)
+//  profileProblemSize(sequenceDimension: 192, headDimension: 77)
+//  profileProblemSize(sequenceDimension: 192, headDimension: 80)
+//  profileProblemSize(sequenceDimension: 93, headDimension: 32)
+//  profileProblemSize(sequenceDimension: 99, headDimension: 35)
+//  profileProblemSize(sequenceDimension: 64, headDimension: 32)
+//  profileProblemSize(sequenceDimension: 32, headDimension: 64)
+//  profileProblemSize(sequenceDimension: 4, headDimension: 1)
+//  profileProblemSize(sequenceDimension: 4, headDimension: 2)
+//  profileProblemSize(sequenceDimension: 384, headDimension: 95)
+//  profileProblemSize(sequenceDimension: 777, headDimension: 199)
   
-  #if false
-  let N_array = [128, 160, 192]
+  #if true
+  let N_array = [128, 256, 512, 1024, 2048, 4096, 8192]
   let D_array = [32, 48, 64, 80, 96, 128, 160, 192, 256]
   
   // Loop over the configurations.
@@ -70,38 +68,14 @@ func profileProblemSize(
   networkDesc.D = headDimension
   let network = Network(descriptor: networkDesc)
   
-  let transposeQ: Bool = .random()
-  let transposeK: Bool = .random()
-  let transposeV: Bool = .random()
-  let transposeO: Bool = .random()
+  let benchmarkedKernel: AttentionKernelType = .forward(true)
   
   // MARK: - Buffers
   
-  func transpose(_ input: [Float], transposed: Bool) -> [Float] {
-    guard transposed else {
-      return input
-    }
-    
-    var output = [Float](
-      repeating: .zero, count: sequenceDimension * headDimension)
-    for n in 0..<sequenceDimension {
-      for d in 0..<headDimension {
-        let sourceAddress = n * headDimension + d
-        let destinationAddress = d * sequenceDimension + n
-        output[destinationAddress] = input[sourceAddress]
-      }
-    }
-    return output
-  }
-  
-  let bufferQ = MTLContext.global.createBuffer(
-    transpose(network.Q, transposed: transposeQ), .FP32)
-  let bufferK = MTLContext.global.createBuffer(
-    transpose(network.K, transposed: transposeK), .FP32)
-  let bufferV = MTLContext.global.createBuffer(
-    transpose(network.V, transposed: transposeV), .FP32)
-  let bufferDerivativeO = MTLContext.global.createBuffer(
-    transpose(network.C, transposed: transposeO), .FP32)
+  let bufferQ = MTLContext.global.createBuffer(network.Q, .FP32)
+  let bufferK = MTLContext.global.createBuffer(network.K, .FP32)
+  let bufferV = MTLContext.global.createBuffer(network.V, .FP32)
+  let bufferDerivativeO = MTLContext.global.createBuffer(network.C, .FP32)
   
   let operandSize = sequenceDimension * headDimension
   var resultO = [Float](repeating: .zero, count: operandSize)
@@ -129,26 +103,10 @@ func profileProblemSize(
     R: UInt32(sequenceDimension),
     C: UInt32(sequenceDimension),
     D: UInt16(headDimension))
-  attentionDesc.transposeState = (
-    Q: transposeQ, K: transposeK, V: transposeV, O: transposeO)
+  attentionDesc.transposeState = (Q: false, K: false, V: false, O: false)
   
   func createKernel(type: AttentionKernelType) -> AttentionKernel {
-    var attentionKernelDesc = attentionDesc.kernelDescriptor(type: type)
-    
-    // Change the default kernel settings here.
-    attentionKernelDesc.preferAsyncCache = .random()
-    attentionKernelDesc.preferAsyncLoad = .random()
-    
-    attentionKernelDesc.cacheState[.Q] = .random()
-    attentionKernelDesc.cacheState[.K] = .random()
-    attentionKernelDesc.cacheState[.V] = .random()
-    attentionKernelDesc.cacheState[.O] = .random()
-    
-    attentionKernelDesc.cacheState[.dO] = .random()
-    attentionKernelDesc.cacheState[.dV] = .random()
-    attentionKernelDesc.cacheState[.dK] = .random()
-    attentionKernelDesc.cacheState[.dQ] = .random()
-    
+    let attentionKernelDesc = attentionDesc.kernelDescriptor(type: type)
     let attentionKernel = AttentionKernel(descriptor: attentionKernelDesc)
     return attentionKernel
   }
@@ -228,10 +186,23 @@ func profileProblemSize(
     for _ in 0..<dispatchCount {
       if dispatchCount > 1 {
         // WARNING: Change this code to match the kernel you're profiling.
-        dispatch(
-          kernel: kernelBackwardKeyValue,
-          pipeline: pipelineBackwardKeyValue,
-          along: sequenceDimension)
+        switch benchmarkedKernel {
+        case .forward:
+          dispatch(
+            kernel: kernelForward,
+            pipeline: pipelineForward,
+            along: sequenceDimension)
+        case .backwardQuery:
+          dispatch(
+            kernel: kernelBackwardQuery,
+            pipeline: pipelineBackwardQuery,
+            along: sequenceDimension)
+        case .backwardKeyValue:
+          dispatch(
+            kernel: kernelBackwardKeyValue,
+            pipeline: pipelineBackwardKeyValue,
+            along: sequenceDimension)
+        }
       } else {
         dispatch(
           kernel: kernelForward,
@@ -256,20 +227,20 @@ func profileProblemSize(
     let start = commandBuffer.gpuStartTime
     let end = commandBuffer.gpuEndTime
     let latency = end - start
-    print("latency:", Int(latency * 1e6))
+    // print("latency:", Int(latency * 1e6))
     return latency
   }
   executeCommandBuffer(dispatchCount: 1)
   
   // MARK: - Validation
   
-#if true
-  let O = transpose(network.inferenceAttention(), transposed: transposeO)
+#if false
+  let O = network.inferenceAttention()
   let L = (0..<sequenceDimension).map(network.createLTerm(rowID:))
   let D = (0..<sequenceDimension).map(network.createDTerm(rowID:))
-  let dV = transpose(network.derivativeV(), transposed: transposeV)
-  let dK = transpose(network.derivativeK(), transposed: transposeK)
-  let dQ = transpose(network.derivativeQ(), transposed: transposeQ)
+  let dV = network.derivativeV()
+  let dK = network.derivativeK()
+  let dQ = network.derivativeQ()
   
   // Copy the results.
   MTLContext.copy(bufferO, into: &resultO)
@@ -373,11 +344,7 @@ func profileProblemSize(
 #endif
   
   // Check the results.
-  //
-  // Error thresholds:
-  // - Everything in FP32: 1e-5
-  // - Testing the "Store dS" variant with dS in BF16: 1e-2
-  let errorThreshold: Float = 1e-2
+  let errorThreshold: Float = 1e-5
   var errorCount: Int = .zero
   func check(expected: [Float], actual: [Float]) {
     guard expected.count == actual.count else {
@@ -416,7 +383,7 @@ func profileProblemSize(
   
   // MARK: - Profiling
   
-#if false
+#if true
   // Benchmark performance.
   var maxGINSTRS: Int = .zero
   for _ in 0..<5 {
@@ -426,8 +393,16 @@ func profileProblemSize(
     // Determine the amount of work done.
     //
     // WARNING: Change this code to match the kernel you're profiling.
-    var operations: Int = .zero
-    operations += (4 * D + 5) * (N * N)
+    var operations: Int
+    switch benchmarkedKernel {
+    case .forward:
+      operations = 2 * headDimension + 5
+    case .backwardQuery:
+      operations = 3 * headDimension + 5
+    case .backwardKeyValue:
+      operations = 4 * headDimension + 5
+    }
+    operations *= (sequenceDimension * sequenceDimension)
     operations *= dispatchCount
     
     // Divide the work by the latency, resulting in throughput.
@@ -438,8 +413,7 @@ func profileProblemSize(
     maxGINSTRS = max(maxGINSTRS, ginstrs)
   }
   return maxGINSTRS
-#endif
-  
+#else
   if sequenceDimension <= 135 {
     return pipelineForward.maxTotalThreadsPerThreadgroup
   } else if sequenceDimension <= 165 {
@@ -449,6 +423,7 @@ func profileProblemSize(
   } else {
     return 0
   }
+#endif
 }
 
 #endif
