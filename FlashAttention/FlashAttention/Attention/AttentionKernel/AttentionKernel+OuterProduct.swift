@@ -320,6 +320,7 @@ extension AttentionKernel {
       var addressSpaceLHS: MTLAddressSpace?
       var addressSpaceRHS: MTLAddressSpace?
       var registerOffset: String = ""
+      var registerSize: UInt16 = .zero
     }
     
     func loopIteration(
@@ -346,14 +347,8 @@ extension AttentionKernel {
         \(loadRHS(descriptor: descriptor))
         \(innerLoopHead(
             headStart: 0,
-            headEnd: paddedHeadEdge,
+            headEnd: descriptor.registerSize,
             descriptor: descriptor))
-        if (d_outer + \(blockDimensions.head) < \(headDimension)) {
-          \(innerLoopHead(
-              headStart: paddedHeadEdge,
-              headEnd: blockDimensions.head,
-              descriptor: descriptor))
-        }
         
         """
       }
@@ -452,6 +447,7 @@ extension AttentionKernel {
       var descriptor = LoopIterationDescriptor()
       descriptor.accumulateConditional = accumulateConditional()
       descriptor.registerOffset = registerOffset()
+      descriptor.registerSize = blockDimensions.head
       
       return """
       
@@ -471,6 +467,7 @@ extension AttentionKernel {
       var descriptor = LoopIterationDescriptor()
       descriptor.accumulateConditional = accumulateConditional()
       descriptor.registerOffset = registerOffset()
+      descriptor.registerSize = paddedHeadEdge
       descriptor.addressSpaceLHS = .threadgroup
       descriptor.addressSpaceRHS = .threadgroup
       

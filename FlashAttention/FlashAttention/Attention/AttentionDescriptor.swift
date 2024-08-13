@@ -115,8 +115,8 @@ extension AttentionDescriptor {
     }
     
     // Assign the cache state.
-    let cacheInputs = false
-    let cacheOutputs = false
+    let cacheInputs = Bool.random()
+    let cacheOutputs = Bool.random()
     
     switch type {
     case .forward:
@@ -133,8 +133,8 @@ extension AttentionDescriptor {
       output.cacheState[.dK] = cacheOutputs
     }
     
-    output.preferAsyncCache = false
-    output.preferAsyncLoad = true
+    output.preferAsyncCache = Bool.random()
+    output.preferAsyncLoad = Bool.random()
     
     return output
   }

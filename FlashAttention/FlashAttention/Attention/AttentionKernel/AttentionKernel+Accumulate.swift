@@ -367,6 +367,8 @@ extension AttentionKernel {
           descriptor.addressSpaceRHS! == .device {
         return """
         
+        // TODO: Allow this device path for all multiples of 8, instead of
+        // just multiples of the block size.
         #pragma clang loop unroll(full)
         for (ushort c = \(traversalStart); c < \(traversalEnd); c += 8) {
           \(innerLoopHead(
@@ -383,16 +385,8 @@ extension AttentionKernel {
         for (ushort c = \(traversalStart); c < \(traversalEnd); c += 8) {
           \(innerLoopHead(
               headStart: 0,
-              headEnd: paddedHeadEdge,
+              headEnd: descriptor.registerSize,
               descriptor: descriptor))
-        
-          // TODO: Benchmark, remove this dead code, then benchmark again.
-          if (d_outer + \(blockDimensions.head) < \(headDimension)) {
-            \(innerLoopHead(
-                headStart: paddedHeadEdge,
-                headEnd: blockDimensions.head,
-                descriptor: descriptor))
-          }
         }
         
         """
