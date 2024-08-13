@@ -403,63 +403,94 @@ extension AttentionKernel {
       """
     }
     
-    // Outer loop over the head dimension.
-    var outerIterationDesc = LoopIterationDescriptor()
-    if cached(A) {
-      let loopEnd = paddedHeadDimension
-      let loopEndFloor = loopEnd - loopEnd % blockDimensions.head
-      outerIterationDesc.accumulateConditional = "((d_outer > 0) || (d > 0))"
-      outerIterationDesc.registerOffset = "d_outer"
-      
-      // Add the first iterations.
-      var output = """
-      
-      \(allocateAccumulator())
-      
-      #pragma clang loop unroll(full)
-      for (
-        ushort d_outer = 0;
-        d_outer < \(loopEndFloor);
-        d_outer += \(blockDimensions.head)
-      ) {
-        \(gatedLoopIteration(descriptor: outerIterationDesc))
+    // MARK: - Top Level Specification
+    
+    func initializeStatement() -> String {
+      if cached(A) {
+        return ""
+      } else {
+        return initializeAccumulator()
       }
-      
-      """
-      
-      // Add the last iteration, if unaligned.
-      if loopEndFloor < loopEnd {
-        outerIterationDesc.addressSpaceLHS = .threadgroup
-        outerIterationDesc.addressSpaceRHS = .threadgroup
-        output += """
-        {
-          ushort d_outer = \(loopEndFloor);
-          \(loopIteration(descriptor: outerIterationDesc))
-        }
-        """
+    }
+    
+    func unrollStatement() -> String {
+      if cached(A) {
+        return "#pragma clang loop unroll(full)"
+      } else {
+        return "#pragma clang loop unroll(disable)"
       }
-      
-      return output
-    } else {
-      outerIterationDesc.accumulateConditional = "true"
-      outerIterationDesc.registerOffset = "0"
-      
-      // Add all of the iterations.
+    }
+    
+    func accumulateConditional() -> String {
+      if cached(A) {
+        return "((d_outer > 0) || (d > 0))"
+      } else {
+        return "true"
+      }
+    }
+    
+    func registerOffset() -> String {
+      if cached(A) {
+        return "d_outer"
+      } else {
+        return "0"
+      }
+    }
+    
+    func loopEnd() -> UInt16 {
+      paddedHeadDimension
+    }
+    
+    func loopEndFloor() -> UInt16 {
+      loopEnd() - loopEnd() % blockDimensions.head
+    }
+    
+    func firstIterations() -> String {
+      var descriptor = LoopIterationDescriptor()
+      descriptor.accumulateConditional = accumulateConditional()
+      descriptor.registerOffset = registerOffset()
       return """
       
-      \(allocateAccumulator())
-      \(initializeAccumulator())
-      
-      #pragma clang loop unroll(disable)
+      \(unrollStatement())
       for (
         ushort d_outer = 0;
-        d_outer < \(headDimension);
+        d_outer < \(loopEndFloor());
         d_outer += \(blockDimensions.head)
       ) {
-        \(gatedLoopIteration(descriptor: outerIterationDesc))
+        \(gatedLoopIteration(descriptor: descriptor))
       }
       
       """
     }
+    
+    func lastIteration() -> String {
+      guard loopEndFloor() < loopEnd() else {
+        return ""
+      }
+      
+      var descriptor = LoopIterationDescriptor()
+      descriptor.accumulateConditional = accumulateConditional()
+      descriptor.registerOffset = registerOffset()
+      descriptor.addressSpaceLHS = .threadgroup
+      descriptor.addressSpaceRHS = .threadgroup
+      return """
+      
+      {
+        ushort d_outer = \(loopEndFloor());
+        \(loopIteration(descriptor: descriptor))
+      }
+      
+      """
+    }
+    
+    return """
+    
+    \(allocateAccumulator())
+    \(initializeStatement())
+    
+    \(firstIterations())
+    \(lastIteration())
+    
+    """
   }
 }

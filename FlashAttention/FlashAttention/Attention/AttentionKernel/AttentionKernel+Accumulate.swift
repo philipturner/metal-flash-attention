@@ -523,12 +523,12 @@ extension AttentionKernel {
     // Outer loop over the head dimension.
     var outerIterationDesc = LoopIterationDescriptor()
     let loopUnroll = cached(C) ? "full" : "disable"
-    let loopEnd = paddedHeadDimension
-    let loopEndFloor = loopEnd - loopEnd % blockDimensions.head
-    
-    // Add the first iterations.
     outerIterationDesc.registerOffset = cached(C) ? "d_outer" : "0"
     outerIterationDesc.registerSize = blockDimensions.head
+    
+    // Add the first iterations.
+    let loopEnd = paddedHeadDimension
+    let loopEndFloor = loopEnd - loopEnd % blockDimensions.head
     var output = """
     
     #pragma clang loop unroll(\(loopUnroll))
@@ -548,10 +548,12 @@ extension AttentionKernel {
       outerIterationDesc.addressSpaceRHS = .threadgroup
       outerIterationDesc.registerSize = paddedHeadEdge
       output += """
+      
       {
         ushort d_outer = \(loopEndFloor);
         \(loopIteration(descriptor: outerIterationDesc))
       }
+      
       """
     }
     
