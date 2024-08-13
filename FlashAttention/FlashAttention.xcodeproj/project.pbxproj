@@ -26,9 +26,9 @@
 		9881AA252C25FDC20056D05C /* AdversarialShapeTest.swift in Sources */ = {isa = PBXBuildFile; fileRef = 9881AA242C25FDC20056D05C /* AdversarialShapeTest.swift */; };
 		9882512E2C4E9F890047052E /* AttentionKernel+Caching.swift in Sources */ = {isa = PBXBuildFile; fileRef = 9882512D2C4E9F890047052E /* AttentionKernel+Caching.swift */; };
 		98AFA2692C653D7700E88305 /* AttentionDescriptor.swift in Sources */ = {isa = PBXBuildFile; fileRef = 98AFA2682C653D7700E88305 /* AttentionDescriptor.swift */; };
-		98DA5B302C29F04A000F4E06 /* ComplexModule in Frameworks */ = {isa = PBXBuildFile; productRef = 98DA5B2F2C29F04A000F4E06 /* ComplexModule */; };
-		98DA5B322C29F04A000F4E06 /* Numerics in Frameworks */ = {isa = PBXBuildFile; productRef = 98DA5B312C29F04A000F4E06 /* Numerics */; };
-		98DA5B342C29F04A000F4E06 /* RealModule in Frameworks */ = {isa = PBXBuildFile; productRef = 98DA5B332C29F04A000F4E06 /* RealModule */; };
+		98C100FF2C6BFFD90061C1DA /* ComplexModule in Frameworks */ = {isa = PBXBuildFile; productRef = 98C100FE2C6BFFD90061C1DA /* ComplexModule */; };
+		98C101012C6BFFD90061C1DA /* Numerics in Frameworks */ = {isa = PBXBuildFile; productRef = 98C101002C6BFFD90061C1DA /* Numerics */; };
+		98C101032C6BFFD90061C1DA /* RealModule in Frameworks */ = {isa = PBXBuildFile; productRef = 98C101022C6BFFD90061C1DA /* RealModule */; };
 		98DA5B362C2AFD65000F4E06 /* Network.swift in Sources */ = {isa = PBXBuildFile; fileRef = 98DA5B352C2AFD65000F4E06 /* Network.swift */; };
 		98DA5B3D2C2C5086000F4E06 /* MTLContext.swift in Sources */ = {isa = PBXBuildFile; fileRef = 98DA5B3C2C2C5086000F4E06 /* MTLContext.swift */; };
 		98DA5B482C2DE2DA000F4E06 /* AttentionKernel.swift in Sources */ = {isa = PBXBuildFile; fileRef = 98DA5B472C2DE2DA000F4E06 /* AttentionKernel.swift */; };
@@ -86,9 +86,9 @@
 			isa = PBXFrameworksBuildPhase;
 			buildActionMask = 2147483647;
 			files = (
-				98DA5B322C29F04A000F4E06 /* Numerics in Frameworks */,
-				98DA5B302C29F04A000F4E06 /* ComplexModule in Frameworks */,
-				98DA5B342C29F04A000F4E06 /* RealModule in Frameworks */,
+				98C101012C6BFFD90061C1DA /* Numerics in Frameworks */,
+				98C100FF2C6BFFD90061C1DA /* ComplexModule in Frameworks */,
+				98C101032C6BFFD90061C1DA /* RealModule in Frameworks */,
 			);
 			runOnlyForDeploymentPostprocessing = 0;
 		};
@@ -227,9 +227,9 @@
 			);
 			name = FlashAttention;
 			packageProductDependencies = (
-				98DA5B2F2C29F04A000F4E06 /* ComplexModule */,
-				98DA5B312C29F04A000F4E06 /* Numerics */,
-				98DA5B332C29F04A000F4E06 /* RealModule */,
+				98C100FE2C6BFFD90061C1DA /* ComplexModule */,
+				98C101002C6BFFD90061C1DA /* Numerics */,
+				98C101022C6BFFD90061C1DA /* RealModule */,
 			);
 			productName = FlashAttention;
 			productReference = 9881A9F22C24C8230056D05C /* FlashAttention.app */;
@@ -260,7 +260,7 @@
 			);
 			mainGroup = 9881A9E92C24C8230056D05C;
 			packageReferences = (
-				98DA5B2E2C29F04A000F4E06 /* XCRemoteSwiftPackageReference "swift-numerics" */,
+				98C100FD2C6BFFD90061C1DA /* XCRemoteSwiftPackageReference "swift-numerics" */,
 			);
 			productRefGroup = 9881A9F32C24C8230056D05C /* Products */;
 			projectDirPath = "";
@@ -536,7 +536,7 @@
 /* End XCConfigurationList section */
 
 /* Begin XCRemoteSwiftPackageReference section */
-		98DA5B2E2C29F04A000F4E06 /* XCRemoteSwiftPackageReference "swift-numerics" */ = {
+		98C100FD2C6BFFD90061C1DA /* XCRemoteSwiftPackageReference "swift-numerics" */ = {
 			isa = XCRemoteSwiftPackageReference;
 			repositoryURL = "https://github.com/apple/swift-numerics.git";
 			requirement = {
@@ -547,19 +547,19 @@
 /* End XCRemoteSwiftPackageReference section */
 
 /* Begin XCSwiftPackageProductDependency section */
-		98DA5B2F2C29F04A000F4E06 /* ComplexModule */ = {
+		98C100FE2C6BFFD90061C1DA /* ComplexModule */ = {
 			isa = XCSwiftPackageProductDependency;
-			package = 98DA5B2E2C29F04A000F4E06 /* XCRemoteSwiftPackageReference "swift-numerics" */;
+			package = 98C100FD2C6BFFD90061C1DA /* XCRemoteSwiftPackageReference "swift-numerics" */;
 			productName = ComplexModule;
 		};
-		98DA5B312C29F04A000F4E06 /* Numerics */ = {
+		98C101002C6BFFD90061C1DA /* Numerics */ = {
 			isa = XCSwiftPackageProductDependency;
-			package = 98DA5B2E2C29F04A000F4E06 /* XCRemoteSwiftPackageReference "swift-numerics" */;
+			package = 98C100FD2C6BFFD90061C1DA /* XCRemoteSwiftPackageReference "swift-numerics" */;
 			productName = Numerics;
 		};
-		98DA5B332C29F04A000F4E06 /* RealModule */ = {
+		98C101022C6BFFD90061C1DA /* RealModule */ = {
 			isa = XCSwiftPackageProductDependency;
-			package = 98DA5B2E2C29F04A000F4E06 /* XCRemoteSwiftPackageReference "swift-numerics" */;
+			package = 98C100FD2C6BFFD90061C1DA /* XCRemoteSwiftPackageReference "swift-numerics" */;
 			productName = RealModule;
 		};
 /* End XCSwiftPackageProductDependency section */
