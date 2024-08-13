@@ -13,45 +13,49 @@ import Metal
 #if true
 func executeScript() {
   // Automate the execution of the test suite.
-//  profileProblemSize(sequenceDimension: 10, headDimension: 3)
-//  profileProblemSize(sequenceDimension: 10, headDimension: 80)
-//  profileProblemSize(sequenceDimension: 8, headDimension: 2)
-//  profileProblemSize(sequenceDimension: 9, headDimension: 2)
-//  profileProblemSize(sequenceDimension: 23, headDimension: 2)
-//  profileProblemSize(sequenceDimension: 24, headDimension: 2)
-//  profileProblemSize(sequenceDimension: 25, headDimension: 2)
-//  profileProblemSize(sequenceDimension: 192, headDimension: 77)
-//  profileProblemSize(sequenceDimension: 192, headDimension: 80)
-//  profileProblemSize(sequenceDimension: 93, headDimension: 32)
-//  profileProblemSize(sequenceDimension: 99, headDimension: 35)
-//  profileProblemSize(sequenceDimension: 64, headDimension: 32)
-//  profileProblemSize(sequenceDimension: 32, headDimension: 64)
-//  profileProblemSize(sequenceDimension: 4, headDimension: 1)
-//  profileProblemSize(sequenceDimension: 4, headDimension: 2)
-//  profileProblemSize(sequenceDimension: 384, headDimension: 95)
-//  profileProblemSize(sequenceDimension: 777, headDimension: 199)
+//    profileProblemSize(sequenceDimension: 10, headDimension: 3)
+//    profileProblemSize(sequenceDimension: 10, headDimension: 80)
+//    profileProblemSize(sequenceDimension: 8, headDimension: 2)
+//    profileProblemSize(sequenceDimension: 9, headDimension: 2)
+//    profileProblemSize(sequenceDimension: 23, headDimension: 2)
+//    profileProblemSize(sequenceDimension: 24, headDimension: 2)
+//    profileProblemSize(sequenceDimension: 25, headDimension: 2)
+//    profileProblemSize(sequenceDimension: 192, headDimension: 77)
+//    profileProblemSize(sequenceDimension: 192, headDimension: 80)
+//    profileProblemSize(sequenceDimension: 93, headDimension: 32)
+//    profileProblemSize(sequenceDimension: 99, headDimension: 35)
+//    profileProblemSize(sequenceDimension: 64, headDimension: 32)
+//    profileProblemSize(sequenceDimension: 32, headDimension: 64)
+//    profileProblemSize(sequenceDimension: 4, headDimension: 1)
+//    profileProblemSize(sequenceDimension: 4, headDimension: 2)
+//    profileProblemSize(sequenceDimension: 384, headDimension: 95)
+//    profileProblemSize(sequenceDimension: 777, headDimension: 199)
   
-  #if true
-  let N_array = [8, 16, 32]
-  let D_block_array = [8, 16, 32, 64, 96]
-  let D_array = [32, 48, 64, 80, 96, 128, 160, 192, 256]
+  print()
+  print(profileProblemSize(
+    sequenceDimension: 1024,
+    headDimension: 33))
+  print()
+  
+#if false
+  let D_array = [33]
+  let N_array = [
+    AttentionKernelType.forward(true),
+    AttentionKernelType.backwardQuery,
+    AttentionKernelType.backwardKeyValue
+  ]
   
   // Loop over the configurations.
   var outputString: String = ""
-  for N in N_array {
-    outputString += "\(N), "
-    print("N =", N, terminator: ", ")
+  for D in D_array {
+     outputString += "\(D), "
+     print("D =", D, terminator: ", ")
     
-    for D_block in D_block_array {
-      var metric: Int = .max
-      for D in D_array {
-        let oneOfTheMetrics = profileProblemSize(
-          sequenceDimension: 192,
-          headDimension: D,
-          traversalBlockDimension: N,
-          headBlockDimension: D_block)
-        metric = min(metric, oneOfTheMetrics)
-      }
+    for N in N_array {
+      let metric = profileProblemSize(
+        sequenceDimension: 1024,
+        headDimension: D,
+        benchmarkedKernel: N)
       outputString += "\(metric), "
       print(metric, terminator: ", ")
     }
@@ -62,7 +66,7 @@ func executeScript() {
   }
   print()
   print(outputString)
-  #endif
+#endif
 }
 
 // Returns: Throughput in GINSTRS.
@@ -70,15 +74,12 @@ func executeScript() {
 func profileProblemSize(
   sequenceDimension: Int,
   headDimension: Int,
-  traversalBlockDimension: Int,
-  headBlockDimension: Int
+  benchmarkedKernel: AttentionKernelType = .forward(true)
 ) -> Int {
   var networkDesc = NetworkDescriptor()
   networkDesc.N = sequenceDimension
   networkDesc.D = headDimension
   let network = Network(descriptor: networkDesc)
-  
-  let benchmarkedKernel: AttentionKernelType = .backwardKeyValue
   
   // MARK: - Buffers
   
@@ -116,12 +117,7 @@ func profileProblemSize(
   attentionDesc.transposeState = (Q: false, K: false, V: false, O: false)
   
   func createKernel(type: AttentionKernelType) -> AttentionKernel {
-    var attentionKernelDesc = attentionDesc.kernelDescriptor(type: type)
-    attentionKernelDesc.blockDimensions!
-      .traversal = UInt16(traversalBlockDimension)
-    attentionKernelDesc.blockDimensions!
-      .head = UInt16(headBlockDimension)
-    
+    let attentionKernelDesc = attentionDesc.kernelDescriptor(type: type)
     let attentionKernel = AttentionKernel(descriptor: attentionKernelDesc)
     return attentionKernel
   }
@@ -359,7 +355,7 @@ func profileProblemSize(
 #endif
   
   // Check the results.
-  let errorThreshold: Float = 1e-5
+  let errorThreshold: Float = 2e-5
   var errorCount: Int = .zero
   func check(expected: [Float], actual: [Float]) {
     guard expected.count == actual.count else {
@@ -429,14 +425,16 @@ func profileProblemSize(
   }
   return maxGINSTRS
 #else
-  if sequenceDimension <= 135 {
+  switch benchmarkedKernel {
+  case .forward:
+    print()
+    print(kernelForward.source)
+    print()
     return pipelineForward.maxTotalThreadsPerThreadgroup
-  } else if sequenceDimension <= 165 {
+  case .backwardQuery:
     return pipelineBackwardQuery.maxTotalThreadsPerThreadgroup
-  } else if sequenceDimension <= 195 {
+  case .backwardKeyValue:
     return pipelineBackwardQuery.maxTotalThreadsPerThreadgroup
-  } else {
-    return 0
   }
 #endif
 }

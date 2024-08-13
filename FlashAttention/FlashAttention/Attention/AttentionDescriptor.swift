@@ -90,10 +90,10 @@ extension AttentionDescriptor {
     // Block sizes for the case where nothing is cached.
     if mtlDevice.supportsFamily(.apple9) {
       output.blockDimensions = (
-        parallelization: 16, traversal: 128, head: 8)
+        parallelization: 16, traversal: 128, head: 16)
     } else {
       output.blockDimensions = (
-        parallelization: 32, traversal: 64, head: 64)
+        parallelization: 32, traversal: 64, head: 32)
     }
     
     // Assign the transpose state.
@@ -133,8 +133,7 @@ extension AttentionDescriptor {
       output.cacheState[.dK] = cacheOutputs
     }
     
-    // TODO: Specify the usage of async load/store on a per-operand level.
-    output.preferAsyncCache = true
+    output.preferAsyncCache = false
     output.preferAsyncLoad = true
     
     return output

@@ -44,21 +44,24 @@ import QuartzCore
 //
 // To benchmark the pathways:
 // - Check for correctness regressions on M3. [DONE]
-// - Confirm the effectiveness of async copy elisions.
-//   - M1 performance should not regress (addressSpace = threadgroup).
-//   - M3 performance should improve (addressSpace = device).
-//   - Find optimal address spaces on each architecture.
+// - Confirm the effectiveness of async copy elisions. [DONE]
+//   - M1 performance should not regress (addressSpace = threadgroup). [DONE]
+//   - M3 performance should improve (addressSpace = device). [DONE]
+//   - Find optimal address spaces on each architecture. [DONE]
 // - Find the reason for oscillatory performance that suspiciously looks like
 //   the compute work along the head edge, is not being elided.
 //   - Can we find a patch that doesn't harm occupancy?
-// - Find additional regressions due to indivisible problem sizes.
-//   - Compare side by side:
-//   - One less than the power of 2 (both sequence and head decrease)
-//   - The power of 2
+// - Find additional regressions due to indivisible problem sizes. [DONE]
+//   - Compare side by side: [DONE]
+//   - One less than the power of 2 (both sequence and head decrease) [DONE]
+//   - The power of 2 [DONE]
 // - Test for coupling betwen optimal address space and problem divisibility.
 //   - Is this affected by whether the problem size is divisible? If so,
 //     something is going wrong.
 
-// TODO: Currently figure out why there is an occupancy regression on M1,
-// when async copies are avoided. The regression happens for both loops, when
-// the RHS is read from device memory. It scales linearly with D_block.
+// TODO: To fix the issue of performance depending on head size divisibility.
+// - Analyze the generated source code.
+// - Find how it might be refactored, to bring the extra branch outside of
+//   the inner loop.
+// - Test how the fix changes occupancy.
+// - Test how the fix changes performance.
