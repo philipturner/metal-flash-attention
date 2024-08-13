@@ -405,12 +405,12 @@ extension AttentionKernel {
     
     // MARK: - Top Level Specification
     
-    func initializeStatement() -> String {
-      if cached(A) {
-        return ""
-      } else {
-        return initializeAccumulator()
-      }
+    func loopEnd() -> UInt16 {
+      paddedHeadDimension
+    }
+    
+    func loopEndFloor() -> UInt16 {
+      loopEnd() - loopEnd() % blockDimensions.head
     }
     
     func unrollStatement() -> String {
@@ -421,10 +421,21 @@ extension AttentionKernel {
       }
     }
     
+    func initializeStatement() -> String {
+      if cached(A) {
+        // Zero-initialize during the multiply-accumulate loop.
+        return ""
+      } else {
+        // Zero-initialize beforehand.
+        return initializeAccumulator()
+      }
+    }
+    
     func accumulateConditional() -> String {
       if cached(A) {
         return "((d_outer > 0) || (d > 0))"
       } else {
+        // The accumulator is already initialized.
         return "true"
       }
     }
@@ -437,18 +448,11 @@ extension AttentionKernel {
       }
     }
     
-    func loopEnd() -> UInt16 {
-      paddedHeadDimension
-    }
-    
-    func loopEndFloor() -> UInt16 {
-      loopEnd() - loopEnd() % blockDimensions.head
-    }
-    
     func firstIterations() -> String {
       var descriptor = LoopIterationDescriptor()
       descriptor.accumulateConditional = accumulateConditional()
       descriptor.registerOffset = registerOffset()
+      
       return """
       
       \(unrollStatement())
@@ -464,18 +468,15 @@ extension AttentionKernel {
     }
     
     func lastIteration() -> String {
-      guard loopEndFloor() < loopEnd() else {
-        return ""
-      }
-      
       var descriptor = LoopIterationDescriptor()
       descriptor.accumulateConditional = accumulateConditional()
       descriptor.registerOffset = registerOffset()
       descriptor.addressSpaceLHS = .threadgroup
       descriptor.addressSpaceRHS = .threadgroup
+      
       return """
       
-      {
+      if (\(loopEndFloor() < loopEnd())) {
         ushort d_outer = \(loopEndFloor());
         \(loopIteration(descriptor: descriptor))
       }
@@ -483,6 +484,7 @@ extension AttentionKernel {
       """
     }
     
+    // Collect all of the statements into one string.
     return """
     
     \(allocateAccumulator())

@@ -520,43 +520,74 @@ extension AttentionKernel {
       """
     }
     
-    // Outer loop over the head dimension.
-    var outerIterationDesc = LoopIterationDescriptor()
-    let loopUnroll = cached(C) ? "full" : "disable"
-    outerIterationDesc.registerOffset = cached(C) ? "d_outer" : "0"
-    outerIterationDesc.registerSize = blockDimensions.head
+    // MARK: - Top Level Specification
     
-    // Add the first iterations.
-    let loopEnd = paddedHeadDimension
-    let loopEndFloor = loopEnd - loopEnd % blockDimensions.head
-    var output = """
-    
-    #pragma clang loop unroll(\(loopUnroll))
-    for (
-      ushort d_outer = 0;
-      d_outer < \(loopEndFloor);
-      d_outer += \(blockDimensions.head)
-    ) {
-      \(gatedLoopIteration(descriptor: outerIterationDesc))
+    func loopEnd() -> UInt16 {
+      paddedHeadDimension
     }
     
-    """
+    func loopEndFloor() -> UInt16 {
+      loopEnd() - loopEnd() % blockDimensions.head
+    }
     
-    // Add the last iteration, if unaligned.
-    if loopEndFloor < loopEnd {
-      outerIterationDesc.addressSpaceLHS = .threadgroup
-      outerIterationDesc.addressSpaceRHS = .threadgroup
-      outerIterationDesc.registerSize = paddedHeadEdge
-      output += """
+    func unrollStatement() -> String {
+      if cached(C) {
+        return "#pragma clang loop unroll(full)"
+      } else {
+        return "#pragma clang loop unroll(disable)"
+      }
+    }
+    
+    func registerOffset() -> String {
+      if cached(C) {
+        return "d_outer"
+      } else {
+        return "0"
+      }
+    }
+    
+    func firstIterations() -> String {
+      var descriptor = LoopIterationDescriptor()
+      descriptor.registerOffset = registerOffset()
+      descriptor.registerSize = blockDimensions.head
       
-      {
-        ushort d_outer = \(loopEndFloor);
-        \(loopIteration(descriptor: outerIterationDesc))
+      return """
+      
+      \(unrollStatement())
+      for (
+        ushort d_outer = 0;
+        d_outer < \(loopEndFloor());
+        d_outer += \(blockDimensions.head)
+      ) {
+        \(gatedLoopIteration(descriptor: descriptor))
       }
       
       """
     }
     
-    return output
+    func lastIteration() -> String {
+      var descriptor = LoopIterationDescriptor()
+      descriptor.registerOffset = registerOffset()
+      descriptor.registerSize = paddedHeadEdge
+      descriptor.addressSpaceLHS = .threadgroup
+      descriptor.addressSpaceRHS = .threadgroup
+      
+      return """
+      
+      if (\(loopEndFloor() < loopEnd())) {
+        ushort d_outer = \(loopEndFloor());
+        \(loopIteration(descriptor: descriptor))
+      }
+      
+      """
+    }
+    
+    // Collect all of the statements into one string.
+    return """
+    
+    \(firstIterations())
+    \(lastIteration())
+    
+    """
   }
 }
