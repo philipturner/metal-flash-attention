@@ -13,32 +13,26 @@ import Metal
 #if true
 func executeScript() {
   // Automate the execution of the test suite.
-//    profileProblemSize(sequenceDimension: 10, headDimension: 3)
-//    profileProblemSize(sequenceDimension: 10, headDimension: 80)
-//    profileProblemSize(sequenceDimension: 8, headDimension: 2)
-//    profileProblemSize(sequenceDimension: 9, headDimension: 2)
-//    profileProblemSize(sequenceDimension: 23, headDimension: 2)
-//    profileProblemSize(sequenceDimension: 24, headDimension: 2)
-//    profileProblemSize(sequenceDimension: 25, headDimension: 2)
-//    profileProblemSize(sequenceDimension: 192, headDimension: 77)
-//    profileProblemSize(sequenceDimension: 192, headDimension: 80)
-//    profileProblemSize(sequenceDimension: 93, headDimension: 32)
-//    profileProblemSize(sequenceDimension: 99, headDimension: 35)
-//    profileProblemSize(sequenceDimension: 64, headDimension: 32)
-//    profileProblemSize(sequenceDimension: 32, headDimension: 64)
-//    profileProblemSize(sequenceDimension: 4, headDimension: 1)
-//    profileProblemSize(sequenceDimension: 4, headDimension: 2)
-//    profileProblemSize(sequenceDimension: 384, headDimension: 95)
-//    profileProblemSize(sequenceDimension: 777, headDimension: 199)
-  
-  print()
-  print(profileProblemSize(
-    sequenceDimension: 1024,
-    headDimension: 33))
-  print()
+  profileProblemSize(sequenceDimension: 10, headDimension: 3)
+  profileProblemSize(sequenceDimension: 10, headDimension: 80)
+  profileProblemSize(sequenceDimension: 8, headDimension: 2)
+  profileProblemSize(sequenceDimension: 9, headDimension: 2)
+  profileProblemSize(sequenceDimension: 23, headDimension: 2)
+  profileProblemSize(sequenceDimension: 24, headDimension: 2)
+  profileProblemSize(sequenceDimension: 25, headDimension: 2)
+  profileProblemSize(sequenceDimension: 192, headDimension: 77)
+  profileProblemSize(sequenceDimension: 192, headDimension: 80)
+  profileProblemSize(sequenceDimension: 93, headDimension: 32)
+  profileProblemSize(sequenceDimension: 99, headDimension: 35)
+  profileProblemSize(sequenceDimension: 64, headDimension: 32)
+  profileProblemSize(sequenceDimension: 32, headDimension: 64)
+  profileProblemSize(sequenceDimension: 4, headDimension: 1)
+  profileProblemSize(sequenceDimension: 4, headDimension: 2)
+  profileProblemSize(sequenceDimension: 384, headDimension: 95)
+  profileProblemSize(sequenceDimension: 777, headDimension: 199)
   
 #if false
-  let D_array = [33]
+  let D_array = Array(32...96)
   let N_array = [
     AttentionKernelType.forward(true),
     AttentionKernelType.backwardQuery,
@@ -53,7 +47,7 @@ func executeScript() {
     
     for N in N_array {
       let metric = profileProblemSize(
-        sequenceDimension: 1024,
+        sequenceDimension: 8192,
         headDimension: D,
         benchmarkedKernel: N)
       outputString += "\(metric), "
@@ -134,7 +128,17 @@ func profileProblemSize(
     attentionDesc.setFunctionConstants(functionConstants)
     let function = try! library.makeFunction(
       name: "attention", constantValues: functionConstants)
-    return try! device.makeComputePipelineState(function: function)
+    
+    let pipelineDesc = MTLComputePipelineDescriptor()
+    pipelineDesc.computeFunction = function
+    //    switch kernel.type {
+    //    case .forward:
+    //      pipelineDesc.maxTotalThreadsPerThreadgroup = 1024
+    //    case .backwardQuery, .backwardKeyValue:
+    //      pipelineDesc.maxTotalThreadsPerThreadgroup = 1024
+    //    }
+    return try! device.makeComputePipelineState(
+      descriptor: pipelineDesc, options: [], reflection: nil)
   }
   let pipelineForward = createPipeline(kernel: kernelForward)
   let pipelineBackwardQuery = createPipeline(kernel: kernelBackwardQuery)
@@ -238,7 +242,7 @@ func profileProblemSize(
     let start = commandBuffer.gpuStartTime
     let end = commandBuffer.gpuEndTime
     let latency = end - start
-    // print("latency:", Int(latency * 1e6))
+    print("latency:", Int(latency * 1e6))
     return latency
   }
   executeCommandBuffer(dispatchCount: 1)
@@ -427,9 +431,6 @@ func profileProblemSize(
 #else
   switch benchmarkedKernel {
   case .forward:
-    print()
-    print(kernelForward.source)
-    print()
     return pipelineForward.maxTotalThreadsPerThreadgroup
   case .backwardQuery:
     return pipelineBackwardQuery.maxTotalThreadsPerThreadgroup

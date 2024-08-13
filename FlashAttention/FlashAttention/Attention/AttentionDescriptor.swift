@@ -133,7 +133,7 @@ extension AttentionDescriptor {
       output.cacheState[.dK] = cacheOutputs
     }
     
-    output.preferAsyncCache = false
+    output.preferAsyncCache = true
     output.preferAsyncLoad = true
     
     return output
