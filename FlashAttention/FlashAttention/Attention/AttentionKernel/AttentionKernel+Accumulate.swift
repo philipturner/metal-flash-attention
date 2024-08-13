@@ -385,6 +385,8 @@ extension AttentionKernel {
               headStart: 0,
               headEnd: paddedHeadEdge,
               descriptor: descriptor))
+        
+          // TODO: Benchmark, remove this dead code, then benchmark again.
           if (d_outer + \(blockDimensions.head) < \(headDimension)) {
             \(innerLoopHead(
                 headStart: paddedHeadEdge,
@@ -520,57 +522,39 @@ extension AttentionKernel {
     
     // Outer loop over the head dimension.
     var outerIterationDesc = LoopIterationDescriptor()
-    if cached(C) {
-      let loopEnd = paddedHeadDimension
-      let loopEndFloor = loopEnd - loopEnd % blockDimensions.head
-      outerIterationDesc.registerOffset = "d_outer"
-      outerIterationDesc.registerSize = blockDimensions.head
-      
-      // Add the first iterations.
-      var output = """
-      
-      #pragma clang loop unroll(full)
-      for (
-        ushort d_outer = 0;
-        d_outer < \(loopEndFloor);
-        d_outer += \(blockDimensions.head)
-      ) {
-        \(gatedLoopIteration(descriptor: outerIterationDesc))
+    let loopUnroll = cached(C) ? "full" : "disable"
+    let loopEnd = paddedHeadDimension
+    let loopEndFloor = loopEnd - loopEnd % blockDimensions.head
+    
+    // Add the first iterations.
+    outerIterationDesc.registerOffset = cached(C) ? "d_outer" : "0"
+    outerIterationDesc.registerSize = blockDimensions.head
+    var output = """
+    
+    #pragma clang loop unroll(\(loopUnroll))
+    for (
+      ushort d_outer = 0;
+      d_outer < \(loopEndFloor);
+      d_outer += \(blockDimensions.head)
+    ) {
+      \(gatedLoopIteration(descriptor: outerIterationDesc))
+    }
+    
+    """
+    
+    // Add the last iteration, if unaligned.
+    if loopEndFloor < loopEnd {
+      outerIterationDesc.addressSpaceLHS = .threadgroup
+      outerIterationDesc.addressSpaceRHS = .threadgroup
+      outerIterationDesc.registerSize = paddedHeadEdge
+      output += """
+      {
+        ushort d_outer = \(loopEndFloor);
+        \(loopIteration(descriptor: outerIterationDesc))
       }
-      
-      """
-      
-      // Add the last iteration, if unaligned.
-      if loopEndFloor < loopEnd {
-        outerIterationDesc.addressSpaceLHS = .threadgroup
-        outerIterationDesc.addressSpaceRHS = .threadgroup
-        outerIterationDesc.registerSize = paddedHeadEdge
-        output += """
-        {
-          ushort d_outer = \(loopEndFloor);
-          \(loopIteration(descriptor: outerIterationDesc))
-        }
-        """
-      }
-      
-      return output
-    } else {
-      outerIterationDesc.registerOffset = "0"
-      outerIterationDesc.registerSize = blockDimensions.head
-      
-      // Add all of the iterations.
-      return """
-      
-      #pragma clang loop unroll(disable)
-      for (
-        ushort d_outer = 0;
-        d_outer < \(headDimension);
-        d_outer += \(blockDimensions.head)
-      ) {
-        \(gatedLoopIteration(descriptor: outerIterationDesc))
-      }
-
       """
     }
+    
+    return output
   }
 }
