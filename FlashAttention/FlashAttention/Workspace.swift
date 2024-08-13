@@ -59,14 +59,13 @@ import QuartzCore
 //   - Is this affected by whether the problem size is divisible? If so,
 //     something is going wrong.
 
-// TODO: To fix the issue of performance depending on head size divisibility.
+// Fix the issue of performance depending on head size divisibility.
 // - Analyze the generated source code.
 // - Find how it might be refactored, to bring the extra branch outside of
-//   the inner loop.
-// - Test how the fix changes occupancy.
-// - Test how the fix changes performance.
+//   the inner loop. [DONE]
+// - Test how the fix changes occupancy. [DONE]
+// - Test how the fix changes performance. [DONE]
 // - Try optimizing for when the head size is divisible by 8, but just not
-//   divisible by the block size.
-// - As one final optimization, try duplicating the GEMM work at the edge of
-//   the matrix (when possible) to fuse the final iteration with the rest. Or
-//   make the async copy pad the entire edge with zeroes.
+//   divisible by the block size. [DONE]
+// - Run benchmarks on M4, see whether the regression is minimized at very
+//   large head dimensions.

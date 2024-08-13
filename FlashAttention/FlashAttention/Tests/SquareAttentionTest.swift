@@ -13,28 +13,28 @@ import Metal
 #if true
 func executeScript() {
   // Automate the execution of the test suite.
-  profileProblemSize(sequenceDimension: 10, headDimension: 3)
-  profileProblemSize(sequenceDimension: 10, headDimension: 80)
-  profileProblemSize(sequenceDimension: 8, headDimension: 2)
-  profileProblemSize(sequenceDimension: 9, headDimension: 2)
-  profileProblemSize(sequenceDimension: 23, headDimension: 2)
-  profileProblemSize(sequenceDimension: 24, headDimension: 2)
-  profileProblemSize(sequenceDimension: 25, headDimension: 2)
-  profileProblemSize(sequenceDimension: 192, headDimension: 77)
-  profileProblemSize(sequenceDimension: 192, headDimension: 80)
-  profileProblemSize(sequenceDimension: 93, headDimension: 32)
-  profileProblemSize(sequenceDimension: 99, headDimension: 35)
-  profileProblemSize(sequenceDimension: 64, headDimension: 32)
-  profileProblemSize(sequenceDimension: 64, headDimension: 34)
-  profileProblemSize(sequenceDimension: 64, headDimension: 36)
-  profileProblemSize(sequenceDimension: 64, headDimension: 40)
-  profileProblemSize(sequenceDimension: 32, headDimension: 64)
-  profileProblemSize(sequenceDimension: 4, headDimension: 1)
-  profileProblemSize(sequenceDimension: 4, headDimension: 2)
-  profileProblemSize(sequenceDimension: 384, headDimension: 95)
-  profileProblemSize(sequenceDimension: 777, headDimension: 199)
+//  profileProblemSize(sequenceDimension: 10, headDimension: 3)
+//  profileProblemSize(sequenceDimension: 10, headDimension: 80)
+//  profileProblemSize(sequenceDimension: 8, headDimension: 2)
+//  profileProblemSize(sequenceDimension: 9, headDimension: 2)
+//  profileProblemSize(sequenceDimension: 23, headDimension: 2)
+//  profileProblemSize(sequenceDimension: 24, headDimension: 2)
+//  profileProblemSize(sequenceDimension: 25, headDimension: 2)
+//  profileProblemSize(sequenceDimension: 192, headDimension: 77)
+//  profileProblemSize(sequenceDimension: 192, headDimension: 80)
+//  profileProblemSize(sequenceDimension: 93, headDimension: 32)
+//  profileProblemSize(sequenceDimension: 99, headDimension: 35)
+//  profileProblemSize(sequenceDimension: 64, headDimension: 32)
+//  profileProblemSize(sequenceDimension: 64, headDimension: 34)
+//  profileProblemSize(sequenceDimension: 64, headDimension: 36)
+//  profileProblemSize(sequenceDimension: 64, headDimension: 40)
+//  profileProblemSize(sequenceDimension: 32, headDimension: 64)
+//  profileProblemSize(sequenceDimension: 4, headDimension: 1)
+//  profileProblemSize(sequenceDimension: 4, headDimension: 2)
+//  profileProblemSize(sequenceDimension: 384, headDimension: 95)
+//  profileProblemSize(sequenceDimension: 777, headDimension: 199)
   
-#if false
+#if true
   let D_array = Array(32...96)
   let N_array = [
     AttentionKernelType.forward(true),
@@ -50,7 +50,7 @@ func executeScript() {
     
     for N in N_array {
       let metric = profileProblemSize(
-        sequenceDimension: 1024,
+        sequenceDimension: 8192,
         headDimension: D,
         benchmarkedKernel: N)
       outputString += "\(metric), "
@@ -134,12 +134,12 @@ func profileProblemSize(
     
     let pipelineDesc = MTLComputePipelineDescriptor()
     pipelineDesc.computeFunction = function
-//    switch kernel.type {
-//    case .forward:
-//      pipelineDesc.maxTotalThreadsPerThreadgroup = 1024
-//    case .backwardQuery, .backwardKeyValue:
-//      pipelineDesc.maxTotalThreadsPerThreadgroup = 1024
-//    }
+    switch kernel.type {
+    case .forward:
+      pipelineDesc.maxTotalThreadsPerThreadgroup = 1024
+    case .backwardQuery, .backwardKeyValue:
+      pipelineDesc.maxTotalThreadsPerThreadgroup = 1024
+    }
     return try! device.makeComputePipelineState(
       descriptor: pipelineDesc, options: [], reflection: nil)
   }
@@ -245,14 +245,14 @@ func profileProblemSize(
     let start = commandBuffer.gpuStartTime
     let end = commandBuffer.gpuEndTime
     let latency = end - start
-    print("latency:", Int(latency * 1e6))
+    // print("latency:", Int(latency * 1e6))
     return latency
   }
   executeCommandBuffer(dispatchCount: 1)
   
   // MARK: - Validation
   
-#if true
+#if false
   let O = network.inferenceAttention()
   let L = (0..<sequenceDimension).map(network.createLTerm(rowID:))
   let D = (0..<sequenceDimension).map(network.createDTerm(rowID:))
@@ -401,7 +401,7 @@ func profileProblemSize(
   
   // MARK: - Profiling
   
-#if false
+#if true
   // Benchmark performance.
   var maxGINSTRS: Int = .zero
   for _ in 0..<5 {
