@@ -46,14 +46,16 @@ extension AttentionKernel {
       """
     }
     
-    func allocateLHS() -> String {
+    func allocateLHS(
+      descriptor: LoopIterationDescriptor
+    ) -> String {
       guard !cached(A) else {
         return ""
       }
       return """
       
       simdgroup_matrix_storage<float> \
-      \(A)_sram[\(blockDimensions.head) / 8];
+      \(A)_sram[\(descriptor.registerSize) / 8];
       
       """
     }
@@ -90,7 +92,9 @@ extension AttentionKernel {
       }
     }
     
-    func asyncLoadLHS() -> String {
+    func asyncLoadLHS(
+      descriptor: LoopIterationDescriptor
+    ) -> String {
       """
       
       threadgroup_barrier(mem_flags::mem_threadgroup);
@@ -103,9 +107,7 @@ extension AttentionKernel {
         ushort D_src_dimension = min(
           ushort(\(blockDimensions.head)),
           ushort(\(headDimension) - d_outer));
-        ushort D_dst_dimension = max(
-          ushort(\(paddedHeadEdge)),
-          ushort(D_src_dimension));
+        ushort D_dst_dimension = \(descriptor.registerSize);
         ushort R_dimension = min(
           uint(\(blockDimensions.parallelization)),
           uint(\(parallelizationDimension) - \(parallelizationGroupOffset)));
@@ -136,7 +138,7 @@ extension AttentionKernel {
         \(declareLHSLocation(descriptor: descriptor))
         
         #pragma clang loop unroll(full)
-        for (ushort d = 0; d < \(blockDimensions.head); d += 8) {
+        for (ushort d = 0; d < \(descriptor.registerSize); d += 8) {
           ushort2 origin(d, 0);
           \(A)_sram[d / 8].load(
             \(A)_src, \(leadingDimension(A)), origin, \(transposed(A)));
@@ -146,11 +148,11 @@ extension AttentionKernel {
       case .threadgroup:
         return """
         
-        \(asyncLoadLHS())
+        \(asyncLoadLHS(descriptor: descriptor))
         \(declareLHSLocation(descriptor: descriptor))
         
         #pragma clang loop unroll(full)
-        for (ushort d = 0; d < \(blockDimensions.head); d += 8) {
+        for (ushort d = 0; d < \(descriptor.registerSize); d += 8) {
           ushort2 origin(d, 0);
           \(A)_sram[d / 8].load(
             \(A)_src, \(leadingBlockDimension(A)), origin, \(transposed(A)));
@@ -220,9 +222,7 @@ extension AttentionKernel {
           ushort D_src_dimension = min(
             ushort(\(blockDimensions.head)),
             ushort(\(headDimension) - d_outer));
-          ushort D_dst_dimension = max(
-            ushort(\(paddedHeadEdge)),
-            ushort(D_src_dimension));
+          ushort D_dst_dimension = \(descriptor.registerSize);
           ushort C_src_dimension = min(
             uint(\(blockDimensions.traversal)),
             uint(\(traversalDimension) - \(traversalOffset)));
@@ -273,8 +273,6 @@ extension AttentionKernel {
     }
     
     func innerLoopHead(
-      headStart: UInt16,
-      headEnd: UInt16,
       descriptor: LoopIterationDescriptor
     ) -> String {
       if descriptor.addressSpaceLHS! == .device ||
@@ -282,7 +280,7 @@ extension AttentionKernel {
         return """
         
         #pragma clang loop unroll(full)
-        for (ushort d = \(headStart); d < \(headEnd); d += 8) {
+        for (ushort d = 0; d < \(descriptor.registerSize); d += 8) {
           \(innerLoopTraversal(
               traversalStart: "0",
               traversalEnd: "\(blockDimensions.traversal)",
@@ -294,7 +292,7 @@ extension AttentionKernel {
         return """
         
         #pragma clang loop unroll(full)
-        for (ushort d = \(headStart); d < \(headEnd); d += 8) {
+        for (ushort d = 0; d < \(descriptor.registerSize); d += 8) {
           \(innerLoopTraversal(
               traversalStart: "0",
               traversalEnd: paddedTraversalEdge,
@@ -326,32 +324,14 @@ extension AttentionKernel {
     func loopIteration(
       descriptor: LoopIterationDescriptor
     ) -> String {
-      if descriptor.addressSpaceLHS! == .device ||
-          descriptor.addressSpaceRHS! == .device {
-        return """
-        
-        \(allocateLHS())
-        \(loadLHS(descriptor: descriptor))
-        \(loadRHS(descriptor: descriptor))
-        \(innerLoopHead(
-            headStart: 0,
-            headEnd: blockDimensions.head,
-            descriptor: descriptor))
-        
-        """
-      } else {
-        return """
-        
-        \(allocateLHS())
-        \(loadLHS(descriptor: descriptor))
-        \(loadRHS(descriptor: descriptor))
-        \(innerLoopHead(
-            headStart: 0,
-            headEnd: descriptor.registerSize,
-            descriptor: descriptor))
-        
-        """
-      }
+      return """
+      
+      \(allocateLHS(descriptor: descriptor))
+      \(loadLHS(descriptor: descriptor))
+      \(loadRHS(descriptor: descriptor))
+      \(innerLoopHead(descriptor: descriptor))
+      
+      """
     }
     
     func gatedLoopIteration(
@@ -382,8 +362,8 @@ extension AttentionKernel {
         (\(traversalDimension) % \(blockDim) == 0) ||
         (\(traversalOffset) + \(blockDim) <= \(traversalDimension))
       ) && (
-        (\(headDimension) % \(blockDimensions.head) == 0) ||
-        (d_outer + \(blockDimensions.head) <= \(headDimension))
+        (\(headDimension) % 8 == 0) ||
+        (d_outer + \(descriptor.registerSize) <= \(headDimension))
       )
       """
       
@@ -468,14 +448,12 @@ extension AttentionKernel {
       descriptor.accumulateConditional = accumulateConditional()
       descriptor.registerOffset = registerOffset()
       descriptor.registerSize = paddedHeadEdge
-      descriptor.addressSpaceLHS = .threadgroup
-      descriptor.addressSpaceRHS = .threadgroup
       
       return """
       
       if (\(loopEndFloor() < loopEnd())) {
         ushort d_outer = \(loopEndFloor());
-        \(loopIteration(descriptor: descriptor))
+        \(gatedLoopIteration(descriptor: descriptor))
       }
       
       """

@@ -65,3 +65,8 @@ import QuartzCore
 //   the inner loop.
 // - Test how the fix changes occupancy.
 // - Test how the fix changes performance.
+// - Try optimizing for when the head size is divisible by 8, but just not
+//   divisible by the block size.
+// - As one final optimization, try duplicating the GEMM work at the edge of
+//   the matrix (when possible) to fuse the final iteration with the rest. Or
+//   make the async copy pad the entire edge with zeroes.
