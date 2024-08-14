@@ -79,6 +79,17 @@ extension AttentionKernel {
     }
   }
   
+  func storeFunction(_ operand: AttentionOperand) -> String {
+    guard let memoryPrecision = memoryPrecisions[operand] else {
+      fatalError("Precision of \(operand) was not specified.")
+    }
+    if memoryPrecision == .BF16 {
+      return "store_bfloat"
+    } else {
+      return "store"
+    }
+  }
+  
   func cached(_ operand: AttentionOperand) -> Bool {
     guard let output = cacheState[operand] else {
       fatalError("Cache state of \(operand) was not specified.")

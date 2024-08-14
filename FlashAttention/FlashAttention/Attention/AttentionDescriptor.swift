@@ -123,8 +123,8 @@ extension AttentionDescriptor {
     }
     
     // Assign the cache state.
-    let cacheInputs = false
-    let cacheOutputs = false
+    let cacheInputs = true
+    let cacheOutputs = true
     
     switch type {
     case .forward:
@@ -161,7 +161,6 @@ extension AttentionDescriptor {
   func memoryPrecisions() -> [AttentionOperand: GEMMOperandPrecision] {
     var output: [AttentionOperand: GEMMOperandPrecision] = [:]
     
-    // We are not worrying about the BF16 -> FP32 conversion for now.
     if lowPrecisionInputs {
       output[.Q] = .FP16
       output[.K] = .FP16
@@ -178,11 +177,17 @@ extension AttentionDescriptor {
     output[.L] = .FP32
     output[.D] = .FP32
     
-    // We are not worrying about the outputs for now.
-    output[.O] = .FP32
-    output[.dV] = .FP32
-    output[.dK] = .FP32
-    output[.dQ] = .FP32
+    if lowPrecisionOutputs {
+      output[.O] = .FP16
+      output[.dV] = .FP32
+      output[.dK] = .FP32
+      output[.dQ] = .FP32
+    } else {
+      output[.O] = .FP32
+      output[.dV] = .FP32
+      output[.dK] = .FP32
+      output[.dQ] = .FP32
+    }
     
     return output
   }

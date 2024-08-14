@@ -222,8 +222,8 @@ extension AttentionKernel {
           #pragma clang loop unroll(full)
           for (ushort d = 0; d < \(descriptor.registerSize); d += 8) {
             ushort2 \(C)_origin(d, 0);
-            \(C)_sram[d / 8].store(
-              \(C)_src, \(leadingDimension(C)), 
+            \(C)_sram[d / 8].\(storeFunction(C))(
+              \(C)_src, \(leadingDimension(C)),
               \(C)_origin, \(transposed(C)));
           }
         }
@@ -237,7 +237,7 @@ extension AttentionKernel {
         #pragma clang loop unroll(full)
         for (ushort d = 0; d < \(descriptor.registerSize); d += 8) {
           ushort2 \(C)_origin(d, 0);
-          \(C)_sram[d / 8].store(
+          \(C)_sram[d / 8].\(storeFunction(C))(
             \(C)_src, \(leadingBlockDimension(C)),
             \(C)_origin, \(transposed(C)));
         }

@@ -117,6 +117,14 @@ extension AttentionKernel {
         }
       }
       
+      // Distinct from the block bytes that would be used to calculate
+      // the threadgroup memory allocation.
+      func blockBytesDerivativeO() -> UInt16 {
+        let memoryPrecision = memoryPrecisions[.dO]!
+        let size = UInt16(memoryPrecision.size)
+        return blockDimensions.parallelization * 8 * size
+      }
+      
       return """
       
       threadgroup_barrier(mem_flags::mem_threadgroup);
@@ -135,8 +143,8 @@ extension AttentionKernel {
           offset_src, \(transposed(.O)));
         
         auto dO_dst = (threadgroup \(memoryName(.dO))*)(threadgroup_block);
-        auto O_dst = (threadgroup \(memoryName(.O))*)(threadgroup_block);
-        O_dst += \(blockDimensions.parallelization * 8);
+        auto O_dst = (threadgroup \(memoryName(.O))*)(
+          threadgroup_block + \(blockBytesDerivativeO()));
         
         ushort D_src_dimension = \(headDimension) % 8;
         ushort D_dst_dimension = 8;
@@ -160,8 +168,8 @@ extension AttentionKernel {
       // Where the dO and O data will be read from.
       ushort2 offset_src(morton_offset.x, morton_offset.y + sidx * 8);
       auto dO_block = (threadgroup \(memoryName(.dO))*)(threadgroup_block);
-      auto O_block = (threadgroup \(memoryName(.O))*)(threadgroup_block);
-      O_block += \(blockDimensions.parallelization * 8);
+      auto O_block = (threadgroup \(memoryName(.O))*)(
+        threadgroup_block + \(blockBytesDerivativeO()));
       
       dO_block = simdgroup_matrix_storage<\(memoryName(.dO))>
       ::apply_offset(

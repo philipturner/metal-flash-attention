@@ -81,7 +81,8 @@ func profileProblemSize(
   // MARK: - Kernels
   
   var attentionDesc = AttentionDescriptor()
-  attentionDesc.lowPrecisionInputs = true
+  attentionDesc.lowPrecisionInputs = false
+  attentionDesc.lowPrecisionOutputs = true
   attentionDesc.matrixDimensions = (
     R: UInt32(sequenceDimension),
     C: UInt32(sequenceDimension),
@@ -383,10 +384,12 @@ func profileProblemSize(
 #endif
   
   // Check the results.
-  // - We may eventually need a more sophisticated model of rounding error.
   var tolerance: Float = 2e-5
   if attentionDesc.lowPrecisionInputs {
      tolerance = max(tolerance, 5e-2)
+  }
+  if attentionDesc.lowPrecisionOutputs {
+    tolerance = max(tolerance, 2e-3)
   }
   
   var errorCount: Int = .zero

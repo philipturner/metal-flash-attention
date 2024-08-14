@@ -169,7 +169,7 @@ extension AttentionKernel {
         #pragma clang loop unroll(full)
         for (ushort d = \(headStart); d < \(headEnd); d += 8) {
           ushort2 \(operand)_origin(d, 0);
-          \(operand)_sram[(d_outer + d) / 8].store(
+          \(operand)_sram[(d_outer + d) / 8].\(storeFunction(operand))(
             \(operand)_src, \(leadingDimensionOperand(descriptor)),
             \(operand)_origin, \(transposed(operand)));
         }
