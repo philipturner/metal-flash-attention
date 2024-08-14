@@ -57,9 +57,16 @@ import Metal
 // - transposeState
 
 struct AttentionDescriptor {
+  // Not a very flexible API. Clients can change this to provide more granular
+  // access (to individual operands), at the cost of removing a high-level
+  // abstraction.
+  var lowPrecisionAttentionMatrix: Bool = false
+  var lowPrecisionInputs: Bool = false
   var matrixDimensions: (R: UInt32, C: UInt32, D: UInt16)?
   var transposeState: (Q: Bool, K: Bool, V: Bool, O: Bool)?
 }
+
+// MARK: - PSO Generation
 
 extension AttentionDescriptor {
   /// Initialize the kernel descriptor using another descriptor, which just
@@ -154,6 +161,9 @@ extension AttentionDescriptor {
       // output.targetOccupancy = 1024
     }
     
+    // Choose the precision for each operand.
+    // TODO
+    
     return output
   }
 }
@@ -175,3 +185,56 @@ extension AttentionDescriptor {
     constants.setConstantValue(&C, type: .uint, index: 1)
   }
 }
+
+// MARK: - Precision Assignment
+
+extension AttentionDescriptor {
+  private func operandMemoryPrecisions(
+  ) -> [AttentionOperand: GEMMOperandPrecision] {
+    var output: [AttentionOperand: GEMMOperandPrecision] = [:]
+    
+    if lowPrecisionInputs {
+      output[.Q] = .FP16
+      output[.K] = .FP16
+      output[.V] = .FP16
+      output[.dO] = .FP32
+    } else {
+      output[.Q] = .FP32
+      output[.K] = .FP32
+      output[.V] = .FP32
+      output[.dO] = .FP32
+    }
+    
+    // We haven't yet determined a method for specifying that L/D terms are
+    // FP16 or BF16.
+    output[.L] = .FP32
+    output[.D] = .FP32
+    
+    // Outputs are always FP32 for now.
+    output[.O] = .FP32
+    output[.dV] = .FP32
+    output[.dK] = .FP32
+    output[.dQ] = .FP32
+    
+    return output
+  }
+  
+  private func attentionMatrixRegisterPrecisions(
+    operandMemoryPrecisions: [AttentionOperand: GEMMOperandPrecision]
+  ) -> [AttentionOperand: GEMMOperandPrecision] {
+    var output: [AttentionOperand: GEMMOperandPrecision] = [:]
+    
+    if lowPrecisionAttentionMatrix {
+      // If both inputs are FP16, we can set the outer product accumulator to
+      // FP16 as well. Otherwise, keep the accumulator at FP32.
+      fatalError("Not implemented.")
+    } else {
+      output[.S] = .FP32
+      output[.P] = .FP32
+      output[.dP] = .FP32
+      output[.dS] = .FP32
+    }
+  }
+}
+
+

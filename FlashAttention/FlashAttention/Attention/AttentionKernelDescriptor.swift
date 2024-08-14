@@ -36,11 +36,17 @@ struct AttentionKernelDescriptor {
   /// Required. The problem size along the head dimension.
   var headDimension: UInt16?
   
+  /// The precision of each operand accessed by the kernel.
+  var memoryPrecisions: [AttentionOperand: GEMMOperandPrecision] = [:]
+  
   /// Reads with a one-to-one mapping to threads (like GEMM store) and writes.
   var preferAsyncCache: Bool?
   
   /// Reads that are shared among threads (like GEMM load).
   var preferAsyncLoad: Bool?
+  
+  /// The precision of each operand accessed by the kernel.
+  var registerPrecisions: [AttentionOperand: GEMMOperandPrecision] = [:]
   
   /// Optional. Desired occupancy in threads per core.
   ///
