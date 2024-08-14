@@ -117,7 +117,7 @@ extension GEMMKernelDescriptor {
     // - iOS 17
     //   - Swift debug mode,   Metal API validation on:   ≥0 μs
     //   - Swift release mode, Metal API validation off:  ≥0 μs
-    let mtlDevice = MTLCreateSystemDefaultDevice()!
+    let mtlDevice = MTLContext.global.device
     
     // Trim the device name to something easier to process.
     //

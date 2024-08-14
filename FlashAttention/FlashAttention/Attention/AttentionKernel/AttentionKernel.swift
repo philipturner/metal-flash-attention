@@ -30,6 +30,7 @@ struct AttentionKernel {
   
   // Categorical information about various operand attributes.
   var cacheState: [AttentionOperand: Bool]
+  var memoryPrecisions: [AttentionOperand: GEMMOperandPrecision]
   var preferAsyncCache: Bool
   var preferAsyncLoad: Bool
   var transposeState: [AttentionOperand: Bool]
@@ -57,11 +58,15 @@ struct AttentionKernel {
     self.headDimension = headDimension
     
     self.cacheState = descriptor.cacheState
+    self.memoryPrecisions = descriptor.memoryPrecisions
     self.preferAsyncCache = preferAsyncCache
     self.preferAsyncLoad = preferAsyncLoad
     self.transposeState = descriptor.transposeState
     self.type = type
     
+    // TODO: Eventually, reduce the threadgroup memory allocation. Since we
+    // only read one operand at a time, there is no coupling between starting
+    // address and the precision of anything.
     threadgroupSize = 32 * (blockDimensions.parallelization / 8)
     threadgroupMemoryAllocation = max(
       blockDimensions.parallelization * blockDimensions.head * 4,
@@ -80,36 +85,8 @@ struct AttentionKernel {
         blockDimensions.traversal * 4)
     }
     
-    // Add the contents of the headers.
-    source += """
-    
-    \(createMetalSimdgroupEvent())
-    \(createMetalSimdgroupMatrixStorage())
-    using namespace metal;
-    
-    
-    
-    """
-    
     // Add the contents of the function.
-    source += createFunctionSignature()
-    source += createSetup()
-    
-    switch type {
-    case .forward:
-      source += loopForward()
-    case .backwardQuery:
-      source += loopBackwardQuery()
-    case .backwardKeyValue:
-      source += loopBackwardKeyValue()
-    }
-    
-    source += createCleanup(type: type)
-    source += """
-    
-    }
-    
-    """
+    source = createSource()
   }
 }
 
@@ -129,7 +106,9 @@ extension AttentionKernel {
     }
     return output
   }
-  
+}
+
+extension AttentionKernel {
   func sequenceLength(_ operand: AttentionOperand) -> String {
     switch operand {
     case .Q, .dQ: return "R"
@@ -239,71 +218,5 @@ extension AttentionKernel {
     var output = (remainder) == 0 ? (blockDim) : (remainder)
     output = (((output)) + 7) / 8 * 8
     return output
-  }
-}
-
-// MARK: - Function Signature
-
-extension AttentionKernel {
-  func createFunctionSignature() -> String {
-    // What operands does the kernel use?
-    var operands: [AttentionOperand] = []
-    switch type {
-    case .forward(let computeL):
-      operands += [.Q, .K, .V, .O]
-      if computeL {
-        operands += [.L]
-      }
-    case .backwardQuery:
-      operands += [.Q, .K, .V, .O]
-      operands += [.dO, .dQ]
-      operands += [.L, .D]
-    case .backwardKeyValue:
-      operands += [.Q, .K, .V]
-      operands += [.dO, .dV, .dK]
-      operands += [.L, .D]
-    }
-    operands.sort {
-      $0.bufferBinding! < $1.bufferBinding!
-    }
-    
-    // Declare the buffer binding for each operand.
-    func createBufferBindings() -> String {
-      var output: String = ""
-      for key in operands {
-        var line = "device float* \(key) "
-        line += "[[buffer(\(key.bufferBinding!))]],"
-        output += "  " + line + "\n"
-      }
-      return output
-    }
-    
-    // Generate the full signature.
-    return """
-    
-    // R = row dimension (output sequence)
-    // C = column dimension (input sequence)
-    constant uint R [[function_constant(0)]];
-    constant uint C [[function_constant(1)]];
-    
-    // Declare the function.
-    kernel void attention(
-      \(createBufferBindings())
-      threadgroup uchar *threadgroup_block [[threadgroup(0)]],
-      
-      uint gid [[threadgroup_position_in_grid]],
-      ushort sidx [[simdgroup_index_in_threadgroup]],
-      ushort lane_id [[thread_index_in_simdgroup]]
-    ) {
-      ushort2 morton_offset = morton_order(lane_id);
-      uint parallelization_group_offset = gid;
-      parallelization_group_offset *= \(blockDimensions.parallelization);
-      
-      // Return early if the entire SIMD is out of bounds.
-      if (\(parallelizationGroupOffset) >= \(parallelizationDimension)) {
-        return;
-      }
-    
-    """
   }
 }

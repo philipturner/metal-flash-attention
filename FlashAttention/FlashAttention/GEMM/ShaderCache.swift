@@ -54,8 +54,8 @@ extension GEMMKernel {
       }
     }
     
-    // Create a MTLDevice object, a function call with very high latency.
-    let device = MTLCreateSystemDefaultDevice()!
+    // Create a MTLDevice object.
+    let device = MTLContext.global.device
     func createPipeline(library: MTLLibrary) -> MTLComputePipelineState {
       // Set the function constants.
       let constants = MTLFunctionConstantValues()

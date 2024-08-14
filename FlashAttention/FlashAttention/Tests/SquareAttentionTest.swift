@@ -81,6 +81,7 @@ func profileProblemSize(
   // MARK: - Kernels
   
   var attentionDesc = AttentionDescriptor()
+  attentionDesc.lowPrecisionInputs = false
   attentionDesc.matrixDimensions = (
     R: UInt32(sequenceDimension),
     C: UInt32(sequenceDimension),

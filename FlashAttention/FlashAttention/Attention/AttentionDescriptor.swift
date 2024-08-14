@@ -69,11 +69,6 @@ extension AttentionDescriptor {
   /// Initialize the kernel descriptor using another descriptor, which just
   /// specifies the problem size. Then, forget the information about problem
   /// size.
-  ///
-  /// > WARNING: This function makes high-latency API calls. Avoid calling this
-  /// function unless absolutely necessary. A good shader cache design should
-  /// avoid calling this function, if the corresponding kernel has already been
-  /// cached.
   func kernelDescriptor(
     type: AttentionKernelType
   ) -> AttentionKernelDescriptor {
@@ -83,9 +78,7 @@ extension AttentionDescriptor {
     }
     
     // Select the only GPU on an Apple silicon system.
-    //
-    // NOTE: High-latency API call. See the explanation in GEMMDescriptor.
-    let mtlDevice = MTLCreateSystemDefaultDevice()!
+    let mtlDevice = MTLContext.global.device
     
     var output = AttentionKernelDescriptor()
     output.headDimension = matrixDimensions.D

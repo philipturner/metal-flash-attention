@@ -1,33 +1,134 @@
 //
-//  AttentionKernel+OuterLoop.swift
+//  AttentionKernel+Source.swift
 //  FlashAttention
 //
 //  Created by Philip Turner on 7/2/24.
 //
 
-// High-level specification of the code structure.
+// Top level specification of the code structure.
 
-// MARK: - Minimal Pseudocode
+extension AttentionKernel {
+  func createSource() -> String {
+    func createLoop() -> String {
+      switch type {
+      case .forward:
+        return loopForward()
+      case .backwardQuery:
+        return loopBackwardQuery()
+      case .backwardKeyValue:
+        return loopBackwardKeyValue()
+      }
+    }
+    
+    return """
+    
+    \(createMetalSimdgroupEvent())
+    \(createMetalSimdgroupMatrixStorage())
+    using namespace metal;
+    
+    \(createConstants())
+    
+    // Declare the function.
+    kernel void attention(
+      \(createBufferBindings())
+      threadgroup uchar *threadgroup_block [[threadgroup(0)]],
+      
+      uint gid [[threadgroup_position_in_grid]],
+      ushort sidx [[simdgroup_index_in_threadgroup]],
+      ushort lane_id [[thread_index_in_simdgroup]]
+    ) {
+      ushort2 morton_offset = morton_order(lane_id);
+      uint parallelization_group_offset = gid;
+      parallelization_group_offset *= \(blockDimensions.parallelization);
+      
+      // Return early if the entire SIMD is out of bounds.
+      if (\(parallelizationGroupOffset) >= \(parallelizationDimension)) {
+        return;
+      }
+      
+      \(createSetup())
+      \(createLoop())
+      \(createCleanup(type: type))
+    }
+    
+    """
+  }
+}
+
+// MARK: - Function Signature
+
+extension AttentionKernel {
+  func createConstants() -> String {
+    """
+    
+    // R = row dimension (output sequence)
+    // C = column dimension (input sequence)
+    constant uint R [[function_constant(0)]];
+    constant uint C [[function_constant(1)]];
+    
+    """
+  }
+  
+  func createBufferBindings() -> String {
+    // What operands does the kernel use?
+    var operands: [AttentionOperand] = []
+    switch type {
+    case .forward(let computeL):
+      operands += [.Q, .K, .V, .O]
+      if computeL {
+        operands += [.L]
+      }
+    case .backwardQuery:
+      operands += [.Q, .K, .V, .O]
+      operands += [.dO, .dQ]
+      operands += [.L, .D]
+    case .backwardKeyValue:
+      operands += [.Q, .K, .V]
+      operands += [.dO, .dV, .dK]
+      operands += [.L, .D]
+    }
+    operands.sort {
+      $0.bufferBinding! < $1.bufferBinding!
+    }
+    
+    var output: String = ""
+    for key in operands {
+      var line = "device float* \(key) "
+      line += "[[buffer(\(key.bufferBinding!))]],"
+      output += "  " + line + "\n"
+    }
+    return output
+  }
+}
+
+// MARK: - Outer Loop
 
 // Forward
 //   for c in 0..<C {
 //     load K[c]
 //     S = Q * K^T
 //     (m, l, P) = softmax(m, l, S * scaleFactor)
+//
 //     O *= correction
 //     load V[c]
 //     O += P * V
 //   }
 //   O /= l
 //
+//   L = m + logBaseE(l)
+//
 // Backward Query
+//   D = dO * O
+//
 //   for c in 0..<C {
 //     load K[c]
 //     S = Q * K^T
 //     P = exp(S - L)
+//
 //     load V[c]
 //     dP = dO * V^T
 //     dS = P * (dP - D) * scaleFactor
+//
 //     load K[c]
 //     dQ += dS * K
 //   }
@@ -38,109 +139,18 @@
 //     load L[r]
 //     S^T = K * Q^T
 //     P^T = exp(S^T - L)
+//
+//     load dO[r]
+//     dV += P^T * dO
+//
 //     load dO[r]
 //     load D[r]
-//     dV += P^T * dO
 //     dP^T = V * dO^T
 //     dS^T = P^T * (dP^T - D) * scaleFactor
+//
 //     load Q[r]
 //     dK += dS^T * Q
 //   }
-
-// MARK: - Blocking Along the Head Dimension
-
-// The pseudocode assumes the head dimension (D) is 128.
-//
-// Forward
-//   // Setup
-//   initialize O[32][128]
-//   initialize m[32]
-//   initialize l[32]
-//
-//   // Outer Loop
-//   for c in 0..<C {
-//     repeat 4 times
-//       load Q[r][32]
-//       load K[c][32]
-//       S += Q * K^T
-//     (m, l, P) = softmax(m, l, S * scaleFactor)
-//
-//     O *= correction
-//     repeat 2 times
-//       load V[c][64]
-//       O[32][64] += P * V
-//   }
-//
-//   // Cleanup
-//   O /= l
-//   store dO
-//   store L
-//
-// Backward Query
-//   // Setup
-//   initialize dQ[32][128]
-//   load L[32]
-//   repeat 4 times
-//     load dO[r][32]
-//     load O[r][32]
-//     D += dO * O
-//
-//   // Outer Loop
-//   for c in 0..<C {
-//     repeat 4 times
-//       load Q[r][32]
-//       load K[c][32]
-//       S += Q * K^T
-//     P = exp(S - L)
-//
-//     repeat 4 times
-//       load dO[r][32]
-//       load V[c][32]
-//       dP += dO * V^T
-//     dS = P * (dP - D) * scaleFactor
-//
-//     repeat 2 times
-//       load K[c][64]
-//       dQ[32][64] += dS * K
-//   }
-//
-//   // Cleanup
-//   store dQ
-//   store D
-//
-// Backward Key-Value
-//   // Setup
-//   initialize dK[32][128]
-//   initialize dV[32][128]
-//
-//   // Outer Loop
-//   for r in 0..<R {
-//     load L[r]
-//     load D[r]
-//
-//     repeat 4 times
-//       load K[c][32]
-//       load Q[r][32]
-//       S^T += K * Q^T
-//     P^T = exp(S^T - L)
-//
-//     repeat 4 times
-//       load V[c][32]
-//       load dO[r][32]
-//       dV[32][32] += P^T * dO
-//       dP^T += V * dO^T
-//     dS^T = P^T * (dP^T - D) * scaleFactor
-//
-//     repeat 2 times
-//       load Q[r][64]
-//       dK[32][64] += dS^T * Q
-//   }
-//
-//   // Cleanup
-//   store dK
-//   store dV
-
-// MARK: - Implementation
 
 extension AttentionKernel {
   func loopForward() -> String {
