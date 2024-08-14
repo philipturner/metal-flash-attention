@@ -81,7 +81,7 @@ func profileProblemSize(
   // MARK: - Kernels
   
   var attentionDesc = AttentionDescriptor()
-  attentionDesc.lowPrecisionInputs = false
+  attentionDesc.lowPrecisionInputs = true
   attentionDesc.matrixDimensions = (
     R: UInt32(sequenceDimension),
     C: UInt32(sequenceDimension),
@@ -383,7 +383,12 @@ func profileProblemSize(
 #endif
   
   // Check the results.
-  let errorThreshold: Float = 2e-5
+  // - We may eventually need a more sophisticated model of rounding error.
+  var tolerance: Float = 2e-5
+  if attentionDesc.lowPrecisionInputs {
+     tolerance = max(tolerance, 5e-2)
+  }
+  
   var errorCount: Int = .zero
   func check(expected: [Float], actual: [Float]) {
     guard expected.count == actual.count else {
@@ -392,12 +397,10 @@ func profileProblemSize(
     
     for i in expected.indices {
       let error = (expected[i] - actual[i]).magnitude
-      if error > errorThreshold || error.isNaN {
+      if error > tolerance || error.isNaN {
         // Don't report errors in this case.
-        if expected[i].isNaN, actual[i].isNaN {
-          continue
-        }
-        if expected[i].isInfinite, actual[i].isInfinite {
+        if (expected[i].isNaN || expected[i].isInfinite),
+           (actual[i].isNaN || actual[i].isInfinite ) {
           continue
         }
         

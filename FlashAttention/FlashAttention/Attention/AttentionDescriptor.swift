@@ -166,7 +166,7 @@ extension AttentionDescriptor {
       output[.Q] = .FP16
       output[.K] = .FP16
       output[.V] = .FP16
-      output[.dO] = .FP32
+      output[.dO] = .BF16
     } else {
       output[.Q] = .FP32
       output[.K] = .FP32
