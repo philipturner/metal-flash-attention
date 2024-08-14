@@ -40,8 +40,10 @@ extension AttentionKernel {
           return """
           
           // Where the dO data will be read from.
-          auto dO_src = simdgroup_matrix_storage<float>::apply_offset(
-            dO, \(leadingDimension(.dO)), offset_src, \(transposed(.dO)));
+          auto dO_src = simdgroup_matrix_storage<\(memoryName(.dO))>
+          ::apply_offset(
+            dO, \(leadingDimension(.dO)), 
+            offset_src, \(transposed(.dO)));
           
           """
         }
@@ -57,7 +59,7 @@ extension AttentionKernel {
           return """
           
           simdgroup_matrix_storage<float> dO;
-          dO.load(
+          dO.\(loadFunction(.dO))(
             dO_src, \(leadingDimension(.dO)),
             ushort2(d, 0), \(transposed(.dO)));
           
@@ -76,8 +78,10 @@ extension AttentionKernel {
       \(declareDerivativeOLocation())
       
       // Where the O data will be read from.
-      auto O_src = simdgroup_matrix_storage<float>::apply_offset(
-        O, \(leadingDimension(.O)), offset_src, \(transposed(.O)));
+      auto O_src = simdgroup_matrix_storage<\(memoryName(.O))>
+      ::apply_offset(
+        O, \(leadingDimension(.O)),
+        offset_src, \(transposed(.O)));
       
       // Going to use async copy to handle the matrix edge.
       #pragma clang loop unroll(disable)
@@ -85,7 +89,7 @@ extension AttentionKernel {
         \(loadDerivativeO())
         
         simdgroup_matrix_storage<float> O;
-        O.load(
+        O.\(loadFunction(.O))(
           O_src, \(leadingDimension(.O)),
           ushort2(d, 0), \(transposed(.O)));
         
@@ -121,12 +125,17 @@ extension AttentionKernel {
         uint R_offset = \(parallelizationGroupOffset);
         uint2 offset_src(D_offset, R_offset);
         
-        auto dO_src = simdgroup_matrix_storage<float>::apply_offset(
-          dO, \(leadingDimension(.dO)), offset_src, \(transposed(.dO)));
-        auto O_src = simdgroup_matrix_storage<float>::apply_offset(
-          O, \(leadingDimension(.O)), offset_src, \(transposed(.O)));
-        auto dO_dst = (threadgroup float*)(threadgroup_block);
-        auto O_dst = (threadgroup float*)(threadgroup_block);
+        auto dO_src = simdgroup_matrix_storage<\(memoryName(.dO))>
+        ::apply_offset(
+          dO, \(leadingDimension(.dO)), 
+          offset_src, \(transposed(.dO)));
+        auto O_src = simdgroup_matrix_storage<\(memoryName(.O))>
+        ::apply_offset(
+          O, \(leadingDimension(.O)), 
+          offset_src, \(transposed(.O)));
+        
+        auto dO_dst = (threadgroup \(memoryName(.dO))*)(threadgroup_block);
+        auto O_dst = (threadgroup \(memoryName(.O))*)(threadgroup_block);
         O_dst += \(blockDimensions.parallelization * 8);
         
         ushort D_src_dimension = \(headDimension) % 8;
@@ -150,14 +159,16 @@ extension AttentionKernel {
       
       // Where the dO and O data will be read from.
       ushort2 offset_src(morton_offset.x, morton_offset.y + sidx * 8);
-      auto dO_block = (threadgroup float*)(threadgroup_block);
-      auto O_block = (threadgroup float*)(threadgroup_block);
+      auto dO_block = (threadgroup \(memoryName(.dO))*)(threadgroup_block);
+      auto O_block = (threadgroup \(memoryName(.O))*)(threadgroup_block);
       O_block += \(blockDimensions.parallelization * 8);
       
-      dO_block = simdgroup_matrix_storage<float>::apply_offset(
+      dO_block = simdgroup_matrix_storage<\(memoryName(.dO))>
+      ::apply_offset(
         dO_block, \(leadingBlockDimension(.dO)),
         offset_src, \(transposed(.dO)));
-      O_block = simdgroup_matrix_storage<float>::apply_offset(
+      O_block = simdgroup_matrix_storage<\(memoryName(.O))>
+      ::apply_offset(
         O_block, \(leadingBlockDimension(.O)),
         offset_src, \(transposed(.O)));
       threadgroup_barrier(mem_flags::mem_threadgroup);
@@ -166,10 +177,12 @@ extension AttentionKernel {
       ushort2 origin(0, 0);
       simdgroup_matrix_storage<float> dO;
       simdgroup_matrix_storage<float> O;
-      dO.load(
-        dO_block, \(leadingBlockDimension(.dO)), origin, \(transposed(.dO)));
-      O.load(
-        O_block, \(leadingBlockDimension(.O)), origin, \(transposed(.O)));
+      dO.\(loadFunction(.dO))(
+        dO_block, \(leadingBlockDimension(.dO)),
+        origin, \(transposed(.dO)));
+      O.\(loadFunction(.O))(
+        O_block, \(leadingBlockDimension(.O)),
+        origin, \(transposed(.O)));
       
       // Perform the pointwise multiplication.
       float2 dO_value = *(dO.thread_elements());
@@ -336,7 +349,8 @@ extension AttentionKernel {
       if (sidx == 0) {
         // Locate the \(operand)[i] in device and threadgroup memory.
         auto \(operand)_src = \(operand) + \(traversalOffset);
-        auto \(operand)_dst = (threadgroup float*)(threadgroup_block);
+        auto \(operand)_dst =
+        (threadgroup \(memoryName(operand))*)(threadgroup_block);
         
         ushort R_src_dimension = min(
           uint(\(blockDimensions.traversal)),
@@ -370,7 +384,8 @@ extension AttentionKernel {
       } else {
         return """
         
-        auto \(operand)_src = (threadgroup float*)(threadgroup_block);
+        auto \(operand)_src =
+        (threadgroup \(memoryName(operand))*)(threadgroup_block);
         \(operand)_src += morton_offset.x;
         threadgroup_barrier(mem_flags::mem_threadgroup);
         
@@ -428,9 +443,11 @@ extension AttentionKernel {
         
         #pragma clang loop unroll(full)
         for (ushort c = 0; c < \(blockDimensions.traversal); c += 8) {
-          ushort2 origin(c, 0);
+          ushort2 \(operand)_origin(c, 0);
           simdgroup_matrix_storage<float> \(operand)_sram;
-          \(operand)_sram.load(\(operand)_src, 1, origin, false);
+          \(operand)_sram.\(loadFunction(operand))(
+            \(operand)_src, 1,
+            \(operand)_origin, false);
           float2 \(operand) = *(\(operand)_sram.thread_elements());
           
           \(overwriteAttentionMatrixElements())

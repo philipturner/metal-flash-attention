@@ -41,10 +41,11 @@ extension AttentionKernel {
         threadgroup_barrier(mem_flags::mem_threadgroup);
         if (sidx == 0) {
           uint2 \(operand)_offset(d_outer, \(parallelizationGroupOffset));
-          auto src = simdgroup_matrix_storage<float>::apply_offset(
+          auto src = simdgroup_matrix_storage<\(memoryName(operand))>
+          ::apply_offset(
             \(operand), \(leadingDimension(operand)),
             \(operand)_offset, \(transposed(operand)));
-          auto dst = (threadgroup float*)(threadgroup_block);
+          auto dst = (threadgroup \(memoryName(operand))*)(threadgroup_block);
           
           ushort D_src_dimension = min(
             ushort(\(blockDimensions.head)),
@@ -73,8 +74,9 @@ extension AttentionKernel {
         threadgroup_barrier(mem_flags::mem_threadgroup);
         if (sidx == 0) {
           uint2 \(operand)_offset(d_outer, \(parallelizationGroupOffset));
-          auto src = (threadgroup float*)(threadgroup_block);
-          auto dst = simdgroup_matrix_storage<float>::apply_offset(
+          auto src = (threadgroup \(memoryName(operand))*)(threadgroup_block);
+          auto dst = simdgroup_matrix_storage<\(memoryName(operand))>
+          ::apply_offset(
             \(operand), \(leadingDimension(operand)),
             \(operand)_offset, \(transposed(operand)));
           
@@ -117,7 +119,8 @@ extension AttentionKernel {
         uint2 \(operand)_src_offset(
           morton_offset.x + d_outer,
           \(clampedParallelizationThreadOffset));
-        auto \(operand)_src = simdgroup_matrix_storage<float>::apply_offset(
+        auto \(operand)_src = simdgroup_matrix_storage<\(memoryName(operand))>
+        ::apply_offset(
           \(operand), \(leadingDimension(operand)),
           \(operand)_src_offset, \(transposed(operand)));
         
@@ -126,9 +129,13 @@ extension AttentionKernel {
         return """
         
         ushort2 \(operand)_block_offset(
-          morton_offset.x, morton_offset.y + sidx * 8);
-        auto \(operand)_src = (threadgroup float*)(threadgroup_block);
-        \(operand)_src = simdgroup_matrix_storage<float>::apply_offset(
+          morton_offset.x, 
+          morton_offset.y + sidx * 8);
+        auto \(operand)_src =
+        (threadgroup \(memoryName(operand))*)(threadgroup_block);
+        
+        \(operand)_src = simdgroup_matrix_storage<\(memoryName(operand))>
+        ::apply_offset(
           \(operand)_src, \(leadingBlockDimension(operand)),
           \(operand)_block_offset, \(transposed(operand)));
         threadgroup_barrier(mem_flags::mem_threadgroup);
@@ -149,10 +156,10 @@ extension AttentionKernel {
         
         #pragma clang loop unroll(full)
         for (ushort d = \(headStart); d < \(headEnd); d += 8) {
-          ushort2 origin(d, 0);
-          \(operand)_sram[(d_outer + d) / 8].load(
+          ushort2 \(operand)_origin(d, 0);
+          \(operand)_sram[(d_outer + d) / 8].\(loadFunction(operand))(
             \(operand)_src, \(leadingDimensionOperand(descriptor)),
-            origin, \(transposed(operand)));
+            \(operand)_origin, \(transposed(operand)));
         }
         
         """
@@ -161,10 +168,10 @@ extension AttentionKernel {
         
         #pragma clang loop unroll(full)
         for (ushort d = \(headStart); d < \(headEnd); d += 8) {
-          ushort2 origin(d, 0);
+          ushort2 \(operand)_origin(d, 0);
           \(operand)_sram[(d_outer + d) / 8].store(
             \(operand)_src, \(leadingDimensionOperand(descriptor)),
-            origin, \(transposed(operand)));
+            \(operand)_origin, \(transposed(operand)));
         }
         
         """
