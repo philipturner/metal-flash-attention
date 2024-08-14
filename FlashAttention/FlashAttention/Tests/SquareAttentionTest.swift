@@ -35,7 +35,7 @@ func executeScript() {
 //  profileProblemSize(sequenceDimension: 777, headDimension: 199)
   
 #if true
-  let D_array = Array(32...96)
+  let D_array = Array(32...160)
   let N_array = [
     AttentionKernelType.forward(true),
     AttentionKernelType.backwardQuery,
@@ -50,7 +50,7 @@ func executeScript() {
     
     for N in N_array {
       let metric = profileProblemSize(
-        sequenceDimension: 4096,
+        sequenceDimension: 8192,
         headDimension: D,
         benchmarkedKernel: N)
       outputString += "\(metric), "
@@ -134,12 +134,9 @@ func profileProblemSize(
     
     let pipelineDesc = MTLComputePipelineDescriptor()
     pipelineDesc.computeFunction = function
-    //    switch kernel.type {
-    //    case .forward:
-    //      pipelineDesc.maxTotalThreadsPerThreadgroup = 1024
-    //    case .backwardQuery, .backwardKeyValue:
-    //      pipelineDesc.maxTotalThreadsPerThreadgroup = 1024
-    //    }
+    if let targetOccupancy = kernel.targetOccupancy {
+      pipelineDesc.maxTotalThreadsPerThreadgroup = Int(targetOccupancy)
+    }
     return try! device.makeComputePipelineState(
       descriptor: pipelineDesc, options: [], reflection: nil)
   }

@@ -89,8 +89,13 @@ extension AttentionDescriptor {
     
     // Block sizes for the case where nothing is cached.
     if mtlDevice.supportsFamily(.apple9) {
-      output.blockDimensions = (
-        parallelization: 16, traversal: 128, head: 16)
+      if matrixDimensions.D % 8 == 0 {
+        output.blockDimensions = (
+          parallelization: 16, traversal: 128, head: 16)
+      } else {
+        output.blockDimensions = (
+          parallelization: 16, traversal: 128, head: 8)
+      }
     } else {
       output.blockDimensions = (
         parallelization: 32, traversal: 64, head: 32)
@@ -133,8 +138,21 @@ extension AttentionDescriptor {
       output.cacheState[.dK] = cacheOutputs
     }
     
-    output.preferAsyncCache = true
-    output.preferAsyncLoad = false
+    // Access pattern heuristic for when nothing is cached.
+    if mtlDevice.supportsFamily(.apple9) {
+      output.preferAsyncCache = true
+      output.preferAsyncLoad = false
+    } else {
+      output.preferAsyncCache = false
+      output.preferAsyncLoad = true
+    }
+    
+    if !mtlDevice.supportsFamily(.apple9) {
+      // TODO: Study the interplay between occupancy, kernel type, and
+      // divisibility of the head dimension.
+      //
+      // output.targetOccupancy = 1024
+    }
     
     return output
   }

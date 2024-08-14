@@ -21,11 +21,9 @@ import QuartzCore
 //   - reads that have one-to-one mapping to threads (like GEMM store) [DONE]
 //     - applies to anything that is cacheable
 // - Find a way to benchmark the 90% iterations direct, 10% iterations async
-//   case on M4, when the problem size is divisible by the block size.
-//   - Most severe impact is when the D block is very small
-//   - Figure out which option is fastest on M1, as well.
-// - Specify the usage of async load/store on a per-operand level,
-//   in attention kernel.
+//   case on M4, when the problem size is divisible by the block size. [DONE]
+//   - Most severe impact is when the D block is very small. [DONE]
+//   - Figure out which option is fastest on M1, as well. [DONE]
 // - Add a randomized correctness test for combinations of AttentionKernel
 //   config options, problem sizes, and eventually precisions. [DONE]
 //
@@ -68,4 +66,4 @@ import QuartzCore
 // - Try optimizing for when the head size is divisible by 8, but just not
 //   divisible by the block size. [DONE]
 // - Run benchmarks on M4, see whether the regression is minimized at very
-//   large head dimensions.
+//   large head dimensions. [DONE]
