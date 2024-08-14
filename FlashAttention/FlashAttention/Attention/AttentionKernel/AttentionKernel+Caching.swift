@@ -322,6 +322,14 @@ extension AttentionKernel {
       if cached(.dQ) {
         output += allocate(operand: .dQ)
       }
+      
+      guard let memoryPrecisionL = memoryPrecisions[.L],
+            memoryPrecisionL != .BF16 else {
+        fatalError("Invalid memory precision for L.")
+      }
+      
+      // L is always either FP16 or FP32, so we don't need custom type
+      // conversion code here.
       output += """
       
       float L_sram = L[\(clampedParallelizationThreadOffset)];
@@ -358,6 +366,13 @@ extension AttentionKernel {
         output += cache(operand: .O, type: .store)
       }
       if computeL {
+        guard let memoryPrecisionL = memoryPrecisions[.L],
+              memoryPrecisionL != .BF16 else {
+          fatalError("Invalid memory precision for L.")
+        }
+        
+        // L is always either FP16 or FP32, so we don't need custom type
+        // conversion code here.
         output += """
         
         if (\(unsafeParallelizationThreadOffset) < \(parallelizationDimension)) {
@@ -373,10 +388,34 @@ extension AttentionKernel {
       if cached(.dQ) {
         output += cache(operand: .dQ, type: .store)
       }
+      
+      // Cast D from FP32 to potentially BF16.
+      func storeD() -> String {
+        switch memoryPrecisions[.D] {
+        case .FP32:
+          return """
+          
+          D[\(clampedParallelizationThreadOffset)] = D_sram;
+          
+          """
+        case .BF16:
+          return """
+          
+          // TODO: Try registerForm[0] to throw off the test. There should be
+          // an error.
+          bfloat2 registerForm = *(thread bfloat2*)(&D_sram);
+          bfloat memoryForm = registerForm[1];
+          D[\(clampedParallelizationThreadOffset)] = memoryForm;
+          
+          """
+        default:
+          fatalError("Invalid memory precision for D.")
+        }
+      }
       output += """
       
       if (\(unsafeParallelizationThreadOffset) < \(parallelizationDimension)) {
-        D[\(clampedParallelizationThreadOffset)] = D_sram;
+        \(storeD())
       }
       
       """

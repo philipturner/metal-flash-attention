@@ -81,8 +81,9 @@ func profileProblemSize(
   // MARK: - Kernels
   
   var attentionDesc = AttentionDescriptor()
-  attentionDesc.lowPrecisionInputs = true
-  attentionDesc.lowPrecisionOutputs = true
+  attentionDesc.lowPrecisionInputs = false
+  attentionDesc.lowPrecisionIntermediates = true
+  attentionDesc.lowPrecisionOutputs = false
   attentionDesc.matrixDimensions = (
     R: UInt32(sequenceDimension),
     C: UInt32(sequenceDimension),
@@ -383,18 +384,8 @@ func profileProblemSize(
   printMatrix(resultDerivativeQ)
 #endif
   
-  // Check the results.
-  var tolerance: Float = 2e-5
-  if attentionDesc.lowPrecisionInputs {
-     tolerance = max(tolerance, 5e-2)
-  }
-  if attentionDesc.lowPrecisionOutputs {
-    // as long as traversl block >= 16 and head dimension <= 200
-    tolerance = max(tolerance, 5e-2)
-  }
-  
   var errorCount: Int = .zero
-  func check(expected: [Float], actual: [Float]) {
+  func check(expected: [Float], actual: [Float], tolerance: Float) {
     guard expected.count == actual.count else {
       fatalError("Arrays had different length.")
     }
@@ -419,12 +410,34 @@ func profileProblemSize(
     }
   }
   
-  check(expected: O, actual: resultO)
-  check(expected: L, actual: resultL)
-  check(expected: D, actual: resultD)
-  check(expected: dV, actual: resultDerivativeV)
-  check(expected: dK, actual: resultDerivativeK)
-  check(expected: dQ, actual: resultDerivativeQ)
+  // Check the results.
+  var tolerance: Float = 2e-5
+  if attentionDesc.lowPrecisionInputs {
+     tolerance = max(tolerance, 5e-2)
+  }
+  if attentionDesc.lowPrecisionIntermediates {
+    tolerance = max(tolerance, 3e-2)
+  }
+  if attentionDesc.lowPrecisionOutputs {
+    // as long as traversal block >= 16 and head dimension <= 200
+    tolerance = max(tolerance, 5e-2)
+  }
+  
+  if attentionDesc.lowPrecisionIntermediates {
+    check(expected: L, actual: resultL, tolerance: 3e-3)
+    check(expected: D, actual: resultD, tolerance: 1e-1)
+  } else {
+    check(expected: L, actual: resultL, tolerance: tolerance)
+    check(expected: D, actual: resultD, tolerance: tolerance)
+  }
+  
+  // TODO: Check for coupling between L/D precision and output accuracy. Then,
+  // move on to changing the register precisions and eventually compressing
+  // the S/P/dP/dS intermediates.
+  check(expected: O, actual: resultO, tolerance: tolerance)
+  check(expected: dV, actual: resultDerivativeV, tolerance: tolerance)
+  check(expected: dK, actual: resultDerivativeK, tolerance: tolerance)
+  check(expected: dQ, actual: resultDerivativeQ, tolerance: tolerance)
 #endif
   
   // MARK: - Profiling

@@ -24,4 +24,8 @@ import QuartzCore
 //     during forward. Do larger traversal block sizes help? Yes [DONE]
 // - Allow input, L/D, and output register types to be FP16/BF16.
 // - Allow attention matrix register types to be FP16/BF16.
+//   - Benchmark the numerical accuracy of accumulating the attention matrix
+//     or O in FP16, provided both inputs are FP16. Try adding a test case
+//     that covers larger sequence lengths, where the accuracy of FP16 O would
+//     suffer.
 // - Check for improved occupancy on M1.

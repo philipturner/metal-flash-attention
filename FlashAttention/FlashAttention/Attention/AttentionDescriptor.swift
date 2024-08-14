@@ -173,9 +173,13 @@ extension AttentionDescriptor {
       output[.dO] = .FP32
     }
     
-    // We are not worrying about the intermediates for now.
-    output[.L] = .FP32
-    output[.D] = .FP32
+    if lowPrecisionIntermediates {
+      output[.L] = .FP16
+      output[.D] = .BF16
+    } else {
+      output[.L] = .FP32
+      output[.D] = .FP32
+    }
     
     if lowPrecisionOutputs {
       output[.O] = .FP16
