@@ -50,7 +50,7 @@ func executeScript() {
     
     for N in N_array {
       let metric = profileProblemSize(
-        sequenceDimension: 8192,
+        sequenceDimension: 4096,
         headDimension: D,
         benchmarkedKernel: N)
       outputString += "\(metric), "
@@ -134,12 +134,12 @@ func profileProblemSize(
     
     let pipelineDesc = MTLComputePipelineDescriptor()
     pipelineDesc.computeFunction = function
-    switch kernel.type {
-    case .forward:
-      pipelineDesc.maxTotalThreadsPerThreadgroup = 1024
-    case .backwardQuery, .backwardKeyValue:
-      pipelineDesc.maxTotalThreadsPerThreadgroup = 1024
-    }
+    //    switch kernel.type {
+    //    case .forward:
+    //      pipelineDesc.maxTotalThreadsPerThreadgroup = 1024
+    //    case .backwardQuery, .backwardKeyValue:
+    //      pipelineDesc.maxTotalThreadsPerThreadgroup = 1024
+    //    }
     return try! device.makeComputePipelineState(
       descriptor: pipelineDesc, options: [], reflection: nil)
   }
