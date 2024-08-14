@@ -38,9 +38,6 @@ struct AttentionKernel {
   // The source code to compile.
   var source: String = ""
   
-  // The occupancy to compile the PSO with, if any.
-  var targetOccupancy: UInt16?
-  
   // The number of threads per group.
   var threadgroupSize: UInt16
   
@@ -62,7 +59,6 @@ struct AttentionKernel {
     self.cacheState = descriptor.cacheState
     self.preferAsyncCache = preferAsyncCache
     self.preferAsyncLoad = preferAsyncLoad
-    self.targetOccupancy = descriptor.targetOccupancy
     self.transposeState = descriptor.transposeState
     self.type = type
     

@@ -50,6 +50,7 @@ Remaining register pressure optimizations:
 - Mixed precision.
   - Study the effect of frequently truncating the accumulator while spilling to RAM.
 - Block size, precision, etc. selection heuristics that provide robust performance across a wide range of target problems.
+  - Study the coupling between kernel type, divisibility of the head dimension, and forcing occupancy to 1024.
 
 Portability:
 - Test problems where the attention matrix is not a square.

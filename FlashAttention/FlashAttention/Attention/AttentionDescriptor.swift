@@ -60,13 +60,12 @@ struct AttentionDescriptor {
   // Not a very flexible API. Clients can change this to provide more granular
   // access (to individual operands), at the cost of removing a high-level
   // abstraction.
-  var lowPrecisionAttentionMatrix: Bool = false
   var lowPrecisionInputs: Bool = false
   var matrixDimensions: (R: UInt32, C: UInt32, D: UInt16)?
   var transposeState: (Q: Bool, K: Bool, V: Bool, O: Bool)?
 }
 
-// MARK: - PSO Generation
+// MARK: - Kernel Descriptor
 
 extension AttentionDescriptor {
   /// Initialize the kernel descriptor using another descriptor, which just
@@ -154,13 +153,6 @@ extension AttentionDescriptor {
       output.preferAsyncLoad = true
     }
     
-    if !mtlDevice.supportsFamily(.apple9) {
-      // TODO: Study the interplay between occupancy, kernel type, and
-      // divisibility of the head dimension.
-      //
-      // output.targetOccupancy = 1024
-    }
-    
     // Choose the precision for each operand.
     // TODO
     
@@ -168,28 +160,10 @@ extension AttentionDescriptor {
   }
 }
 
-extension AttentionDescriptor {
-  // Specialize the Metal function with this attention descriptor.
-  //
-  // You can initialize a MTLFunctionConstantValues object once, then recycle
-  // it for all three kernels when gradient is requested. This may simplify
-  // the code or incrementally reduce the compilation latency.
-  func setFunctionConstants(_ constants: MTLFunctionConstantValues) {
-    guard let matrixDimensions = self.matrixDimensions else {
-      fatalError("Descriptor was incomplete.")
-    }
-    
-    var R = matrixDimensions.R
-    var C = matrixDimensions.C
-    constants.setConstantValue(&R, type: .uint, index: 0)
-    constants.setConstantValue(&C, type: .uint, index: 1)
-  }
-}
-
 // MARK: - Precision Assignment
 
 extension AttentionDescriptor {
-  private func operandMemoryPrecisions(
+  private func memoryPrecisions(
   ) -> [AttentionOperand: GEMMOperandPrecision] {
     var output: [AttentionOperand: GEMMOperandPrecision] = [:]
     
@@ -218,23 +192,24 @@ extension AttentionDescriptor {
     
     return output
   }
-  
-  private func attentionMatrixRegisterPrecisions(
-    operandMemoryPrecisions: [AttentionOperand: GEMMOperandPrecision]
-  ) -> [AttentionOperand: GEMMOperandPrecision] {
-    var output: [AttentionOperand: GEMMOperandPrecision] = [:]
-    
-    if lowPrecisionAttentionMatrix {
-      // If both inputs are FP16, we can set the outer product accumulator to
-      // FP16 as well. Otherwise, keep the accumulator at FP32.
-      fatalError("Not implemented.")
-    } else {
-      output[.S] = .FP32
-      output[.P] = .FP32
-      output[.dP] = .FP32
-      output[.dS] = .FP32
-    }
-  }
 }
 
+// MARK: - PSO Generation
 
+extension AttentionDescriptor {
+  // Specialize the Metal function with this attention descriptor.
+  //
+  // You can initialize a MTLFunctionConstantValues object once, then recycle
+  // it for all three kernels when gradient is requested. This may simplify
+  // the code or incrementally reduce the compilation latency.
+  func setFunctionConstants(_ constants: MTLFunctionConstantValues) {
+    guard let matrixDimensions = self.matrixDimensions else {
+      fatalError("Descriptor was incomplete.")
+    }
+    
+    var R = matrixDimensions.R
+    var C = matrixDimensions.C
+    constants.setConstantValue(&R, type: .uint, index: 0)
+    constants.setConstantValue(&C, type: .uint, index: 1)
+  }
+}

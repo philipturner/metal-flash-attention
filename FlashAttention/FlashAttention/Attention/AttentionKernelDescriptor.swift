@@ -48,11 +48,6 @@ struct AttentionKernelDescriptor {
   /// The precision of each operand accessed by the kernel.
   var registerPrecisions: [AttentionOperand: GEMMOperandPrecision] = [:]
   
-  /// Optional. Desired occupancy in threads per core.
-  ///
-  /// Copied into the kernel object, for reference when initializing the PSO.
-  var targetOccupancy: UInt16?
-  
   /// Whether each operand is transposed in RAM.
   ///
   /// If the layout is row-major, where a row spans D contiguous elements in

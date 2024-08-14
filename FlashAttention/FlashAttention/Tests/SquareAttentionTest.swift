@@ -134,9 +134,6 @@ func profileProblemSize(
     
     let pipelineDesc = MTLComputePipelineDescriptor()
     pipelineDesc.computeFunction = function
-    if let targetOccupancy = kernel.targetOccupancy {
-      pipelineDesc.maxTotalThreadsPerThreadgroup = Int(targetOccupancy)
-    }
     return try! device.makeComputePipelineState(
       descriptor: pipelineDesc, options: [], reflection: nil)
   }
