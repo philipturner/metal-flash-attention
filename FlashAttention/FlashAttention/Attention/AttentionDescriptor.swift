@@ -57,11 +57,17 @@ import Metal
 // - transposeState
 
 struct AttentionDescriptor {
-  // Not a very flexible API. Clients can change this to provide more granular
-  // access (to individual operands), at the cost of removing a high-level
-  // abstraction.
+  // Q, K, V, dO
   var lowPrecisionInputs: Bool = false
+  
+  // S, P, L, D, dP, dS
+  var lowPrecisionIntermediates: Bool = false
+  
+  // O, dV, dK, dQ
+  var lowPrecisionOutputs: Bool = false
+  
   var matrixDimensions: (R: UInt32, C: UInt32, D: UInt16)?
+  
   var transposeState: (Q: Bool, K: Bool, V: Bool, O: Bool)?
 }
 
@@ -155,6 +161,7 @@ extension AttentionDescriptor {
   func memoryPrecisions() -> [AttentionOperand: GEMMOperandPrecision] {
     var output: [AttentionOperand: GEMMOperandPrecision] = [:]
     
+    // We are not worrying about the BF16 -> FP32 conversion for now.
     if lowPrecisionInputs {
       output[.Q] = .FP16
       output[.K] = .FP16
@@ -167,12 +174,11 @@ extension AttentionDescriptor {
       output[.dO] = .FP32
     }
     
-    // We haven't yet determined a method for specifying that L/D terms are
-    // FP16 or BF16.
+    // We are not worrying about the intermediates for now.
     output[.L] = .FP32
     output[.D] = .FP32
     
-    // Outputs are always FP32 for now.
+    // We are not worrying about the outputs for now.
     output[.O] = .FP32
     output[.dV] = .FP32
     output[.dK] = .FP32

@@ -19,5 +19,9 @@ import QuartzCore
 // - Incorporate the new design philosophy into the attention test. [DONE]
 //
 // Mixed precision:
-// - Debug the numerical correctness of frequently truncating O to FP16
-//   during forward. Do larger traversal block sizes help?
+// - Allow input, L/D, and output memory types to be FP16/BF16.
+//   - Debug the numerical correctness of frequently truncating O to FP16
+//     during forward. Do larger traversal block sizes help?
+// - Allow input, L/D, and output register types to be FP16/BF16.
+// - Allow attention matrix register types to be FP16/BF16.
+// - Check for improved occupancy on M1.

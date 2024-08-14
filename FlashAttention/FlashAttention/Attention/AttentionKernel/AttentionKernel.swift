@@ -61,6 +61,24 @@ struct AttentionKernel {
 // MARK: - Utilities
 
 extension AttentionKernel {
+  func memoryName(_ operand: AttentionOperand) -> String {
+    guard let memoryPrecision = memoryPrecisions[operand] else {
+      fatalError("Memory precision of \(operand) was not specified.")
+    }
+    return memoryPrecision.name
+  }
+  
+  func loadFunction(_ operand: AttentionOperand) -> String {
+    guard let memoryPrecision = memoryPrecisions[operand] else {
+      fatalError("Precision of \(operand) was not specified.")
+    }
+    if memoryPrecision == .BF16 {
+      return "load_bfloat"
+    } else {
+      return "load"
+    }
+  }
+  
   func cached(_ operand: AttentionOperand) -> Bool {
     guard let output = cacheState[operand] else {
       fatalError("Cache state of \(operand) was not specified.")

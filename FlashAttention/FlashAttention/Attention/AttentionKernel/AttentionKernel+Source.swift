@@ -92,9 +92,9 @@ extension AttentionKernel {
     }
     
     var output: String = ""
-    for key in operands {
-      var line = "device float* \(key) "
-      line += "[[buffer(\(key.bufferBinding!))]],"
+    for operand in operands {
+      var line = "device \(memoryName(operand))* \(operand) "
+      line += "[[buffer(\(operand.bufferBinding!))]],"
       output += "  " + line + "\n"
     }
     return output
