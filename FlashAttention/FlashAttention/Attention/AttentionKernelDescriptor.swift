@@ -45,9 +45,6 @@ struct AttentionKernelDescriptor {
   /// Reads that are shared among threads (like GEMM load).
   var preferAsyncLoad: Bool?
   
-  /// The precision of each operand accessed by the kernel.
-  var registerPrecisions: [AttentionOperand: GEMMOperandPrecision] = [:]
-  
   /// Whether each operand is transposed in RAM.
   ///
   /// If the layout is row-major, where a row spans D contiguous elements in

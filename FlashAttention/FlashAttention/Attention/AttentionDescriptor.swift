@@ -154,7 +154,7 @@ extension AttentionDescriptor {
     }
     
     // Choose the precision for each operand.
-    // TODO
+    output.memoryPrecisions = self.memoryPrecisions()
     
     return output
   }
