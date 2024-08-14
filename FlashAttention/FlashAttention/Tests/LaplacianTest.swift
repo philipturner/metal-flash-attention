@@ -29,6 +29,7 @@ func executeScript() {
     // Set up the kernel.
     var gemmDesc = GEMMDescriptor()
     let n = UInt32(problemSize)
+    gemmDesc.loadPreviousC = false
     gemmDesc.matrixDimensions = (M: n, N: n, K: n)
     gemmDesc.memoryPrecisions = (precision, precision, precision)
     gemmDesc.transposeState = descriptor.transposeState
@@ -151,6 +152,8 @@ func profileProblemSize(
   var A = [Float](repeating: .zero, count: problemSize * problemSize)
   var B = [Float](repeating: .zero, count: problemSize * problemSize)
   var C = [Float](repeating: .zero, count: problemSize * problemSize)
+  var previousOperandC = [Float](
+    repeating: .zero, count: problemSize * problemSize)
   
   // Initialize A as the 2nd-order periodic Laplacian.
   for diagonalID in 0..<problemSize {
@@ -172,6 +175,15 @@ func profileProblemSize(
       let address = rowID * problemSize + columnID
       let entry = Float.random(in: 0..<1)
       B[address] = entry
+    }
+  }
+  
+  // Initialize C to random numbers.
+  for rowID in 0..<problemSize {
+    for columnID in 0..<problemSize {
+      let address = rowID * problemSize + columnID
+      let entry = Float.random(in: 0..<1)
+      previousOperandC[address] = entry
     }
   }
   
@@ -200,11 +212,84 @@ func profileProblemSize(
     let bufferB = MTLContext.global
       .createBuffer(B, descriptor.memoryPrecisions!.B)
     let bufferC = MTLContext.global
-      .createBuffer(C, descriptor.memoryPrecisions!.C)
+      .createBuffer(previousOperandC, descriptor.memoryPrecisions!.C)
+    
+    // load  = directAccessCondition,
+    // store = false
+    //  problemSize = 1488 | A   B   |  832 threads/core | 8175 GFLOPS
+    //  problemSize = 1488 | A   B^T | 1024 threads/core | 8712 GFLOPS
+    //  problemSize = 1488 | A^T B   | 1024 threads/core | 8818 GFLOPS
+    //  problemSize = 1488 | A^T B^T | 1024 threads/core | 8972 GFLOPS
+    //  problemSize = 1489 | A   B   |  768 threads/core | 7888 GFLOPS
+    //  problemSize = 1489 | A   B^T |  768 threads/core | 8256 GFLOPS
+    //  problemSize = 1489 | A^T B   |  768 threads/core | 8026 GFLOPS
+    //  problemSize = 1489 | A^T B^T |  832 threads/core | 8463 GFLOPS
+    //
+    // load  = directAccessCondition
+    // store = directAccessCondition && (gid.y * M_group < M_edge) && (gid.x * N_group < N_edge)
+    //  problemSize = 1488 | A   B   |  832 threads/core | 8186 GFLOPS
+    //  problemSize = 1488 | A   B^T | 1024 threads/core | 8709 GFLOPS
+    //  problemSize = 1488 | A^T B   | 1024 threads/core | 8808 GFLOPS
+    //  problemSize = 1488 | A^T B^T | 1024 threads/core | 8984 GFLOPS
+    //  problemSize = 1489 | A   B   |  768 threads/core | 7902 GFLOPS
+    //  problemSize = 1489 | A   B^T |  768 threads/core | 8249 GFLOPS
+    //  problemSize = 1489 | A^T B   |  768 threads/core | 8034 GFLOPS
+    //  problemSize = 1489 | A^T B^T |  832 threads/core | 8469 GFLOPS
+    //
+    // load  = directAccessCondition && (gid.y * M_group < M_edge) && (gid.x * N_group < N_edge)
+    // store = directAccessCondition && (gid.y * M_group < M_edge) && (gid.x * N_group < N_edge)
+    //  problemSize = 1488 | A   B   |  832 threads/core | 8181 GFLOPS
+    //  problemSize = 1488 | A   B^T | 1024 threads/core | 8710 GFLOPS
+    //  problemSize = 1488 | A^T B   | 1024 threads/core | 8806 GFLOPS
+    //  problemSize = 1488 | A^T B^T | 1024 threads/core | 8979 GFLOPS
+    //  problemSize = 1489 | A   B   |  768 threads/core | 7892 GFLOPS
+    //  problemSize = 1489 | A   B^T |  768 threads/core | 8242 GFLOPS
+    //  problemSize = 1489 | A^T B   |  768 threads/core | 8034 GFLOPS
+    //  problemSize = 1489 | A^T B^T |  832 threads/core | 8461 GFLOPS
+    //
+    // load previous C = false (M1 Max)
+    //  problemSize = 1488 | A   B   |  896 threads/core | 8358 GFLOPS
+    //  problemSize = 1488 | A   B^T | 1024 threads/core | 8682 GFLOPS
+    //  problemSize = 1488 | A^T B   | 1024 threads/core | 8803 GFLOPS
+    //  problemSize = 1488 | A^T B^T | 1024 threads/core | 9024 GFLOPS
+    //  problemSize = 1489 | A   B   |  768 threads/core | 8039 GFLOPS
+    //  problemSize = 1489 | A   B^T |  832 threads/core | 8376 GFLOPS
+    //  problemSize = 1489 | A^T B   |  832 threads/core | 8374 GFLOPS
+    //  problemSize = 1489 | A^T B^T |  832 threads/core | 8654 GFLOPS
+    //
+    // load previous C = true (M1 Max)
+    //  problemSize = 1488 | A   B   |  896 threads/core | 8352 GFLOPS
+    //  problemSize = 1488 | A   B^T |  896 threads/core | 8515 GFLOPS
+    //  problemSize = 1488 | A^T B   | 1024 threads/core | 8760 GFLOPS
+    //  problemSize = 1488 | A^T B^T | 1024 threads/core | 9007 GFLOPS
+    //  problemSize = 1489 | A   B   |  768 threads/core | 7917 GFLOPS
+    //  problemSize = 1489 | A   B^T |  768 threads/core | 7992 GFLOPS
+    //  problemSize = 1489 | A^T B   |  832 threads/core | 8185 GFLOPS
+    //  problemSize = 1489 | A^T B^T |  832 threads/core | 8583 GFLOPS
+    //
+    // load previous C = false (M4)
+    //  problemSize = 1488 | A   B   | 1024 threads/core | 3353 GFLOPS
+    //  problemSize = 1488 | A   B^T | 1024 threads/core | 3324 GFLOPS
+    //  problemSize = 1488 | A^T B   | 1024 threads/core | 3338 GFLOPS
+    //  problemSize = 1488 | A^T B^T | 1024 threads/core | 3289 GFLOPS
+    //  problemSize = 1489 | A   B   | 1024 threads/core | 3375 GFLOPS
+    //  problemSize = 1489 | A   B^T | 1024 threads/core | 3317 GFLOPS
+    //  problemSize = 1489 | A^T B   | 1024 threads/core | 3343 GFLOPS
+    //  problemSize = 1489 | A^T B^T | 1024 threads/core | 3298 GFLOPS
+    //
+    // load previous C = true (M4)
+    //  problemSize = 1488 | A   B   | 1024 threads/core | 3374 GFLOPS
+    //  problemSize = 1488 | A   B^T | 1024 threads/core | 3312 GFLOPS
+    //  problemSize = 1488 | A^T B   | 1024 threads/core | 3321 GFLOPS
+    //  problemSize = 1488 | A^T B^T | 1024 threads/core | 3249 GFLOPS
+    //  problemSize = 1489 | A   B   | 1024 threads/core | 3323 GFLOPS
+    //  problemSize = 1489 | A   B^T | 1024 threads/core | 3280 GFLOPS
+    //  problemSize = 1489 | A^T B   | 1024 threads/core | 3308 GFLOPS
+    //  problemSize = 1489 | A^T B^T | 1024 threads/core | 3256 GFLOPS
     
     // Profile the latency of matrix multiplication.
-    for _ in 0..<15 {
-      let duplicatedCommandCount: Int = 20
+    for _ in 0..<(descriptor.loadPreviousC ? 1 : 15) {
+      let duplicatedCommandCount: Int = (descriptor.loadPreviousC ? 1 : 20)
       
       // Encode the GPU command.
       let commandBuffer = MTLContext.global.commandQueue.makeCommandBuffer()!
@@ -215,6 +300,7 @@ func profileProblemSize(
       encoder.setBuffer(bufferA, offset: 0, index: 0)
       encoder.setBuffer(bufferB, offset: 0, index: 1)
       encoder.setBuffer(bufferC, offset: 0, index: 2)
+      
       for _ in 0..<duplicatedCommandCount {
         func ceilDivide(_ target: Int, _ granularity: UInt16) -> Int {
           (target + Int(granularity) - 1) / Int(granularity)
@@ -298,6 +384,7 @@ func profileProblemSize(
     errorThreshold = max(errorThreshold, thresholdC)
   }
   
+  #if true
   // Check the results.
   var errorCount: Int = .zero
   for m in 0..<problemSize {
@@ -326,7 +413,14 @@ func profileProblemSize(
       }
       
       // Find the expected result.
-      let expected = leftSource - 2 * centerSource + rightSource
+      var expected = leftSource - 2 * centerSource + rightSource
+      if descriptor.loadPreviousC {
+        if descriptor.transposeState!.A {
+          expected += previousOperandC[n * problemSize + m]
+        } else {
+          expected += previousOperandC[m * problemSize + n]
+        }
+      }
       
       // Find the actual result.
       var actual: Float
@@ -346,6 +440,7 @@ func profileProblemSize(
       }
     }
   }
+  #endif
   return SIMD2(maxGFLOPS, occupancy)
 }
 #endif

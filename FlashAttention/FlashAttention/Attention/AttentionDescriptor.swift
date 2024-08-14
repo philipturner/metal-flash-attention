@@ -2,65 +2,176 @@
 //  AttentionDescriptor.swift
 //  FlashAttention
 //
-//  Created by Philip Turner on 6/28/24.
+//  Created by Philip Turner on 8/8/24.
 //
 
-enum AttentionKernelType {
-  /// Forward attention, computing O and L[i].
-  ///
-  /// Variants:
-  /// - `false`: compute O
-  /// - `true`: compute O and L[i]
-  case forward(Bool)
-  
-  /// Backward attention, computing D[i] and dQ.
-  ///
-  /// Variants:
-  /// - `false`: compute D[i]
-  /// - `true`: compute D[i] and dQ
-  ///
-  /// Depends on: L[i]
-  case backwardQuery(Bool)
-  
-  /// Backward attention, computing dK and dV.
-  ///
-  /// Variants:
-  /// - `false`: compute dV, store the intermediate dS
-  /// - `true`: compute dV and dK
-  ///
-  /// Depends on: L[i], D[i]
-  case backwardKeyValue(Bool)
-}
+import Metal
+
+// Design specifications for the attention descriptor:
+// - member function to set the function constants as a component of PSO init
+//   - caller can now create one MTLFunctionConstantValues object for all
+//     three kernels [DONE]
+// - populates the lists of operands present in each kernel [DONE]
+// - encapsulates the three kernels that make up the attention pass
+//   - one set of function constants / buffer bindings should be the same
+//     across all of the kernels [DONE]
+//   - member function 'kernelDescriptor(type:)' generates an
+//     AttentionKernelDescriptor with the right settings [DONE]
+// - makes the simplification that Q/K/V/O and their gradients have the same
+//   transpose state [DONE]
+// - automatically assigns a cache state (default is false for now) [DONE]
+//   - you can intercept and override the results after the
+//     AttentionKernelDescriptors are created from the AttentionDescriptor
+// - very simple, early heuristics for block sizes [DONE]
+//
+// What is not included yet:
+// - shader caching
+//   - group the three kernels into a single cache query
+//   - separate the 1-kernel set for forward from the 3-kernel set for if
+//     gradient is requested
+// - mixed precision
+// - tuning the block size or caching heuristics
+//   - this task should be done simultaneously with mixed precision support
+// - whether operands are loaded/stored through async copy
+//   - this is the next thing on the TODO list
+//
+// Taking GEMMDescriptor / GEMMKernelDescriptor as a reference
+//
+// GEMMDescriptor
+// - batchDimension
+// - leadingDimensions
+// - loadPreviousC
+// - matrixDimensions
+// - memoryPrecisions
+// - transposeState
+//
+// GEMMKernelDescriptor
+// - blockDimensions
+// - device
+// - leadingBlockDimensions
+// - memoryPrecisions
+// - preferAsyncLoad
+// - preferAsyncStore
+// - registerPrecisions
+// - splits
+// - transposeState
 
 struct AttentionDescriptor {
-  /// The dimensions of the input and output matrices.
-  /// - Parameters R: Number of rows in the attention matrix.
-  /// - Parameters C: Number of columns in the attention matrix.
-  /// - Parameters D: Size of the head.
   var matrixDimensions: (R: UInt32, C: UInt32, D: UInt16)?
-  
-  /// Currently ignored.
-  var memoryPrecisions: (
-    Q: AttentionOperandPrecision,
-    K: AttentionOperandPrecision,
-    V: AttentionOperandPrecision,
-    O: AttentionOperandPrecision)?
-  
-  /// Whether each operand is transposed in RAM.
-  ///
-  /// If the layout is row-major, where a row spans D contiguous elements in
-  /// memory, enter `false`. If the layout is column-major, where a row spans
-  /// D widely separated elements in memory, enter `true`.
-  ///
-  /// The transpose state of a derivative (e.g. dQ for Q) must match the
-  /// corresponding input from the forward pass.
-  ///
-  /// > NOTE: To implement multi-head attention, clients may need to modify
-  /// the stride of matrix elements in memory. If and only if the transpose
-  /// state is `false`, change the stride from `D` to `D * H`. Ensure the
-  /// value of H is known at compile time, so the product `D * H` can be
-  /// embedded into the GPU assembly code.
   var transposeState: (Q: Bool, K: Bool, V: Bool, O: Bool)?
-  
-  var type: AttentionKernelType?
+}
+
+extension AttentionDescriptor {
+  /// Initialize the kernel descriptor using another descriptor, which just
+  /// specifies the problem size. Then, forget the information about problem
+  /// size.
+  ///
+  /// > WARNING: This function makes high-latency API calls. Avoid calling this
+  /// function unless absolutely necessary. A good shader cache design should
+  /// avoid calling this function, if the corresponding kernel has already been
+  /// cached.
+  func kernelDescriptor(
+    type: AttentionKernelType
+  ) -> AttentionKernelDescriptor {
+    guard let matrixDimensions = self.matrixDimensions,
+          let transposeState = self.transposeState else {
+      fatalError("Descriptor was incomplete.")
+    }
+    
+    // Select the only GPU on an Apple silicon system.
+    //
+    // NOTE: High-latency API call. See the explanation in GEMMDescriptor.
+    let mtlDevice = MTLCreateSystemDefaultDevice()!
+    
+    var output = AttentionKernelDescriptor()
+    output.headDimension = matrixDimensions.D
+    output.type = type
+    
+    // Block sizes for the case where nothing is cached.
+    if mtlDevice.supportsFamily(.apple9) {
+      if matrixDimensions.D % 8 == 0 {
+        output.blockDimensions = (
+          parallelization: 16, traversal: 128, head: 16)
+      } else {
+        output.blockDimensions = (
+          parallelization: 16, traversal: 128, head: 8)
+      }
+    } else {
+      output.blockDimensions = (
+        parallelization: 32, traversal: 64, head: 32)
+    }
+    
+    // Assign the transpose state.
+    output.transposeState[.Q] = transposeState.Q
+    output.transposeState[.K] = transposeState.K
+    output.transposeState[.V] = transposeState.V
+    
+    switch type {
+    case .forward:
+      output.transposeState[.O] = transposeState.O
+    case .backwardQuery:
+      output.transposeState[.O] = transposeState.O
+      output.transposeState[.dO] = transposeState.O
+      output.transposeState[.dQ] = transposeState.Q
+    case .backwardKeyValue:
+      output.transposeState[.dO] = transposeState.O
+      output.transposeState[.dV] = transposeState.V
+      output.transposeState[.dK] = transposeState.K
+    }
+    
+    // Assign the cache state.
+    let cacheInputs = false
+    let cacheOutputs = false
+    
+    switch type {
+    case .forward:
+      output.cacheState[.Q] = cacheInputs
+      output.cacheState[.O] = cacheOutputs
+    case .backwardQuery:
+      output.cacheState[.Q] = cacheInputs
+      output.cacheState[.dO] = cacheInputs
+      output.cacheState[.dQ] = cacheOutputs
+    case .backwardKeyValue:
+      output.cacheState[.K] = cacheInputs
+      output.cacheState[.V] = cacheInputs
+      output.cacheState[.dV] = cacheOutputs
+      output.cacheState[.dK] = cacheOutputs
+    }
+    
+    // Access pattern heuristic for when nothing is cached.
+    if mtlDevice.supportsFamily(.apple9) {
+      output.preferAsyncCache = true
+      output.preferAsyncLoad = false
+    } else {
+      output.preferAsyncCache = false
+      output.preferAsyncLoad = true
+    }
+    
+    if !mtlDevice.supportsFamily(.apple9) {
+      // TODO: Study the interplay between occupancy, kernel type, and
+      // divisibility of the head dimension.
+      //
+      // output.targetOccupancy = 1024
+    }
+    
+    return output
+  }
+}
+
+extension AttentionDescriptor {
+  // Specialize the Metal function with this attention descriptor.
+  //
+  // You can initialize a MTLFunctionConstantValues object once, then recycle
+  // it for all three kernels when gradient is requested. This may simplify
+  // the code or incrementally reduce the compilation latency.
+  func setFunctionConstants(_ constants: MTLFunctionConstantValues) {
+    guard let matrixDimensions = self.matrixDimensions else {
+      fatalError("Descriptor was incomplete.")
+    }
+    
+    var R = matrixDimensions.R
+    var C = matrixDimensions.C
+    constants.setConstantValue(&R, type: .uint, index: 0)
+    constants.setConstantValue(&C, type: .uint, index: 1)
+  }
 }

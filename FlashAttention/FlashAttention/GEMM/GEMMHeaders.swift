@@ -277,24 +277,7 @@ func createMetalSimdgroupMatrixStorage() -> String {
   // - casts some intermediate address fragments to 'ulong' for 'device'
   // - keeps all address fragments in 'ushort' for 'threadgroup'
   
-  enum AddressSpace {
-    case device
-    case threadgroup
-    
-    var keyword: String {
-      switch self {
-      case .device: return "device"
-      case .threadgroup: return "threadgroup"
-      }
-    }
-    
-    var offsetType: String {
-      switch self {
-      case .device: return "uint"
-      case .threadgroup: return "ushort"
-      }
-    }
-  }
+  
   
   enum Action {
     case load
@@ -303,7 +286,7 @@ func createMetalSimdgroupMatrixStorage() -> String {
   
   struct MemoryAccessDescriptor {
     var action: Action?
-    var addressSpace: AddressSpace?
+    var addressSpace: MTLAddressSpace?
     var decodingBF16: Bool?
     var indentationSpaceCount: Int = .zero
   }
@@ -625,7 +608,7 @@ namespace metal
   desc.indentationSpaceCount = 4
   
   for action in [Action.load, .store] {
-    for addressSpace in [AddressSpace.device, .threadgroup] {
+    for addressSpace in [MTLAddressSpace.device, .threadgroup] {
       for decodingBF16 in [false, true] {
         desc.action = action
         desc.addressSpace = addressSpace

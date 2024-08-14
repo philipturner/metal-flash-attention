@@ -115,18 +115,8 @@ struct GEMMKernelDescriptor {
   /// ```
   var blockDimensions: (M: UInt16, N: UInt16, K: UInt16)?
   
-  var memoryPrecisions: (
-    A: GEMMOperandPrecision, B: GEMMOperandPrecision, C: GEMMOperandPrecision)?
-  
   /// The device to create the kernel on.
   var device: MTLDevice?
-  
-  /// Customize the code that generates leading dimensions.
-  ///
-  /// This is a modification to the unified GEMM kernel, added to make it
-  /// easier to test an attention variant. It does not belong in the upstream
-  /// kernel itself; it would just be technical debt.
-  var leadingDimensions: (A: String, B: String)?
   
   /// Optional. The layout of elements in threadgroup memory.
   ///
@@ -136,13 +126,10 @@ struct GEMMKernelDescriptor {
   /// operand will have 16 FP32 elements per row, there is good chance of
   /// increased bank conflicts on M1. One may pad that threadgroup memory
   /// allocation to 20 FP32 elements per row.
-  ///
-  /// Note that the assignment of M/N/K to row dimensions varies based on which
-  /// operand is discussed, and what its transpose state is.
-  var paddedBlockDimensions: (
-    A: (M: UInt16, K: UInt16),
-    B: (K: UInt16, N: UInt16),
-    C: (M: UInt16, N: UInt16))?
+  var leadingBlockDimensions: (A: UInt16, B: UInt16, C: UInt16)?
+  
+  var memoryPrecisions: (
+    A: GEMMOperandPrecision, B: GEMMOperandPrecision, C: GEMMOperandPrecision)?
   
   /// Required. Whether async copies will improve performance during the
   /// matrix multiplication loop.
@@ -194,8 +181,8 @@ struct GEMMKernelDescriptor {
 
 struct GEMMKernelKey: Equatable, Hashable {
   var blockDimensions: SIMD3<UInt16>
+  var leadingBlockDimensions: SIMD3<UInt16>
   var memoryPrecisions: SIMD3<UInt16>
-  var paddedBlockDimensions: SIMD8<UInt16>
   var preferAsyncLoad: UInt8
   var preferAsyncStore: UInt8
   var registerPrecisions: SIMD3<UInt16>
@@ -204,18 +191,9 @@ struct GEMMKernelKey: Equatable, Hashable {
   
   init(copying source: GEMMKernelDescriptor) {
     blockDimensions = Self.createBlockDimensions(source.blockDimensions)
+    leadingBlockDimensions = Self.createBlockDimensions(
+      source.leadingBlockDimensions)
     memoryPrecisions = Self.createPrecisions(source.memoryPrecisions)
-    
-    paddedBlockDimensions = SIMD8(repeating: .max)
-    if let (A, B, C) = source.paddedBlockDimensions {
-      paddedBlockDimensions[0] = A.0
-      paddedBlockDimensions[1] = A.1
-      paddedBlockDimensions[2] = B.0
-      paddedBlockDimensions[3] = B.1
-      paddedBlockDimensions[4] = C.0
-      paddedBlockDimensions[5] = C.1
-    }
-    
     preferAsyncLoad = Self.createBoolean(source.preferAsyncLoad)
     preferAsyncStore = Self.createBoolean(source.preferAsyncStore)
     registerPrecisions = Self.createPrecisions(source.registerPrecisions)

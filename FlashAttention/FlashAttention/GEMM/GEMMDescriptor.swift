@@ -5,8 +5,7 @@
 //  Created by Philip Turner on 6/21/24.
 //
 
-import func Metal.MTLCreateSystemDefaultDevice
-import protocol Metal.MTLDevice
+import Metal
 
 /// A description of a dense matrix-matrix multiplication.
 struct GEMMDescriptor {
@@ -17,6 +16,11 @@ struct GEMMDescriptor {
   /// multiplication of (sub)matrices located at arbitrary pointers in memory
   /// (with potentially nonuniform stride or noncontiguous padding).
   var batchDimension: Int = 1
+  
+  /// Optional. Custom leading dimensions.
+  var leadingDimensions: (A: UInt32, B: UInt32, C: UInt32)?
+  
+  var loadPreviousC: Bool = false
   
   /// The dimensions of the input and output matrices.
   /// - Parameter M: Number of output columns.
@@ -40,12 +44,14 @@ struct GEMMDescriptor {
 
 struct GEMMKey: Equatable, Hashable {
   var batchDimension: Int
+  var loadPreviousC: UInt8
   var matrixDimensions: SIMD3<UInt32>
   var memoryPrecisions: SIMD3<UInt16>
   var transposeState: SIMD2<UInt8>
  
   init(copying source: GEMMDescriptor) {
     batchDimension = source.batchDimension
+    loadPreviousC = GEMMKernelKey.createBoolean(source.loadPreviousC)
     matrixDimensions = Self.createMatrixDimensions(source.matrixDimensions)
     memoryPrecisions = GEMMKernelKey.createPrecisions(source.memoryPrecisions)
     transposeState = GEMMKernelKey.createTransposeState(source.transposeState)
@@ -271,9 +277,9 @@ extension GEMMKernelDescriptor {
     if useLargeAllocation {
       let idealGroups = coreCount * 6
       if actualGroups <= idealGroups {
-        self.blockDimensions = (32, 32, 32)
+        blockDimensions = (32, 32, 32)
       } else {
-        self.blockDimensions = (48, 48, 24)
+        blockDimensions = (48, 48, 24)
         
         // This is verified to be optimal for:
         // - (memA, memB, memC) = (FP32, FP32, FP32)
@@ -282,16 +288,20 @@ extension GEMMKernelDescriptor {
         // - (memA, memB, memC) = (FP16, FP32, FP16)
         switch transposeState {
         case (false, false):
-          self.paddedBlockDimensions = ((48, 24), (24, 48), (48, 48))
+          // Mx(K), Kx(N), Mx(N)
+          leadingBlockDimensions = (24, 48, 48)
         case (false, true):
+          // Mx(K), (K)xN, Mx(N)
           let paddedBK = (memoryPrecisions.B == .FP32) ? UInt16(28) : 24
-          self.paddedBlockDimensions = ((48, 24), (paddedBK, 48), (48, 48))
+          leadingBlockDimensions = (24, paddedBK, 48)
         case (true, false):
+          // (M)xK, Kx(N), Mx(N)
           let paddedAM = (memoryPrecisions.A == .FP32) ? UInt16(52) : 56
-          self.paddedBlockDimensions = ((paddedAM, 24), (24, 48), (48, 48))
+          leadingBlockDimensions = (paddedAM, 48, 48)
         case (true, true):
+          // (M)xK, (K)xN, Mx(N)
           let paddedAM = (memoryPrecisions.A == .FP32) ? UInt16(52) : 56
-          self.paddedBlockDimensions = ((paddedAM, 24), (24, 48), (48, 48))
+          leadingBlockDimensions = (paddedAM, 24, 48)
         }
       }
     } else {
@@ -302,5 +312,63 @@ extension GEMMKernelDescriptor {
         blockDimensions = (48, 48, 32)
       }
     }
+  }
+}
+
+extension GEMMDescriptor {
+  // Specialize the Metal function with this GEMM descriptor.
+  func setFunctionConstants(_ constants: MTLFunctionConstantValues) {
+    guard let matrixDimensions = self.matrixDimensions,
+          let transposeState = self.transposeState else {
+      fatalError("Descriptor was incomplete.")
+    }
+    
+    var M = matrixDimensions.M
+    var N = matrixDimensions.N
+    var K = matrixDimensions.K
+    constants.setConstantValue(&M, type: .uint, index: 0)
+    constants.setConstantValue(&N, type: .uint, index: 1)
+    constants.setConstantValue(&K, type: .uint, index: 2)
+    
+    func chooseLeadingDimension(
+      _ specifiedLeading: UInt32?,
+      _ transposeState: Bool,
+      _ untransposedRows: UInt32,
+      _ untransposedColumns: UInt32
+    ) -> UInt32 {
+      var expectedLeading: UInt32
+      if transposeState {
+        expectedLeading = untransposedRows
+      } else {
+        expectedLeading = untransposedColumns
+      }
+      
+      var actualLeading: UInt32
+      if let specifiedLeading {
+        guard specifiedLeading >= expectedLeading else {
+          fatalError("Leading block dimension was too small.")
+        }
+        actualLeading = specifiedLeading
+      } else {
+        actualLeading = expectedLeading
+      }
+      
+      return actualLeading
+    }
+    var leadingDimensionA = chooseLeadingDimension(
+      leadingDimensions?.A, transposeState.A,
+      matrixDimensions.M, matrixDimensions.K)
+    var leadingDimensionB = chooseLeadingDimension(
+      leadingDimensions?.B, transposeState.B,
+      matrixDimensions.K, matrixDimensions.N)
+    var leadingDimensionC = chooseLeadingDimension(
+      leadingDimensions?.C, false,
+      matrixDimensions.M, matrixDimensions.N)
+    constants.setConstantValue(&leadingDimensionA, type: .uint, index: 5)
+    constants.setConstantValue(&leadingDimensionB, type: .uint, index: 6)
+    constants.setConstantValue(&leadingDimensionC, type: .uint, index: 7)
+    
+    var loadPreviousC = self.loadPreviousC
+    constants.setConstantValue(&loadPreviousC, type: .bool, index: 10)
   }
 }

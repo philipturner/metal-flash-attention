@@ -59,12 +59,7 @@ extension GEMMKernel {
     func createPipeline(library: MTLLibrary) -> MTLComputePipelineState {
       // Set the function constants.
       let constants = MTLFunctionConstantValues()
-      var M = gemmDesc.matrixDimensions!.M
-      var N = gemmDesc.matrixDimensions!.N
-      var K = gemmDesc.matrixDimensions!.K
-      constants.setConstantValue(&M, type: .uint, index: 0)
-      constants.setConstantValue(&N, type: .uint, index: 1)
-      constants.setConstantValue(&K, type: .uint, index: 2)
+      gemmDesc.setFunctionConstants(constants)
       
       let function = try! library.makeFunction(
         name: "gemm", constantValues: constants)
