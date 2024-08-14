@@ -159,41 +159,101 @@ extension AttentionDescriptor {
 
 extension AttentionDescriptor {
   func memoryPrecisions() -> [AttentionOperand: GEMMOperandPrecision] {
-    var output: [AttentionOperand: GEMMOperandPrecision] = [:]
+    var memoryPrecisions: [AttentionOperand: GEMMOperandPrecision] = [:]
     
     if lowPrecisionInputs {
-      output[.Q] = .FP16
-      output[.K] = .FP16
-      output[.V] = .FP16
-      output[.dO] = .BF16
+      memoryPrecisions[.Q] = .FP16
+      memoryPrecisions[.K] = .FP16
+      memoryPrecisions[.V] = .FP16
+      memoryPrecisions[.dO] = .BF16
     } else {
-      output[.Q] = .FP32
-      output[.K] = .FP32
-      output[.V] = .FP32
-      output[.dO] = .FP32
+      memoryPrecisions[.Q] = .FP32
+      memoryPrecisions[.K] = .FP32
+      memoryPrecisions[.V] = .FP32
+      memoryPrecisions[.dO] = .FP32
     }
     
     if lowPrecisionIntermediates {
-      output[.L] = .FP16
-      output[.D] = .BF16
+      memoryPrecisions[.L] = .FP16
+      memoryPrecisions[.D] = .BF16
     } else {
-      output[.L] = .FP32
-      output[.D] = .FP32
+      memoryPrecisions[.L] = .FP32
+      memoryPrecisions[.D] = .FP32
     }
     
     if lowPrecisionOutputs {
-      output[.O] = .FP16
-      output[.dV] = .BF16
-      output[.dK] = .BF16
-      output[.dQ] = .BF16
+      memoryPrecisions[.O] = .FP16
+      memoryPrecisions[.dV] = .BF16
+      memoryPrecisions[.dK] = .BF16
+      memoryPrecisions[.dQ] = .BF16
     } else {
-      output[.O] = .FP32
-      output[.dV] = .FP32
-      output[.dK] = .FP32
-      output[.dQ] = .FP32
+      memoryPrecisions[.O] = .FP32
+      memoryPrecisions[.dV] = .FP32
+      memoryPrecisions[.dK] = .FP32
+      memoryPrecisions[.dQ] = .FP32
     }
     
-    return output
+    return memoryPrecisions
+  }
+  
+  func registerPrecisions() -> [AttentionOperand: GEMMOperandPrecision] {
+    var registerPrecisions: [AttentionOperand: GEMMOperandPrecision] = [:]
+    
+    // Query whether the hardware fuses the promotion of BF16 to FP32 with
+    // the FMA assembly instruction.
+    let device = MTLContext.global.device
+    let hasNativeBF16Casting = device.supportsFamily(.apple9)
+    
+    // Inputs have the same register precision across kernels.
+    if lowPrecisionInputs {
+      registerPrecisions[.Q] = .FP16
+      registerPrecisions[.K] = .FP16
+      registerPrecisions[.V] = .FP16
+      registerPrecisions[.dO] = hasNativeBF16Casting ? .BF16 : .FP32
+    } else {
+      registerPrecisions[.Q] = .FP32
+      registerPrecisions[.K] = .FP32
+      registerPrecisions[.V] = .FP32
+      registerPrecisions[.dO] = .FP32
+    }
+    
+    // The register precision of L/D only counts for backward key-value.
+    if lowPrecisionIntermediates {
+      registerPrecisions[.L] = .FP16
+      registerPrecisions[.D] = hasNativeBF16Casting ? .BF16 : .FP32
+    } else {
+      registerPrecisions[.L] = .FP32
+      registerPrecisions[.D] = .FP32
+    }
+    
+    // O is the only operand that's an accumulator for one kernel, and input
+    // for another. Theoretically, we could optimize M3 by keeping it as
+    // BF16 while accumulating dO * O. That would require the kernel type to
+    // be an argument for the 'registerPrecisions()' function.
+    registerPrecisions[.O] = .FP32
+    registerPrecisions[.dV] = .FP32
+    registerPrecisions[.dK] = .FP32
+    registerPrecisions[.dQ] = .FP32
+    
+    // The register precision for the attention matrix.
+    if lowPrecisionIntermediates {
+      // TODO: Utilize the native FP16xFP16->FP16 instruction.
+      //
+      // S = Q * K is the most often recomputed intermediate (3 out of 9 GEMMs,
+      // 2 out of 3 unnecessary GEMMs). If we optimize this, the impact on
+      // performance will be greater than for any other multiplication.
+      registerPrecisions[.S] = .FP32
+      registerPrecisions[.P] = .FP16
+      registerPrecisions[.dP] = .FP32
+      registerPrecisions[.dS] = hasNativeBF16Casting ? .BF16 : .FP32
+    } else {
+      registerPrecisions[.S] = .FP32
+      registerPrecisions[.P] = .FP32
+      registerPrecisions[.dP] = .FP32
+      registerPrecisions[.dS] = .FP32
+    }
+    
+    return registerPrecisions
   }
 }
 
