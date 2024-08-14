@@ -23,10 +23,8 @@ extension GEMMKernel {
   // Register this problem configuration in the cache.
   static func register(descriptor: GEMMDescriptor) {
     guard pipelineCache[descriptor] == nil else {
-      print("Pipeline cache hit.")
       return
     }
-    print("Pipeline cache miss.")
     
     var kernelDescriptor = GEMMKernelDescriptor(descriptor: descriptor)
     
@@ -48,10 +46,8 @@ extension GEMMKernel {
       _ kernelDescriptor: GEMMKernelDescriptor
     ) -> LibraryValue {
       if let output = GEMMKernel.libraryCache[kernelDescriptor] {
-        print("Library cache hit.")
         return output
       } else {
-        print("Library cache miss.")
         let kernel = GEMMKernel(descriptor: kernelDescriptor)
         let source = kernel.createSource()
         let library = try! device.makeLibrary(source: source, options: nil)

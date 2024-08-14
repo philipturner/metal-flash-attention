@@ -10,7 +10,7 @@ import Metal
 // Test the performance of the attention kernel, using single-headed attention
 // over a square attention matrix.
 
-#if false
+#if true
 func executeScript() {
   // Automate the execution of the test suite.
   profileProblemSize(sequenceDimension: 10, headDimension: 3)
@@ -99,8 +99,8 @@ func profileProblemSize(
   
   func createPipeline(kernel: AttentionKernel) -> MTLComputePipelineState {
     let device = MTLContext.global.device
-    let library = try! device.makeLibrary(
-      source: kernel.source, options: nil)
+    let source = kernel.createSource()
+    let library = try! device.makeLibrary(source: source, options: nil)
     
     let functionConstants = MTLFunctionConstantValues()
     attentionDesc.setFunctionConstants(functionConstants)

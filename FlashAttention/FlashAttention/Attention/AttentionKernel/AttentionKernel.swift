@@ -23,28 +23,19 @@
 // design choice before fine-tuning block sizes.
 
 struct AttentionKernel {
-  // Problem size information that must be known during codegen.
-  var blockDimensions: (
-    parallelization: UInt16, traversal: UInt16, head: UInt16)
-  var headDimension: UInt16
+  var type: AttentionKernelType
   
-  // Categorical information about various operand attributes.
+  // Categorical attributes for each operand.
   var cacheState: [AttentionOperand: Bool]
   var memoryPrecisions: [AttentionOperand: GEMMOperandPrecision]
   var preferAsyncCache: Bool
   var preferAsyncLoad: Bool
   var transposeState: [AttentionOperand: Bool]
-  var type: AttentionKernelType
   
-  // The source code to compile.
-  var source: String = ""
-  
-  // The number of threads per group.
-  var threadgroupSize: UInt16
-  
-  // If you allocate threadgroup memory after compiling the kernel, the code
-  // has higher performance.
-  var threadgroupMemoryAllocation: UInt16
+  // Layout of the data in registers and threadgroup memory.
+  var blockDimensions: (
+    parallelization: UInt16, traversal: UInt16, head: UInt16)
+  var headDimension: UInt16
   
   init(descriptor: AttentionKernelDescriptor) {
     guard let blockDimensions = descriptor.blockDimensions,
@@ -54,39 +45,16 @@ struct AttentionKernel {
           let type = descriptor.type else {
       fatalError("Descriptor was incomplete.")
     }
-    self.blockDimensions = blockDimensions
-    self.headDimension = headDimension
+    self.type = type
     
     self.cacheState = descriptor.cacheState
     self.memoryPrecisions = descriptor.memoryPrecisions
     self.preferAsyncCache = preferAsyncCache
     self.preferAsyncLoad = preferAsyncLoad
     self.transposeState = descriptor.transposeState
-    self.type = type
     
-    // TODO: Eventually, reduce the threadgroup memory allocation. Since we
-    // only read one operand at a time, there is no coupling between starting
-    // address and the precision of anything.
-    threadgroupSize = 32 * (blockDimensions.parallelization / 8)
-    threadgroupMemoryAllocation = max(
-      blockDimensions.parallelization * blockDimensions.head * 4,
-      blockDimensions.traversal * blockDimensions.head * 4)
-    
-    if case .backwardQuery = type {
-      // D[i] = dO * O
-      threadgroupMemoryAllocation = max(
-        threadgroupMemoryAllocation,
-        2 * blockDimensions.parallelization * 8 * 4)
-    }
-    if case .backwardKeyValue = type {
-      // load L or D[i]
-      threadgroupMemoryAllocation = max(
-        threadgroupMemoryAllocation,
-        blockDimensions.traversal * 4)
-    }
-    
-    // Add the contents of the function.
-    source = createSource()
+    self.blockDimensions = blockDimensions
+    self.headDimension = headDimension
   }
 }
 
@@ -217,6 +185,34 @@ extension AttentionKernel {
     
     var output = (remainder) == 0 ? (blockDim) : (remainder)
     output = (((output)) + 7) / 8 * 8
+    return output
+  }
+  
+  var threadgroupSize: UInt16 {
+    32 * (blockDimensions.parallelization / 8)
+  }
+  
+  var threadgroupMemoryAllocation: UInt16 {
+    // TODO: Make a higher-level abstraction like "blockBytes", which lets
+    // the allocation shrink when using mixed precision. This will only be
+    // effective when both inputs and outputs are stored as 16-bit types.
+    var output = max(
+      blockDimensions.parallelization * blockDimensions.head * 4,
+      blockDimensions.traversal * blockDimensions.head * 4)
+    
+    if case .backwardQuery = type {
+      // D[i] = dO * O
+      output = max(
+        output,
+        2 * blockDimensions.parallelization * 8 * 4)
+    }
+    if case .backwardKeyValue = type {
+      // load L or D[i]
+      output = max(
+        output,
+        blockDimensions.traversal * 4)
+    }
+    
     return output
   }
 }

@@ -14,9 +14,9 @@ import QuartzCore
 /// function to script tests in their fork.
 
 // Refactoring:
-// - Verify that the new GEMM shader cache works correctly.
-// - Run the adversarial shape tests with the new caching mechanism.
-// - Incorporate the new design philosophy into the current attention test.
+// - Verify that the new GEMM shader cache works correctly. [DONE]
+// - Run the adversarial shape tests with the new caching mechanism. [DONE]
+// - Incorporate the new design philosophy into the attention test. [DONE]
 //
 // Mixed precision:
 // - Debug the numerical correctness of frequently truncating O to FP16
