@@ -78,32 +78,6 @@ func profileProblemSize(
   networkDesc.D = headDimension
   let network = Network(descriptor: networkDesc)
   
-  // MARK: - Buffers
-  
-  let bufferQ = MTLContext.global.createBuffer(network.Q, .FP32)
-  let bufferK = MTLContext.global.createBuffer(network.K, .FP32)
-  let bufferV = MTLContext.global.createBuffer(network.V, .FP32)
-  let bufferDerivativeO = MTLContext.global.createBuffer(network.C, .FP32)
-  
-  let operandSize = sequenceDimension * headDimension
-  var resultO = [Float](repeating: .zero, count: operandSize)
-  var resultL = [Float](repeating: .zero, count: sequenceDimension)
-  var resultD = [Float](repeating: .zero, count: sequenceDimension)
-  var resultDerivativeV = [Float](repeating: .zero, count: operandSize)
-  var resultDerivativeK = [Float](repeating: .zero, count: operandSize)
-  var resultDerivativeQ = [Float](repeating: .zero, count: operandSize)
-  resultO[0] = .nan
-  
-  let bufferO = MTLContext.global.createBuffer(resultO, .FP32)
-  let bufferL = MTLContext.global.createBuffer(resultL, .FP32)
-  let bufferD = MTLContext.global.createBuffer(resultD, .FP32)
-  let bufferDerivativeV = MTLContext.global
-    .createBuffer(resultDerivativeV, .FP32)
-  let bufferDerivativeK = MTLContext.global
-    .createBuffer(resultDerivativeK, .FP32)
-  let bufferDerivativeQ = MTLContext.global
-    .createBuffer(resultDerivativeQ, .FP32)
-  
   // MARK: - Kernels
   
   var attentionDesc = AttentionDescriptor()
@@ -140,6 +114,42 @@ func profileProblemSize(
   let pipelineForward = createPipeline(kernel: kernelForward)
   let pipelineBackwardQuery = createPipeline(kernel: kernelBackwardQuery)
   let pipelineBackwardKeyValue = createPipeline(kernel: kernelBackwardKeyValue)
+  
+  // MARK: - Buffers
+  
+  // Utility function to make buffer initialization more concise.
+  func createBuffer(
+    _ array: [Float],
+    _ operand: AttentionOperand
+  ) -> MTLBuffer {
+    let memoryPrecisions = attentionDesc.memoryPrecisions()
+    guard let precision = memoryPrecisions[operand] else {
+      fatalError("Precision of operand \(operand) was not specified.")
+    }
+    return MTLContext.global.createBuffer(array, precision)
+  }
+  
+  let operandSize = sequenceDimension * headDimension
+  var resultO = [Float](repeating: .zero, count: operandSize)
+  var resultL = [Float](repeating: .zero, count: sequenceDimension)
+  var resultD = [Float](repeating: .zero, count: sequenceDimension)
+  var resultDerivativeV = [Float](repeating: .zero, count: operandSize)
+  var resultDerivativeK = [Float](repeating: .zero, count: operandSize)
+  var resultDerivativeQ = [Float](repeating: .zero, count: operandSize)
+  resultO[0] = .nan
+  
+  let bufferQ = createBuffer(network.Q, .Q)
+  let bufferK = createBuffer(network.K, .K)
+  let bufferV = createBuffer(network.V, .V)
+  let bufferDerivativeO = createBuffer(network.C, .dO)
+  
+  let bufferL = createBuffer(resultL, .L)
+  let bufferD = createBuffer(resultD, .D)
+  
+  let bufferO = createBuffer(resultO, .O)
+  let bufferDerivativeV = createBuffer(resultDerivativeV, .dV)
+  let bufferDerivativeK = createBuffer(resultDerivativeK, .dK)
+  let bufferDerivativeQ = createBuffer(resultDerivativeQ, .dQ)
   
   // MARK: - GPU Commands
   
@@ -247,6 +257,19 @@ func profileProblemSize(
   // MARK: - Validation
   
 #if true
+  // Utility function to make buffer copying more concise.
+  func copyBuffer(
+    _ destination: inout [Float],
+    _ source: MTLBuffer,
+    _ operand: AttentionOperand
+  ) {
+    let memoryPrecisions = attentionDesc.memoryPrecisions()
+    guard let precision = memoryPrecisions[operand] else {
+      fatalError("Precision of operand \(operand) was not specified.")
+    }
+    MTLContext.copy(source, into: &destination, precision: precision)
+  }
+  
   let O = network.inferenceAttention()
   let L = (0..<sequenceDimension).map(network.createLTerm(rowID:))
   let D = (0..<sequenceDimension).map(network.createDTerm(rowID:))
@@ -255,18 +278,21 @@ func profileProblemSize(
   let dQ = network.derivativeQ()
   
   // Copy the results.
-  MTLContext.copy(bufferO, into: &resultO)
-  MTLContext.copy(bufferL, into: &resultL)
-  MTLContext.copy(bufferD, into: &resultD)
-  for i in resultL.indices {
-    resultL[i] /= 1.44269504089
+  do {
+    copyBuffer(&resultL, bufferL, .L)
+    copyBuffer(&resultD, bufferD, .D)
+    for i in resultL.indices {
+      resultL[i] /= 1.44269504089
+    }
+    for i in resultD.indices {
+      resultD[i] /= 1 / Float(headDimension).squareRoot()
+    }
+    
+    copyBuffer(&resultO, bufferO, .O)
+    copyBuffer(&resultDerivativeV, bufferDerivativeV, .dV)
+    copyBuffer(&resultDerivativeK, bufferDerivativeK, .dK)
+    copyBuffer(&resultDerivativeQ, bufferDerivativeQ, .dQ)
   }
-  for i in resultD.indices {
-    resultD[i] /= 1 / Float(headDimension).squareRoot()
-  }
-  MTLContext.copy(bufferDerivativeV, into: &resultDerivativeV)
-  MTLContext.copy(bufferDerivativeK, into: &resultDerivativeK)
-  MTLContext.copy(bufferDerivativeQ, into: &resultDerivativeQ)
   
 #if false
   // Displays a matrix with dimensions N * 1.

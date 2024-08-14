@@ -65,8 +65,6 @@ struct AttentionDescriptor {
   var transposeState: (Q: Bool, K: Bool, V: Bool, O: Bool)?
 }
 
-// MARK: - Kernel Descriptor
-
 extension AttentionDescriptor {
   /// Initialize the kernel descriptor using another descriptor, which just
   /// specifies the problem size. Then, forget the information about problem
@@ -160,11 +158,8 @@ extension AttentionDescriptor {
   }
 }
 
-// MARK: - Precision Assignment
-
 extension AttentionDescriptor {
-  private func memoryPrecisions(
-  ) -> [AttentionOperand: GEMMOperandPrecision] {
+  func memoryPrecisions() -> [AttentionOperand: GEMMOperandPrecision] {
     var output: [AttentionOperand: GEMMOperandPrecision] = [:]
     
     if lowPrecisionInputs {
@@ -193,8 +188,6 @@ extension AttentionDescriptor {
     return output
   }
 }
-
-// MARK: - PSO Generation
 
 extension AttentionDescriptor {
   // Specialize the Metal function with this attention descriptor.
