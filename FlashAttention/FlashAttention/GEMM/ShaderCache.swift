@@ -7,95 +7,77 @@
 
 import Metal
 
-/// A reference implementation of shader caching.
-///
-/// One good design for a shader caching mechanism:
-/// - Two key-value caches.
-/// - The first caches `MTLLibrary` objects.
-///   - Large latency
-///   - Small number of combinatorial possibilities, likely to be shared by
-///     matrices with a different size.
-///   - Don't bother with serializing Metal binary archives to disk. You are
-///     already utilizing the system-wide Metal shader cache.
-/// - The second caches `MTLComputePipelineState` objects.
-///   - Instantiations of the `MTLLibrary` with different function constants.
-///   - Less latency than compiling from source, but still non-negligible. You
-///     can't spawn a new PSO during every call to a matrix multiplication.
 extension GEMMKernel {
-  /// WARNING: Not thread safe. But will the DSL interpreter even use
-  /// multithreading?
-  static var libraryCache: [
-    GEMMKernelDescriptor: GEMMKernel] = [:]
+  typealias LibraryValue = (
+    kernel: GEMMKernel, library: MTLLibrary)
+  typealias PipelineValue = (
+    kernel: GEMMKernel, pipeline: MTLComputePipelineState)
   
-  /// WARNING: Not thread safe. But will the DSL interpreter even use
-  /// multithreading?
+  static var libraryCache: [
+    GEMMKernelDescriptor: LibraryValue] = [:]
   static var pipelineCache: [
-    GEMMDescriptor: (GEMMKernel, MTLComputePipelineState)] = [:]
+    GEMMDescriptor: PipelineValue] = [:]
 }
 
 extension GEMMKernel {
-  /// Implementation of the logic for choosing between 'device' and
-  /// 'threadgroup' store.
-  static func fetchKernel(
-    descriptor gemmDesc: GEMMDescriptor
-  ) -> (GEMMKernel, MTLComputePipelineState) {
-    // Perform the early return before anything with high latency.
-    if let value = GEMMKernel.pipelineCache[gemmDesc] {
-      return value
+  // Register this problem configuration in the cache.
+  static func register(descriptor: GEMMDescriptor) {
+    guard pipelineCache[descriptor] == nil else {
+      print("Pipeline cache hit.")
+      return
     }
-    func createKernel(descriptor: GEMMKernelDescriptor) -> GEMMKernel {
-      guard descriptor.preferAsyncStore != nil else {
-        fatalError("Prefer async store was not set.")
-      }
-      if let previous = GEMMKernel.libraryCache[descriptor] {
-        return previous
-      } else {
-        return GEMMKernel(descriptor: descriptor)
-      }
-    }
+    print("Pipeline cache miss.")
     
-    // Create a MTLDevice object.
+    var kernelDescriptor = GEMMKernelDescriptor(descriptor: descriptor)
+    
     let device = MTLContext.global.device
-    func createPipeline(library: MTLLibrary) -> MTLComputePipelineState {
-      // Set the function constants.
-      let constants = MTLFunctionConstantValues()
-      gemmDesc.setFunctionConstants(constants)
-      
-      let function = try! library.makeFunction(
-        name: "gemm", constantValues: constants)
-      let pipeline = try! device.makeComputePipelineState(function: function)
-      return pipeline
-    }
-    
-    var kernelDesc = GEMMKernelDescriptor(descriptor: gemmDesc)
-    kernelDesc.device = device
     if device.supportsFamily(.apple9) {
-      kernelDesc.preferAsyncStore = false
+      kernelDescriptor.preferAsyncStore = false
     } else {
-      guard let blockDimensions = kernelDesc.blockDimensions else {
+      guard let blockDimensions = kernelDescriptor.blockDimensions else {
         fatalError("Block dimensions were not set.")
       }
       if blockDimensions == (48, 48, 32) {
-        kernelDesc.preferAsyncStore = nil
+        kernelDescriptor.preferAsyncStore = nil
       } else {
-        kernelDesc.preferAsyncStore = true
+        kernelDescriptor.preferAsyncStore = true
       }
     }
     
-    var output: (GEMMKernel, MTLComputePipelineState)
-    if kernelDesc.preferAsyncStore != nil {
-      let kernel = createKernel(descriptor: kernelDesc)
-      let pipeline = createPipeline(library: kernel.library)
-      output = (kernel, pipeline)
+    func createLibrary(
+      _ kernelDescriptor: GEMMKernelDescriptor
+    ) -> LibraryValue {
+      if let output = GEMMKernel.libraryCache[kernelDescriptor] {
+        print("Library cache hit.")
+        return output
+      } else {
+        print("Library cache miss.")
+        let kernel = GEMMKernel(descriptor: kernelDescriptor)
+        let source = kernel.createSource()
+        let library = try! device.makeLibrary(source: source, options: nil)
+        
+        let output = (kernel, library)
+        GEMMKernel.libraryCache[kernelDescriptor] = output
+        return output
+      }
+    }
+    
+    func createPipeline(
+      _ libraryValue: LibraryValue
+    ) -> PipelineValue {
+      let constants = MTLFunctionConstantValues()
+      descriptor.setFunctionConstants(constants)
       
-      GEMMKernel.libraryCache[kernelDesc] = kernel
-    } else {
-      
-      var candidates: [
-        (kernelDesc: GEMMKernelDescriptor,
-         kernel: GEMMKernel,
-         pipeline: MTLComputePipelineState)
-      ] = []
+      let library = libraryValue.library
+      let function = try! library.makeFunction(
+        name: "gemm", constantValues: constants)
+      let pipeline = try! device.makeComputePipelineState(
+        function: function)
+      return (libraryValue.kernel, pipeline)
+    }
+    
+    if kernelDescriptor.preferAsyncStore == nil {
+      var candidates: [PipelineValue] = []
       for candidateID in 0..<4 {
         var blockDimensions: (M: UInt16, N: UInt16, K: UInt16)
         var preferAsyncStore: Bool
@@ -116,22 +98,21 @@ extension GEMMKernel {
           fatalError("This should never happen.")
         }
         
-        // Set the data that's unique to this variant.
-        var newKernelDesc = kernelDesc
-        newKernelDesc.blockDimensions = blockDimensions
-        newKernelDesc.preferAsyncStore = preferAsyncStore
+        // Set the attributes unique to this variant.
+        var modifiedKernelDescriptor = kernelDescriptor
+        modifiedKernelDescriptor.blockDimensions = blockDimensions
+        modifiedKernelDescriptor.preferAsyncStore = preferAsyncStore
         
-        let kernel = createKernel(descriptor: newKernelDesc)
-        let pipeline = createPipeline(library: kernel.library)
-        candidates.append((newKernelDesc, kernel, pipeline))
-        
-        GEMMKernel.libraryCache[newKernelDesc] = kernel
+        let libraryValue = createLibrary(modifiedKernelDescriptor)
+        let pipelineValue = createPipeline(libraryValue)
+        candidates.append(pipelineValue)
       }
       
       // Find the maximum occupancy.
       var maximumOccupancy: Int = -1
       for candidate in candidates {
-        let occupancy = candidate.pipeline.maxTotalThreadsPerThreadgroup
+        let pipeline = candidate.pipeline
+        let occupancy = pipeline.maxTotalThreadsPerThreadgroup
         maximumOccupancy = max(maximumOccupancy, occupancy)
       }
       candidates.removeAll(where: {
@@ -139,13 +120,11 @@ extension GEMMKernel {
       })
       
       // Choose the highest-performing candidate.
-      let candidate = candidates.last!
-      kernelDesc = candidate.kernelDesc
-      output = (candidate.kernel, candidate.pipeline)
+      GEMMKernel.pipelineCache[descriptor] = candidates.last!
+    } else {
+      let libraryValue = createLibrary(kernelDescriptor)
+      let pipelineValue = createPipeline(libraryValue)
+      GEMMKernel.pipelineCache[descriptor] = pipelineValue
     }
-    
-    // Save the output to the cache.
-    GEMMKernel.pipelineCache[gemmDesc] = output
-    return output
   }
 }

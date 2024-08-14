@@ -115,9 +115,6 @@ struct GEMMKernelDescriptor {
   /// ```
   var blockDimensions: (M: UInt16, N: UInt16, K: UInt16)?
   
-  /// The device to create the kernel on.
-  var device: MTLDevice?
-  
   /// Optional. The layout of elements in threadgroup memory.
   ///
   /// If not specified, the default value matches the actual block dimensions.

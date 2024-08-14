@@ -8,10 +8,6 @@
 import protocol Metal.MTLLibrary
 
 struct GEMMKernel {
-  // Compiled source code.
-  var source: String = ""
-  var library: MTLLibrary!
-  
   // Address spaces and data types.
   var memoryPrecisions: (
     A: GEMMOperandPrecision, B: GEMMOperandPrecision, C: GEMMOperandPrecision)
@@ -33,7 +29,6 @@ struct GEMMKernel {
   
   init(descriptor: GEMMKernelDescriptor) {
     guard let blockDimensions = descriptor.blockDimensions,
-          let device = descriptor.device,
           let memoryPrecisions = descriptor.memoryPrecisions,
           let preferAsyncStore = descriptor.preferAsyncStore,
           let registerPrecisions = descriptor.registerPrecisions,
@@ -52,6 +47,7 @@ struct GEMMKernel {
     self.transposeState = transposeState
     
     // Validate the correctness of register precisions.
+    @inline(__always)
     func checkOperandPair(
       memory: GEMMOperandPrecision,
       register: GEMMOperandPrecision
@@ -153,10 +149,6 @@ struct GEMMKernel {
     leadingBlockDimensions.C = chooseLeadingBlockDimension(
       descriptor.leadingBlockDimensions?.C, false,
       blockDimensions.M, blockDimensions.N)
-    
-    // Compile the shader source.
-    source = createSource()
-    library = try! device.makeLibrary(source: source, options: nil)
   }
 }
 

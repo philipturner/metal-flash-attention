@@ -10,7 +10,7 @@ import Metal
 // Tests the performance of large matrix multiplications, using the
 // second-order Laplacian in direct matrix form.
 
-#if false
+#if true
 func executeScript() {
   print("Hello, console.")
   
@@ -128,6 +128,18 @@ func executeScript() {
         runTest(descriptor: testDescriptor)
       }
     }
+    
+    print()
+    print("Performance tests:")
+    for problemSize in 1488...1489 {
+      for transposeState in transposeStates {
+        var testDescriptor = TestDescriptor()
+        testDescriptor.precision = .BF16
+        testDescriptor.problemSize = problemSize
+        testDescriptor.transposeState = transposeState
+        runTest(descriptor: testDescriptor)
+      }
+    }
   }
 }
 
@@ -203,7 +215,8 @@ func profileProblemSize(
   var occupancy: Int = .zero
   do {
     // Generate the kernel.
-    let (kernel, pipeline) = GEMMKernel.fetchKernel(descriptor: descriptor)
+    GEMMKernel.register(descriptor: descriptor)
+    let (kernel, pipeline) = GEMMKernel.pipelineCache[descriptor]!
     occupancy = pipeline.maxTotalThreadsPerThreadgroup
     
     // Create the buffers.

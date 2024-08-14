@@ -13,7 +13,11 @@ import QuartzCore
 /// when the 'main' branch is in a stable state. Clients can utilize this
 /// function to script tests in their fork.
 
-// Tasks:
-// - Confirm a register pressure reduction with low precision.
+// Refactoring:
+// - Verify that the new GEMM shader cache works correctly.
+// - Run the adversarial shape tests with the new caching mechanism.
+// - Incorporate the new design philosophy into the current attention test.
+//
+// Mixed precision:
 // - Debug the numerical correctness of frequently truncating O to FP16
 //   during forward. Do larger traversal block sizes help?
