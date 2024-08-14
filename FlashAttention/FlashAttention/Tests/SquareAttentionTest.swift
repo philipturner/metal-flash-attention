@@ -81,7 +81,7 @@ func profileProblemSize(
   // MARK: - Kernels
   
   var attentionDesc = AttentionDescriptor()
-  attentionDesc.lowPrecisionInputs = false
+  attentionDesc.lowPrecisionInputs = true
   attentionDesc.lowPrecisionOutputs = true
   attentionDesc.matrixDimensions = (
     R: UInt32(sequenceDimension),
@@ -389,7 +389,8 @@ func profileProblemSize(
      tolerance = max(tolerance, 5e-2)
   }
   if attentionDesc.lowPrecisionOutputs {
-    tolerance = max(tolerance, 2e-3)
+    // as long as traversl block >= 16 and head dimension <= 200
+    tolerance = max(tolerance, 5e-2)
   }
   
   var errorCount: Int = .zero

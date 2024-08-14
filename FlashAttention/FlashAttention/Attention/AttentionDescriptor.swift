@@ -123,8 +123,8 @@ extension AttentionDescriptor {
     }
     
     // Assign the cache state.
-    let cacheInputs = true
-    let cacheOutputs = true
+    let cacheInputs = false
+    let cacheOutputs = false
     
     switch type {
     case .forward:
@@ -179,9 +179,9 @@ extension AttentionDescriptor {
     
     if lowPrecisionOutputs {
       output[.O] = .FP16
-      output[.dV] = .FP32
-      output[.dK] = .FP32
-      output[.dQ] = .FP32
+      output[.dV] = .BF16
+      output[.dK] = .BF16
+      output[.dQ] = .BF16
     } else {
       output[.O] = .FP32
       output[.dV] = .FP32
