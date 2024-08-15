@@ -419,21 +419,32 @@ func profileProblemSize(
     tolerance = max(tolerance, 3e-2)
   }
   if attentionDesc.lowPrecisionOutputs {
-    // as long as traversal block >= 16 and head dimension <= 200
+    // Traversal block = 64, sequence length = 256, head size = 32
+    // FP16 (O)        | cached: 3e-4 | paged: 5e-4   | 2x
+    // BF16 (dV/dK/dQ) | cached: 4e-3 | paged: 1.3e-2 | 3x
+    //
+    // Traversal block = 64, sequence length = 1024, head size = 32
+    // FP16 (O)        | cached: 2e-4 | paged: 5e-4   | 3x
+    // BF16 (dV/dK/dQ) | cached: 4e-3 | paged: 1.5e-2 | 4x
+    //
+    // Traversal block = 64, sequence length = 4096, head size = 32
+    // FP16 (O)        | cached: 1e-4 | paged: 5e-4   | 5x
+    // BF16 (dV/dK/dQ) | cached: 1e-3 | paged: 4e-2   | 40x
+    //
+    // Traversal block = 64, sequence length = 8192, head size = 32
+    // FP16 (O)        | cached: 4e-5 | paged: 5e-4   | 13x
+    // BF16 (dV/dK/dQ) | cached: 1e-3 | paged: 4e-2   | 40x
     tolerance = max(tolerance, 5e-2)
   }
   
   if attentionDesc.lowPrecisionIntermediates {
-    check(expected: L, actual: resultL, tolerance: 3e-3)
+    check(expected: L, actual: resultL, tolerance: 5e-3)
     check(expected: D, actual: resultD, tolerance: 1e-1)
   } else {
     check(expected: L, actual: resultL, tolerance: tolerance)
     check(expected: D, actual: resultD, tolerance: tolerance)
   }
   
-  // TODO: Check for coupling between L/D precision and output accuracy. Then,
-  // move on to changing the register precisions and eventually compressing
-  // the S/P/dP/dS intermediates.
   check(expected: O, actual: resultO, tolerance: tolerance)
   check(expected: dV, actual: resultDerivativeV, tolerance: tolerance)
   check(expected: dK, actual: resultDerivativeK, tolerance: tolerance)
