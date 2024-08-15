@@ -25,7 +25,7 @@ extension AttentionKernel {
       if type == .load {
         return """
         
-        simdgroup_matrix_storage<float> \
+        simdgroup_matrix_storage<\(registerName(operand))> \
         \(operand)_sram[\(paddedHeadDimension / 8)];
         
         """
@@ -376,7 +376,7 @@ extension AttentionKernel {
         output += """
         
         if (\(unsafeParallelizationThreadOffset) < \(parallelizationDimension)) {
-          // Premultiplied by M_LOG2E_F.
+          // Premultiplied by log_base_2(e).
           float L_sram = m + fast::log2(l);
           L[\(clampedParallelizationThreadOffset)] = L_sram;
         }
@@ -401,8 +401,6 @@ extension AttentionKernel {
         case .BF16:
           return """
           
-          // TODO: Try registerForm[0] to throw off the test. There should be
-          // an error.
           bfloat2 registerForm = *(thread bfloat2*)(&D_sram);
           bfloat memoryForm = registerForm[1];
           D[\(clampedParallelizationThreadOffset)] = memoryForm;

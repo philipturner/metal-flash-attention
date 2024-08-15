@@ -58,7 +58,7 @@ extension AttentionKernel {
         } else {
           return """
           
-          simdgroup_matrix_storage<float> dO;
+          simdgroup_matrix_storage<\(registerName(.dO))> dO;
           dO.\(loadFunction(.dO))(
             dO_src, \(leadingDimension(.dO)),
             ushort2(d, 0), \(transposed(.dO)));
@@ -88,15 +88,15 @@ extension AttentionKernel {
       for (ushort d = 0; d < \(truncatedHeadDimension); d += 8) {
         \(loadDerivativeO())
         
-        simdgroup_matrix_storage<float> O;
+        simdgroup_matrix_storage<\(registerName(.O))> O;
         O.\(loadFunction(.O))(
           O_src, \(leadingDimension(.O)),
           ushort2(d, 0), \(transposed(.O)));
         
         // Perform the pointwise multiplication.
-        float2 dO_value = *(dO.thread_elements());
-        float2 O_value = *(O.thread_elements());
-        D_accumulator += dO_value * O_value;
+        auto dO_value = *(dO.thread_elements());
+        auto O_value = *(O.thread_elements());
+        D_accumulator += float2(dO_value) * float2(O_value);
       }
 
       """
@@ -183,8 +183,8 @@ extension AttentionKernel {
       
       // Load the zero-padded edge data.
       ushort2 origin(0, 0);
-      simdgroup_matrix_storage<float> dO;
-      simdgroup_matrix_storage<float> O;
+      simdgroup_matrix_storage<\(registerName(.dO))> dO;
+      simdgroup_matrix_storage<\(registerName(.O))> O;
       dO.\(loadFunction(.dO))(
         dO_block, \(leadingBlockDimension(.dO)),
         origin, \(transposed(.dO)));
@@ -193,9 +193,9 @@ extension AttentionKernel {
         origin, \(transposed(.O)));
       
       // Perform the pointwise multiplication.
-      float2 dO_value = *(dO.thread_elements());
-      float2 O_value = *(O.thread_elements());
-      D_accumulator += dO_value * O_value;
+      auto dO_value = *(dO.thread_elements());
+      auto O_value = *(O.thread_elements());
+      D_accumulator += float2(dO_value) * float2(O_value);
       
       """
     }
@@ -229,6 +229,7 @@ extension AttentionKernel {
     let blockDim = blockDimensions.traversal
     let remainder = "(\(traversalDimension) % \(blockDim))"
     let remainderFloor = "(\(remainder) - (\(remainder) % 8))";
+    let logBase2E: Float = 1.442695041
     
     return """
     
@@ -238,8 +239,8 @@ extension AttentionKernel {
       // exponentiation. If the multiplication during FMA returns -INF,
       // subtracting a positive 'm' value will turn it into zero. We don't want
       // that. exp(0) evaluates to 1.00 and corrupts the value of 'l'.
-      const float mask_value =
-      (0.875 / M_LOG2E_F) * -numeric_limits<float>::max();
+      const \(registerName(.S)) mask_value =
+      (0.875 / \(logBase2E)) * -numeric_limits<\(registerName(.S))>::max();
       
       #pragma clang loop unroll(full)
       for (ushort index = 0; index < 2; ++index) {
@@ -267,7 +268,7 @@ extension AttentionKernel {
     """
     
     // update 'm'
-    float2 m_new_accumulator;
+    vec<\(registerName(.S)), 2> m_new_accumulator;
     #pragma clang loop unroll(full)
     for (ushort c = 0; c < \(blockDimensions.traversal); c += 8) {
       auto S_elements = S_sram[c / 8].thread_elements();
@@ -301,10 +302,16 @@ extension AttentionKernel {
   
   // Reduce sum during the online softmax.
   func onlineReduceSum() -> String {
+    // I don't think keeping the sum in FP16 here, should negatively affect
+    // numerical accuracy too much. It is typically 8-16 summations. If I am
+    // wrong, clients - please just fix this ('float2 l_new_accumulator')
+    // instead of promoting the entire P matrix to FP32. Having P in low
+    // precision is critical for performance on M1, which typically will not
+    // receive high coverage in your performance tests.
     """
     
     // update 'l'
-    float2 l_new_accumulator;
+    vec<\(registerName(.P)), 2> l_new_accumulator;
     #pragma clang loop unroll(full)
     for (ushort c = 0; c < \(blockDimensions.traversal); c += 8) {
       auto P_elements = P_sram[c / 8].thread_elements();

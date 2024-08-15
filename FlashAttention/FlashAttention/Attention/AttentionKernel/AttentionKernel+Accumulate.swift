@@ -40,7 +40,7 @@ extension AttentionKernel {
       }
       return """
       
-      simdgroup_matrix_storage<float> \
+      simdgroup_matrix_storage<\(registerName(C))> \
       \(C)_sram[\(descriptor.registerSize) / 8];
       
       """
@@ -54,7 +54,7 @@ extension AttentionKernel {
       #pragma clang loop unroll(full)
       for (ushort d = 0; d < \(descriptor.registerSize); d += 8) {
         auto \(C) = \(C)_sram + (\(descriptor.registerOffset) + d) / 8;
-        *\(C) = simdgroup_matrix_storage<float>(0);
+        *\(C) = simdgroup_matrix_storage<\(registerName(C))>(0);
       }
       
       """
@@ -363,7 +363,7 @@ extension AttentionKernel {
       for (ushort d = 0; d < \(descriptor.registerSize); d += 8) {
         // Load the RHS from memory.
         ushort2 \(B)_origin(d, c);
-        simdgroup_matrix_storage<float> \(B);
+        simdgroup_matrix_storage<\(registerName(B))> \(B);
         \(B).\(loadFunction(B))(
           \(B)_src, \(leadingDimensionRHS(descriptor)),
           \(B)_origin, \(transposed(B)));
