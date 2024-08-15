@@ -288,7 +288,7 @@ extension AttentionKernel {
     func allocate(operand: AttentionOperand) -> String {
       """
       
-      simdgroup_matrix_storage<float> \
+      simdgroup_matrix_storage<\(registerName(operand))> \
       \(operand)_sram[\(paddedHeadDimension / 8)];
       
       """

@@ -29,7 +29,7 @@ extension AttentionKernel {
     func allocateAccumulator() -> String {
       """
       
-      simdgroup_matrix_storage<float> \
+      simdgroup_matrix_storage<\(registerName(C))> \
       \(C)_sram[\(blockDimensions.traversal) / 8];
       
       """
@@ -40,7 +40,8 @@ extension AttentionKernel {
       
       #pragma clang loop unroll(full)
       for (ushort c = 0; c < \(blockDimensions.traversal); c += 8) {
-        \(C)_sram[c / 8] = simdgroup_matrix_storage<float>(0);
+        auto \(C) = \(C)_sram + c / 8;
+        *\(C) = simdgroup_matrix_storage<\(registerName(C))>(0);
       }
       
       """
@@ -54,7 +55,7 @@ extension AttentionKernel {
       }
       return """
       
-      simdgroup_matrix_storage<float> \
+      simdgroup_matrix_storage<\(registerName(A))> \
       \(A)_sram[\(descriptor.registerSize) / 8];
       
       """
@@ -272,7 +273,7 @@ extension AttentionKernel {
       for (ushort c = \(traversalStart); c < \(traversalEnd); c += 8) {
         // Load the RHS from memory.
         ushort2 \(B)_origin(c, d);
-        simdgroup_matrix_storage<float> \(B);
+        simdgroup_matrix_storage<\(registerName(B))> \(B);
         \(B).\(loadFunction(B))(
           \(B)_src, \(leadingDimensionRHS(descriptor)),
           \(B)_origin, \(!transposed(B)));

@@ -308,6 +308,12 @@ extension AttentionKernel {
     // instead of promoting the entire P matrix to FP32. Having P in low
     // precision is critical for performance on M1, which typically will not
     // receive high coverage in your performance tests.
+    //
+    // TODO: When debugging mixed precision, revert this to float2. Examine
+    // the impact it has on numerical correctness, with every other variable
+    // in FP32.
+    // - Casting to float2 may cause the Metal compiler to allocate a bunch
+    //   of extra registers for the FP16 attention matrix.
     """
     
     // update 'l'
@@ -345,13 +351,15 @@ extension AttentionKernel {
       if !derivative {
         return """
         
-        simdgroup_matrix_storage<float> P_sram[\(blockDim) / 8];
+        simdgroup_matrix_storage<\(registerName(.P))> \
+        P_sram[\(blockDim) / 8];
         
         """
       } else {
         return """
         
-        simdgroup_matrix_storage<float> dS_sram[\(blockDim) / 8];
+        simdgroup_matrix_storage<\(registerName(.dS))> \
+        dS_sram[\(blockDim) / 8];
         
         """
       }
@@ -362,7 +370,6 @@ extension AttentionKernel {
       
       threadgroup_barrier(mem_flags::mem_threadgroup);
       if (sidx == 0) {
-        // Locate the \(operand)[i] in device and threadgroup memory.
         auto \(operand)_src = \(operand) + \(traversalOffset);
         auto \(operand)_dst =
         (threadgroup \(memoryName(operand))*)(threadgroup_block);
@@ -414,17 +421,19 @@ extension AttentionKernel {
       if !derivative {
         return """
         
-        float2 S = float2(*(S_sram[c / 8].thread_elements()));
-        float2 P = fast::exp2(S * \(scale) - L);
+        auto S = *(S_sram[c / 8].thread_elements());
+        auto P = vec<\(registerName(.P)), 2>(
+          fast::exp2(float2(S) * \(scale) - float2(L_elements)));
         *(P_sram[c / 8].thread_elements()) = P;
         
         """
       } else {
         return """
         
-        float2 P = float2(*(P_sram[c / 8].thread_elements()));
-        float2 dP = float2(*(dP_sram[c / 8].thread_elements()));
-        float2 dS = P * (dP * \(scale) - D);
+        auto P = *(P_sram[c / 8].thread_elements());
+        auto dP = *(dP_sram[c / 8].thread_elements());
+        auto dS = vec<\(registerName(.dS)), 2>(
+          float2(P) * (float2(dP) * \(scale) - float2(D_elements)));
         *(dS_sram[c / 8].thread_elements()) = dS;
         
         """
@@ -438,7 +447,7 @@ extension AttentionKernel {
         
         #pragma clang loop unroll(full)
         for (ushort c = 0; c < \(blockDimensions.traversal); c += 8) {
-          auto L = m;
+          auto L_elements = m;
           \(overwriteAttentionMatrixElements())
         }
         
@@ -448,7 +457,7 @@ extension AttentionKernel {
         
         #pragma clang loop unroll(full)
         for (ushort c = 0; c < \(blockDimensions.traversal); c += 8) {
-          auto \(operand) = \(operand)_sram;
+          auto \(operand)_elements = \(operand)_sram;
           \(overwriteAttentionMatrixElements())
         }
         
@@ -459,11 +468,11 @@ extension AttentionKernel {
         #pragma clang loop unroll(full)
         for (ushort c = 0; c < \(blockDimensions.traversal); c += 8) {
           ushort2 \(operand)_origin(c, 0);
-          simdgroup_matrix_storage<float> \(operand)_sram;
-          \(operand)_sram.\(loadFunction(operand))(
+          simdgroup_matrix_storage<\(registerName(operand))> \(operand);
+          \(operand).\(loadFunction(operand))(
             \(operand)_src, 1,
             \(operand)_origin, false);
-          float2 \(operand) = *(\(operand)_sram.thread_elements());
+          auto \(operand)_elements = *(\(operand).thread_elements());
           
           \(overwriteAttentionMatrixElements())
         }
