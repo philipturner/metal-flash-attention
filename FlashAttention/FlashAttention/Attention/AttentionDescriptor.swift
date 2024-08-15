@@ -249,7 +249,7 @@ extension AttentionDescriptor {
       registerPrecisions[.dS] = hasNativeBF16Casting ? .BF16 : .FP32
     } else {
       registerPrecisions[.S] = .FP32
-      registerPrecisions[.P] = .FP32
+      registerPrecisions[.P] = .FP16
       registerPrecisions[.dP] = .FP32
       registerPrecisions[.dS] = .FP32
     }

@@ -412,13 +412,11 @@ func profileProblemSize(
   
   // Check the results.
   var tolerance: Float = 2e-5
-  if attentionDesc.lowPrecisionInputs {
-     tolerance = max(tolerance, 5e-2)
-  }
-  if attentionDesc.lowPrecisionIntermediates {
-    tolerance = max(tolerance, 3e-2)
-  }
-  if attentionDesc.lowPrecisionOutputs {
+  if attentionDesc.lowPrecisionInputs ||
+      attentionDesc.lowPrecisionIntermediates ||
+      attentionDesc.lowPrecisionOutputs {
+    // Data for low precision outputs.
+    //
     // Traversal block = 64, sequence length = 256, head size = 32
     // FP16 (O)        | cached: 3e-4 | paged: 5e-4   | 2x
     // BF16 (dV/dK/dQ) | cached: 4e-3 | paged: 1.3e-2 | 3x
@@ -434,8 +432,12 @@ func profileProblemSize(
     // Traversal block = 64, sequence length = 8192, head size = 32
     // FP16 (O)        | cached: 4e-5 | paged: 5e-4   | 13x
     // BF16 (dV/dK/dQ) | cached: 1e-3 | paged: 4e-2   | 40x
-    tolerance = max(tolerance, 5e-2)
+     tolerance = max(tolerance, 5e-2)
   }
+  
+  // float2 accumulate: 2.7e-3
+  // half2  accumulate: 5.3e-3
+  tolerance = 2.6e-3
   
   if attentionDesc.lowPrecisionIntermediates {
     check(expected: L, actual: resultL, tolerance: 5e-3)
