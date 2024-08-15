@@ -317,14 +317,14 @@ extension AttentionKernel {
     """
     
     // update 'l'
-    vec<\(registerName(.P)), 2> l_new_accumulator;
+    float2 l_new_accumulator;
     #pragma clang loop unroll(full)
     for (ushort c = 0; c < \(blockDimensions.traversal); c += 8) {
       auto P_elements = P_sram[c / 8].thread_elements();
       if (c == 0) {
-        l_new_accumulator = *P_elements;
+        l_new_accumulator = float2(*P_elements);
       } else {
-        l_new_accumulator += *P_elements;
+        l_new_accumulator += float2(*P_elements);
       }
     }
     float l_new = l_new_accumulator[0] + l_new_accumulator[1];

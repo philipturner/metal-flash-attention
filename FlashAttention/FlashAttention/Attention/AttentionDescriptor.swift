@@ -174,6 +174,18 @@ extension AttentionDescriptor {
       memoryPrecisions[.dO] = .FP32
     }
     
+    // Rounding error. In the test that reported these errors, the average
+    // magnitude of any scalar was typically 1.0 to 10.0.
+    //
+    //   | FP32 | FP16/BF16   |
+    // - | ---- | ----------- |
+    // L | 2e-5 | 7e-3 (FP16) |
+    // D | 2e-5 | 1e-1 (BF16) |
+    //
+    // Although the error in D is relatively large (1e-1), it does not impact
+    // the error of the final outputs (O/dV/dK/dQ). For example, the error of
+    // O/dV/dK/dQ is always 5e-2 in typical mixed precision workflows.
+    // When D is demoted to BF16, the error of O/dV/dK/dQ is still 5e-2.
     if lowPrecisionIntermediates {
       memoryPrecisions[.L] = .FP16
       memoryPrecisions[.D] = .BF16
@@ -182,6 +194,23 @@ extension AttentionDescriptor {
       memoryPrecisions[.D] = .FP32
     }
     
+    // Data for low precision outputs.
+    //
+    // Traversal block = 64, sequence length = 256, head size = 32
+    // FP16 (O)          | cached: 3e-4 | paged: 5e-4   | 2x
+    // BF16 (dV, dK, dQ) | cached: 4e-3 | paged: 1.3e-2 | 3x
+    //
+    // Traversal block = 64, sequence length = 1024, head size = 32
+    // FP16 (O)          | cached: 2e-4 | paged: 5e-4   | 3x
+    // BF16 (dV, dK, dQ) | cached: 4e-3 | paged: 1.5e-2 | 4x
+    //
+    // Traversal block = 64, sequence length = 4096, head size = 32
+    // FP16 (O)          | cached: 1e-4 | paged: 5e-4   | 5x
+    // BF16 (dV, dK, dQ) | cached: 1e-3 | paged: 4e-2   | 40x
+    //
+    // Traversal block = 64, sequence length = 8192, head size = 32
+    // FP16 (O)          | cached: 4e-5 | paged: 5e-4   | 13x
+    // BF16 (dV, dK, dQ) | cached: 1e-3 | paged: 4e-2   | 40x
     if lowPrecisionOutputs {
       memoryPrecisions[.O] = .FP16
       memoryPrecisions[.dV] = .BF16
@@ -227,32 +256,44 @@ extension AttentionDescriptor {
       registerPrecisions[.D] = .FP32
     }
     
-    // O is the only operand that's an accumulator for one kernel, and input
-    // for another. Theoretically, we could optimize M3 by keeping it as
-    // BF16 while accumulating dO * O. That would require the kernel type to
-    // be an argument for the 'registerPrecisions()' function.
-    registerPrecisions[.O] = .FP32
-    registerPrecisions[.dV] = .FP32
-    registerPrecisions[.dK] = .FP32
-    registerPrecisions[.dQ] = .FP32
-    
     // The register precision for the attention matrix.
     if lowPrecisionIntermediates {
-      // TODO: Utilize the native FP16xFP16->FP16 instruction.
+      // There is a special FP16xFP16->FP16 instruction that reaches peak ALU
+      // throughput. S = Q * K is the only place where it can be employed
+      // in attention kernels.
       //
       // S = Q * K is the most often recomputed intermediate (3 out of 9 GEMMs,
       // 2 out of 3 unnecessary GEMMs). If we optimize this, the impact on
       // performance will be greater than for any other multiplication.
-      registerPrecisions[.S] = .FP32
+      //
+      // Accumulating S in FP16 increased the rounding error tenfold in one
+      // experiment (5e-3 to 5e-2). For reference, the average magnitude of any
+      // scalar was 1.0 to 10.0.
+      //
+      // FP16 (Q, K)    | 5e-3
+      // FP16 (Q, K, S) | 5e-2
+      // FP16 (P)       | 2.7e-3
+      // BF16 (dS)      | 8e-3
+      registerPrecisions[.S] = lowPrecisionInputs ? .FP16 : .FP32
       registerPrecisions[.P] = .FP16
       registerPrecisions[.dP] = .FP32
       registerPrecisions[.dS] = hasNativeBF16Casting ? .BF16 : .FP32
     } else {
       registerPrecisions[.S] = .FP32
-      registerPrecisions[.P] = .FP16
+      registerPrecisions[.P] = .FP32
       registerPrecisions[.dP] = .FP32
       registerPrecisions[.dS] = .FP32
     }
+    
+    // O is the only operand that's an accumulator for one kernel, and input
+    // for another. Theoretically, we could optimize M3 by keeping it as
+    // BF16 while accumulating dO * O. That would require the kernel type to
+    // be an argument for the 'registerPrecisions()' function. It doesn't seem
+    // like it would bring a measurable performance improvement.
+    registerPrecisions[.O] = .FP32
+    registerPrecisions[.dV] = .FP32
+    registerPrecisions[.dK] = .FP32
+    registerPrecisions[.dQ] = .FP32
     
     return registerPrecisions
   }

@@ -81,9 +81,9 @@ func profileProblemSize(
   // MARK: - Kernels
   
   var attentionDesc = AttentionDescriptor()
-  attentionDesc.lowPrecisionInputs = false
-  attentionDesc.lowPrecisionIntermediates = false
-  attentionDesc.lowPrecisionOutputs = false
+  attentionDesc.lowPrecisionInputs = true
+  attentionDesc.lowPrecisionIntermediates = true
+  attentionDesc.lowPrecisionOutputs = true
   attentionDesc.matrixDimensions = (
     R: UInt32(sequenceDimension),
     C: UInt32(sequenceDimension),
@@ -411,46 +411,24 @@ func profileProblemSize(
   }
   
   // Check the results.
-  var tolerance: Float = 2e-5
   if attentionDesc.lowPrecisionInputs ||
       attentionDesc.lowPrecisionIntermediates ||
       attentionDesc.lowPrecisionOutputs {
-    // Data for low precision outputs.
-    //
-    // Traversal block = 64, sequence length = 256, head size = 32
-    // FP16 (O)        | cached: 3e-4 | paged: 5e-4   | 2x
-    // BF16 (dV/dK/dQ) | cached: 4e-3 | paged: 1.3e-2 | 3x
-    //
-    // Traversal block = 64, sequence length = 1024, head size = 32
-    // FP16 (O)        | cached: 2e-4 | paged: 5e-4   | 3x
-    // BF16 (dV/dK/dQ) | cached: 4e-3 | paged: 1.5e-2 | 4x
-    //
-    // Traversal block = 64, sequence length = 4096, head size = 32
-    // FP16 (O)        | cached: 1e-4 | paged: 5e-4   | 5x
-    // BF16 (dV/dK/dQ) | cached: 1e-3 | paged: 4e-2   | 40x
-    //
-    // Traversal block = 64, sequence length = 8192, head size = 32
-    // FP16 (O)        | cached: 4e-5 | paged: 5e-4   | 13x
-    // BF16 (dV/dK/dQ) | cached: 1e-3 | paged: 4e-2   | 40x
-     tolerance = max(tolerance, 5e-2)
-  }
-  
-  // float2 accumulate: 2.7e-3
-  // half2  accumulate: 5.3e-3
-  tolerance = 2.6e-3
-  
-  if attentionDesc.lowPrecisionIntermediates {
-    check(expected: L, actual: resultL, tolerance: 5e-3)
+    check(expected: O, actual: resultO, tolerance: 5e-2)
+    check(expected: L, actual: resultL, tolerance: 7e-3)
     check(expected: D, actual: resultD, tolerance: 1e-1)
+    check(expected: dV, actual: resultDerivativeV, tolerance: 5e-2)
+    check(expected: dK, actual: resultDerivativeK, tolerance: 5e-2)
+    check(expected: dQ, actual: resultDerivativeQ, tolerance: 5e-2)
   } else {
-    check(expected: L, actual: resultL, tolerance: tolerance)
-    check(expected: D, actual: resultD, tolerance: tolerance)
+    check(expected: O, actual: resultO, tolerance: 2e-5)
+    check(expected: L, actual: resultL, tolerance: 2e-5)
+    check(expected: D, actual: resultD, tolerance: 2e-5)
+    check(expected: dV, actual: resultDerivativeV, tolerance: 2e-5)
+    check(expected: dK, actual: resultDerivativeK, tolerance: 2e-5)
+    check(expected: dQ, actual: resultDerivativeQ, tolerance: 2e-5)
   }
   
-  check(expected: O, actual: resultO, tolerance: tolerance)
-  check(expected: dV, actual: resultDerivativeV, tolerance: tolerance)
-  check(expected: dK, actual: resultDerivativeK, tolerance: tolerance)
-  check(expected: dQ, actual: resultDerivativeQ, tolerance: tolerance)
 #endif
   
   // MARK: - Profiling

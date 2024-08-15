@@ -62,6 +62,17 @@ struct AttentionKernel {
 
 // MARK: - Utilities
 
+// Appearances of BF16 -> FP32 conversion functions.
+//
+// M1
+//              FWD | dQ | dK/dV | dK/dV (outputs cached)
+// load_bfloat    2   12      24      16
+// store_bfloat   2    6      10       8
+//
+// M3
+//              FWD | dQ | dK/dV | dK/dV (outputs cached)
+// load_bfloat    2    6      10       2
+// store_bfloat   2    6      10       8
 extension AttentionKernel {
   func memoryName(_ operand: AttentionOperand) -> String {
     guard let memoryPrecision = memoryPrecisions[operand] else {
