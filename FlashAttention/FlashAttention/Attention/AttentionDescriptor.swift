@@ -152,6 +152,7 @@ extension AttentionDescriptor {
     
     // Choose the precision for each operand.
     output.memoryPrecisions = self.memoryPrecisions()
+    output.registerPrecisions = self.registerPrecisions()
     
     return output
   }

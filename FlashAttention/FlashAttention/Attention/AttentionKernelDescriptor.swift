@@ -36,7 +36,6 @@ struct AttentionKernelDescriptor {
   /// Required. The problem size along the head dimension.
   var headDimension: UInt16?
   
-  /// The precision of each operand accessed by the kernel.
   var memoryPrecisions: [AttentionOperand: GEMMOperandPrecision] = [:]
   
   /// Reads with a one-to-one mapping to threads (like GEMM store) and writes.
@@ -44,6 +43,8 @@ struct AttentionKernelDescriptor {
   
   /// Reads that are shared among threads (like GEMM load).
   var preferAsyncLoad: Bool?
+  
+  var registerPrecisions: [AttentionOperand: GEMMOperandPrecision] = [:]
   
   /// Whether each operand is transposed in RAM.
   ///

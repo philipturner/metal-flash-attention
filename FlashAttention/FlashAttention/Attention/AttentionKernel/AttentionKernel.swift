@@ -30,6 +30,7 @@ struct AttentionKernel {
   var memoryPrecisions: [AttentionOperand: GEMMOperandPrecision]
   var preferAsyncCache: Bool
   var preferAsyncLoad: Bool
+  var registerPrecisions: [AttentionOperand: GEMMOperandPrecision]
   var transposeState: [AttentionOperand: Bool]
   
   // Layout of the data in registers and threadgroup memory.
@@ -51,6 +52,7 @@ struct AttentionKernel {
     self.memoryPrecisions = descriptor.memoryPrecisions
     self.preferAsyncCache = preferAsyncCache
     self.preferAsyncLoad = preferAsyncLoad
+    self.registerPrecisions = descriptor.registerPrecisions
     self.transposeState = descriptor.transposeState
     
     self.blockDimensions = blockDimensions
@@ -68,24 +70,69 @@ extension AttentionKernel {
     return memoryPrecision.name
   }
   
+  func registerName(_ operand: AttentionOperand) -> String {
+    guard let registerPrecision = registerPrecisions[operand] else {
+      fatalError("Memory precision of \(operand) was not specified.")
+    }
+    return registerPrecision.name
+  }
+  
   func loadFunction(_ operand: AttentionOperand) -> String {
-    guard let memoryPrecision = memoryPrecisions[operand] else {
+    guard let memoryPrecision = memoryPrecisions[operand],
+          let registerPrecision = registerPrecisions[operand] else {
       fatalError("Precision of \(operand) was not specified.")
     }
-    if memoryPrecision == .BF16 {
+    
+    switch (memoryPrecision, registerPrecision) {
+    case (.FP16, .FP16):
+      return "load"
+    case (.FP16, .BF16):
+      fatalError("Invalid precisions.")
+    case (.FP16, .FP32):
+      return "load"
+      
+    case (.BF16, .FP16):
+      fatalError("Invalid precisions.")
+    case (.BF16, .BF16):
+      return "load"
+    case (.BF16, .FP32):
       return "load_bfloat"
-    } else {
+      
+    case (.FP32, .FP16):
+      fatalError("Invalid precisions.")
+    case (.FP32, .BF16):
+      fatalError("Invalid precisions.")
+    case (.FP32, .FP32):
       return "load"
     }
   }
   
   func storeFunction(_ operand: AttentionOperand) -> String {
-    guard let memoryPrecision = memoryPrecisions[operand] else {
+    guard let memoryPrecision = memoryPrecisions[operand],
+          let registerPrecision = registerPrecisions[operand] else {
       fatalError("Precision of \(operand) was not specified.")
     }
-    if memoryPrecision == .BF16 {
+    
+    switch (memoryPrecision, registerPrecision) {
+    case (.FP16, .FP16):
+      return "store"
+    case (.FP16, .BF16):
+      fatalError("Invalid precisions.")
+    case (.FP16, .FP32):
+      return "store"
+      
+    case (.BF16, .FP16):
+      fatalError("Invalid precisions.")
+    case (.BF16, .BF16):
+      return "store"
+    case (.BF16, .FP32):
       return "store_bfloat"
-    } else {
+      
+    case (.FP32, .FP16):
+      fatalError("Invalid precisions.")
+    case (.FP32, .BF16):
+      fatalError("Invalid precisions.")
+    case (.FP32, .FP32):
       return "store"
     }
   }

@@ -29,6 +29,8 @@ import QuartzCore
 //     precondition failure IRL. But during development, I need to have
 //     feedback that the correct register precision is being employed. There
 //     should be a reduction in numerical accuracy.
+//   - Examine generated code when memory precision is BF16. "load_bfloat"
+//     and "store_bfloat" should appear on M1, and not appear on M3.
 //   - Benchmark the numerical accuracy of accumulating the attention matrix
 //     in FP16, provided both inputs are FP16.
 // - Check for improved occupancy on M1.
