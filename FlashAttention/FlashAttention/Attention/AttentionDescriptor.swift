@@ -186,6 +186,50 @@ extension AttentionDescriptor {
     // the error of the final outputs (O/dV/dK/dQ). For example, the error of
     // O/dV/dK/dQ is always 5e-2 in typical mixed precision workflows.
     // When D is demoted to BF16, the error of O/dV/dK/dQ is still 5e-2.
+    //
+    // Benchmarks suggest that keeping D in BF16, measurably improves ALU
+    // utilization in the backward dK/dV pass. Samples were taken at every
+    // whole number head dimension from 32 to 96 (e.g. 32, 33, 34, ...) and a
+    // constant sequence length. The improvement was ~1% on both architectures.
+    //
+    // M1 Max, Sequence Dimension = 8192
+    //
+    // |         | BWD    | dQ     | dK/dV  |
+    // | ------- | ------ | ------ | ------ |
+    // | Average |  0.0%  | +0.1%  | +1.1%  |
+    // | Minimum | -0.2%  | -1.2%  | -1.9%  |
+    // | Median  |  0.0%  |  0.0%  | +1.4%  |
+    // | Maximum | +0.2%  | +4.4%  | +5.6%  |
+    //
+    // M4, Sequence Dimension = 4096
+    //
+    // |         | BWD    | dQ     | dK/dV  |
+    // | ------- | ------ | ------ | ------ |
+    // | Average |  0.0%  |  0.0%  | +0.8%  |
+    // | Minimum | -0.4%  | -0.2%  | -0.1%  |
+    // | Median  |  0.0%  |  0.0%  | +0.8%  |
+    // | Maximum |  0.3%  | +0.2%  | +3.0%  |
+    //
+    // To confirm this conclusion, a second study was performed on M1 Max at
+    // large head dimensions (95 to 160). In addition, examining only the
+    // subset of head dimensions that divide evenly by 8.
+    //
+    // M1 Max, dK/dV
+    //
+    // |         | 32 to 96 | 96 to 160 | 32 to 160 (div. 8) |
+    // | ------- | -------- | --------- | ------------------ |
+    // | Average | +1.1%    | +0.3%     | +0.6%              |
+    // | Minimum | -1.9%    | -1.5%     | -1.5%              |
+    // | Median  | +1.4%    | +0.2%     | +0.0%              |
+    // | Maximum | +5.6%    | +2.5%     | +5.6%              |
+    //
+    // The improvement diminishes to ~0.3% at larger head dimensions. This
+    // makes sense, as the overhead of one elementwise operation is amortized
+    // over a larger dot product. The head dimension increased 2x and the
+    // improvement shrunk 2-3x. For heads divisible by 8 (the target use case),
+    // the improvement shrunk from major at small heads, to zero at large
+    // ones. The cutoff aligns with the point where the GEMM loops cannot be
+    // unrolled (head dimension vastly exceeds head block dimension).
     if lowPrecisionIntermediates {
       memoryPrecisions[.L] = .FP16
       memoryPrecisions[.D] = .BF16
@@ -211,11 +255,28 @@ extension AttentionDescriptor {
     // Traversal block = 64, sequence length = 8192, head size = 32
     // FP16 (O)          | cached: 4e-5 | paged: 5e-4   | 13x
     // BF16 (dV, dK, dQ) | cached: 1e-3 | paged: 4e-2   | 40x
+    //
+    // The benchmarks were taken in the case where O/dV/dK/dQ are spilled to
+    // memory. Hence, the impact of writing them to memory scales with N^2.
+    // M1 was slower when packing/unpacking BF16, while M4 was faster. This
+    // was without utilizing the native hardware instructions for BF16 to
+    // FP32 conversion on M4.
+    //
+    // M4 is faster when the accumulators are stored in registers, up to at
+    // least head dimension 256. The cost of storing scales with N on that
+    // architecture. BF16 would only bring harm on M1 and no change on M3 with
+    // proper heuristics. I am forcing dV/dK/dQ to be stored in RAM as FP32,
+    // based on performance alone (although it does help the rounding error).
+    //
+    // Clients can issue a subsequent kernel that casts the FP32 scalars to
+    // BF16, within a smaller memory allocation. Then, deallocate the FP32
+    // allocation. The overall training process will not be any slower than
+    // if MFA outputted BF16 into the final buffer.
     if lowPrecisionOutputs {
       memoryPrecisions[.O] = .FP16
-      memoryPrecisions[.dV] = .BF16
-      memoryPrecisions[.dK] = .BF16
-      memoryPrecisions[.dQ] = .BF16
+      memoryPrecisions[.dV] = .FP32
+      memoryPrecisions[.dK] = .FP32
+      memoryPrecisions[.dQ] = .FP32
     } else {
       memoryPrecisions[.O] = .FP32
       memoryPrecisions[.dV] = .FP32
@@ -285,11 +346,7 @@ extension AttentionDescriptor {
       registerPrecisions[.dS] = .FP32
     }
     
-    // O is the only operand that's an accumulator for one kernel, and input
-    // for another. Theoretically, we could optimize M3 by keeping it as
-    // BF16 while accumulating dO * O. That would require the kernel type to
-    // be an argument for the 'registerPrecisions()' function. It doesn't seem
-    // like it would bring a measurable performance improvement.
+    // All of the outputs are accumulated in FP32.
     registerPrecisions[.O] = .FP32
     registerPrecisions[.dV] = .FP32
     registerPrecisions[.dK] = .FP32
