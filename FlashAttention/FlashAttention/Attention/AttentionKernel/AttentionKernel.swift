@@ -7,21 +7,6 @@
 
 // Declaration of the attention kernel data structure.
 
-// MARK: - Attention Kernel
-
-// Design a set of simple kernels for forward and backward FlashAttention:
-// - FP32 (hardcoded data type keyword)
-// - 32x32 block, 4 splits (hardcoded block size)
-// - all GEMM operands accessed like with standard GEMM + M1
-//   - use async copies liberally (no origin shifting for M3)
-//   - transposes are supported
-// - no masking, dropout, etc.
-//
-// Within this constrained design space, reach the greatest performance
-// physically possible. Compare to standard and semi-standard attention
-// kernels with the same data type constraints. Prove the efficacy of each
-// design choice before fine-tuning block sizes.
-
 struct AttentionKernel {
   var type: AttentionKernelType
   
@@ -37,6 +22,7 @@ struct AttentionKernel {
   var blockDimensions: (
     parallelization: UInt16, traversal: UInt16, head: UInt16)
   var headDimension: UInt16
+  var threadgroupMemoryAllocation: UInt16
   
   init(descriptor: AttentionKernelDescriptor) {
     guard let blockDimensions = descriptor.blockDimensions,
@@ -57,6 +43,10 @@ struct AttentionKernel {
     
     self.blockDimensions = blockDimensions
     self.headDimension = headDimension
+    
+    // Pick the threadgroup memory allocation size.
+    threadgroupMemoryAllocation = .zero
+    threadgroupMemoryAllocation = createThreadgroupMemoryAllocation()
   }
 }
 
@@ -279,22 +269,91 @@ extension AttentionKernel {
     32 * (blockDimensions.parallelization / 8)
   }
   
-  var threadgroupMemoryAllocation: UInt16 {
-    // TODO: Make a higher-level abstraction like "blockBytes", which lets
-    // the allocation shrink when using mixed precision. This will only be
-    // effective when both inputs and outputs are stored as 16-bit types.
-    var output = max(
-      blockDimensions.parallelization * blockDimensions.head * 4,
-      blockDimensions.traversal * blockDimensions.head * 4)
+  private func createThreadgroupMemoryAllocation() -> UInt16 {
+    var output: UInt16 = .zero
     
+    // Sets the allocation to the maximum of this and the previous allocated
+    // size.
+    func allocateParallelization(_ operand: AttentionOperand) {
+      guard let memoryPrecision = memoryPrecisions[operand] else {
+        fatalError("Precision of \(operand) was not specified.")
+      }
+      
+      var blockBytes: UInt16 = 1
+      blockBytes *= blockDimensions.parallelization
+      blockBytes *= blockDimensions.head
+      blockBytes *= UInt16(memoryPrecision.size)
+      
+      output = max(output, blockBytes)
+    }
+    func allocateTraversal(_ operand: AttentionOperand) {
+      guard let memoryPrecision = memoryPrecisions[operand] else {
+        fatalError("Precision of \(operand) was not specified.")
+      }
+      
+      var blockBytes: UInt16 = 1
+      blockBytes *= blockDimensions.traversal
+      blockBytes *= blockDimensions.head
+      blockBytes *= UInt16(memoryPrecision.size)
+      
+      output = max(output, blockBytes)
+    }
+    
+    // Allocate memory for the GEMM operands.
+    switch type {
+    case .forward:
+      // S = Q * K^T
+      allocateParallelization(.Q)
+      allocateTraversal(.K)
+      
+      // O += P * V
+      allocateParallelization(.O)
+      allocateTraversal(.V)
+      
+    case .backwardQuery:
+      // S = Q * K^T
+      allocateParallelization(.Q)
+      allocateTraversal(.K)
+      
+      // dP = dO * V^T
+      allocateParallelization(.dO)
+      allocateTraversal(.V)
+      
+      // dQ += dS * K
+      allocateParallelization(.dQ)
+      allocateTraversal(.K)
+      
+    case .backwardKeyValue:
+      // S^T = K * Q^T
+      allocateParallelization(.K)
+      allocateTraversal(.Q)
+      
+      // dV += P^T * dO
+      allocateParallelization(.dV)
+      allocateTraversal(.dO)
+      
+      // dP^T = V * dO^T
+      allocateParallelization(.V)
+      allocateTraversal(.dO)
+      
+      // dK += dS^T * Q
+      allocateParallelization(.dK)
+      allocateTraversal(.Q)
+    }
+    
+    // dO * O
+    //
+    // Will never exceed 4 KB (128 threads/group), 8 KB (256 threads/group).
     if case .backwardQuery = type {
-      // D[i] = dO * O
       output = max(
         output,
         2 * blockDimensions.parallelization * 8 * 4)
     }
+    
+    // L or D
+    //
+    // Will never exceed ~512 bytes.
     if case .backwardKeyValue = type {
-      // load L or D[i]
       output = max(
         output,
         blockDimensions.traversal * 4)

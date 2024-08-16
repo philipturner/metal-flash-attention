@@ -35,4 +35,6 @@ import QuartzCore
 //     in FP16, provided both inputs are FP16. [DONE]
 // - Check for improved occupancy on M1. [DONE]
 //   - Does BF16 compression in memory make the occupancy worse? [DONE]
-//   - Reduce the threadgroup memory allocation with mixed precision.
+//   - Reduce the threadgroup memory allocation with mixed precision. [DONE]
+//   - Change the GEMM and Attention kernels, so the threadgroup memory
+//     allocation is computed beforehand. [DONE]

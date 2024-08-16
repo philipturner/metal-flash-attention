@@ -13,26 +13,26 @@ import Metal
 #if true
 func executeScript() {
   // Automate the execution of the test suite.
-//  profileProblemSize(sequenceDimension: 10, headDimension: 3)
-//  profileProblemSize(sequenceDimension: 10, headDimension: 80)
-//  profileProblemSize(sequenceDimension: 8, headDimension: 2)
-//  profileProblemSize(sequenceDimension: 9, headDimension: 2)
-//  profileProblemSize(sequenceDimension: 23, headDimension: 2)
-//  profileProblemSize(sequenceDimension: 24, headDimension: 2)
-//  profileProblemSize(sequenceDimension: 25, headDimension: 2)
-//  profileProblemSize(sequenceDimension: 192, headDimension: 77)
-//  profileProblemSize(sequenceDimension: 192, headDimension: 80)
-//  profileProblemSize(sequenceDimension: 93, headDimension: 32)
-//  profileProblemSize(sequenceDimension: 99, headDimension: 35)
-//  profileProblemSize(sequenceDimension: 64, headDimension: 32)
-//  profileProblemSize(sequenceDimension: 64, headDimension: 34)
-//  profileProblemSize(sequenceDimension: 64, headDimension: 36)
-//  profileProblemSize(sequenceDimension: 64, headDimension: 40)
-//  profileProblemSize(sequenceDimension: 32, headDimension: 64)
-//  profileProblemSize(sequenceDimension: 4, headDimension: 1)
-//  profileProblemSize(sequenceDimension: 4, headDimension: 2)
-//  profileProblemSize(sequenceDimension: 384, headDimension: 95)
-//  profileProblemSize(sequenceDimension: 777, headDimension: 199)
+  profileProblemSize(sequenceDimension: 10, headDimension: 3)
+  profileProblemSize(sequenceDimension: 10, headDimension: 80)
+  profileProblemSize(sequenceDimension: 8, headDimension: 2)
+  profileProblemSize(sequenceDimension: 9, headDimension: 2)
+  profileProblemSize(sequenceDimension: 23, headDimension: 2)
+  profileProblemSize(sequenceDimension: 24, headDimension: 2)
+  profileProblemSize(sequenceDimension: 25, headDimension: 2)
+  profileProblemSize(sequenceDimension: 192, headDimension: 77)
+  profileProblemSize(sequenceDimension: 192, headDimension: 80)
+  profileProblemSize(sequenceDimension: 93, headDimension: 32)
+  profileProblemSize(sequenceDimension: 99, headDimension: 35)
+  profileProblemSize(sequenceDimension: 64, headDimension: 32)
+  profileProblemSize(sequenceDimension: 64, headDimension: 34)
+  profileProblemSize(sequenceDimension: 64, headDimension: 36)
+  profileProblemSize(sequenceDimension: 64, headDimension: 40)
+  profileProblemSize(sequenceDimension: 32, headDimension: 64)
+  profileProblemSize(sequenceDimension: 4, headDimension: 1)
+  profileProblemSize(sequenceDimension: 4, headDimension: 2)
+  profileProblemSize(sequenceDimension: 384, headDimension: 95)
+  profileProblemSize(sequenceDimension: 777, headDimension: 199)
   
 #if false
   var D_array: [Int] = []
@@ -268,7 +268,7 @@ func profileProblemSize(
   
   // MARK: - Validation
   
-#if false
+#if true
   // Utility function to make buffer copying more concise.
   func copyBuffer(
     _ destination: inout [Float],
@@ -442,7 +442,7 @@ func profileProblemSize(
   
   // MARK: - Profiling
   
-#if true
+#if false
   // Benchmark performance.
   var maxGINSTRS: Int = .zero
   for _ in 0..<5 {

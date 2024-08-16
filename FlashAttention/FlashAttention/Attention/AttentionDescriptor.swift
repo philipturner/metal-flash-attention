@@ -7,55 +7,6 @@
 
 import Metal
 
-// Design specifications for the attention descriptor:
-// - member function to set the function constants as a component of PSO init
-//   - caller can now create one MTLFunctionConstantValues object for all
-//     three kernels [DONE]
-// - populates the lists of operands present in each kernel [DONE]
-// - encapsulates the three kernels that make up the attention pass
-//   - one set of function constants / buffer bindings should be the same
-//     across all of the kernels [DONE]
-//   - member function 'kernelDescriptor(type:)' generates an
-//     AttentionKernelDescriptor with the right settings [DONE]
-// - makes the simplification that Q/K/V/O and their gradients have the same
-//   transpose state [DONE]
-// - automatically assigns a cache state (default is false for now) [DONE]
-//   - you can intercept and override the results after the
-//     AttentionKernelDescriptors are created from the AttentionDescriptor
-// - very simple, early heuristics for block sizes [DONE]
-//
-// What is not included yet:
-// - shader caching
-//   - group the three kernels into a single cache query
-//   - separate the 1-kernel set for forward from the 3-kernel set for if
-//     gradient is requested
-// - mixed precision
-// - tuning the block size or caching heuristics
-//   - this task should be done simultaneously with mixed precision support
-// - whether operands are loaded/stored through async copy
-//   - this is the next thing on the TODO list
-//
-// Taking GEMMDescriptor / GEMMKernelDescriptor as a reference
-//
-// GEMMDescriptor
-// - batchDimension
-// - leadingDimensions
-// - loadPreviousC
-// - matrixDimensions
-// - memoryPrecisions
-// - transposeState
-//
-// GEMMKernelDescriptor
-// - blockDimensions
-// - device
-// - leadingBlockDimensions
-// - memoryPrecisions
-// - preferAsyncLoad
-// - preferAsyncStore
-// - registerPrecisions
-// - splits
-// - transposeState
-
 struct AttentionDescriptor {
   // Q, K, V, dO
   var lowPrecisionInputs: Bool = false

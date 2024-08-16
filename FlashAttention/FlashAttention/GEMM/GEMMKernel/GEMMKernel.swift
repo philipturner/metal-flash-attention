@@ -21,6 +21,7 @@ struct GEMMKernel {
   var blockDimensions: (M: UInt16, N: UInt16, K: UInt16)
   var leadingBlockDimensions: (A: UInt16, B: UInt16, C: UInt16)
   var splits: (M: UInt16, N: UInt16)
+  var threadgroupMemoryAllocation: UInt16
   
   init(descriptor: GEMMKernelDescriptor) {
     guard let blockDimensions = descriptor.blockDimensions,
@@ -104,10 +105,10 @@ struct GEMMKernel {
     // Retrieve the "padded" block dimensions, otherwise compute analytically
     // from the true block dimensions.
     func chooseLeadingBlockDimension(
-      _ specifiedLeading: UInt16?,
-      _ transposeState: Bool,
-      _ untransposedRows: UInt16,
-      _ untransposedColumns: UInt16
+      specifiedLeading: UInt16?,
+      transposeState: Bool,
+      untransposedRows: UInt16,
+      untransposedColumns: UInt16
     ) -> UInt16 {
       var expectedLeading: UInt16
       if transposeState {
@@ -129,16 +130,27 @@ struct GEMMKernel {
       return actualLeading
     }
     
+    // Pick the leading block dimensions.
     leadingBlockDimensions = (.zero, .zero, .zero)
     leadingBlockDimensions.A = chooseLeadingBlockDimension(
-      descriptor.leadingBlockDimensions?.A, transposeState.A,
-      blockDimensions.M, blockDimensions.K)
+      specifiedLeading: descriptor.leadingBlockDimensions?.A,
+      transposeState: transposeState.A,
+      untransposedRows: blockDimensions.M,
+      untransposedColumns: blockDimensions.K)
     leadingBlockDimensions.B = chooseLeadingBlockDimension(
-      descriptor.leadingBlockDimensions?.B, transposeState.B,
-      blockDimensions.K, blockDimensions.N)
+      specifiedLeading: descriptor.leadingBlockDimensions?.B,
+      transposeState: transposeState.B,
+      untransposedRows: blockDimensions.K,
+      untransposedColumns: blockDimensions.N)
     leadingBlockDimensions.C = chooseLeadingBlockDimension(
-      descriptor.leadingBlockDimensions?.C, false,
-      blockDimensions.M, blockDimensions.N)
+      specifiedLeading: descriptor.leadingBlockDimensions?.C,
+      transposeState: false,
+      untransposedRows: blockDimensions.M,
+      untransposedColumns: blockDimensions.N)
+    
+    // Pick the threadgroup memory allocation size.
+    threadgroupMemoryAllocation = .zero
+    threadgroupMemoryAllocation = createThreadgroupMemoryAllocation()
   }
 }
 
@@ -249,7 +261,7 @@ extension GEMMKernel {
     32 * splits.M * splits.N
   }
   
-  var threadgroupMemoryAllocation: UInt16 {
+  private func createThreadgroupMemoryAllocation() -> UInt16 {
     let blockBytesA = self.blockBytes("A")
     let blockBytesB = self.blockBytes("B")
     let blockBytesC = self.blockBytes("C")
