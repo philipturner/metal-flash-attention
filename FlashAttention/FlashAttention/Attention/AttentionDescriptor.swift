@@ -34,26 +34,10 @@ extension AttentionDescriptor {
       fatalError("Descriptor was incomplete.")
     }
     
-    // Select the only GPU on an Apple silicon system.
-    let mtlDevice = MTLContext.global.device
-    
     var output = AttentionKernelDescriptor()
+    output.blockDimensions = self.blockDimensions()
     output.headDimension = matrixDimensions.D
     output.type = type
-    
-    // Block sizes for the case where nothing is cached.
-    if mtlDevice.supportsFamily(.apple9) {
-      if matrixDimensions.D % 8 == 0 {
-        output.blockDimensions = (
-          parallelization: 16, traversal: 128, head: 16)
-      } else {
-        output.blockDimensions = (
-          parallelization: 16, traversal: 128, head: 8)
-      }
-    } else {
-      output.blockDimensions = (
-        parallelization: 32, traversal: 64, head: 32)
-    }
     
     // Assign the transpose state.
     output.transposeState[.Q] = transposeState.Q
@@ -93,7 +77,7 @@ extension AttentionDescriptor {
     }
     
     // Access pattern heuristic for when nothing is cached.
-    if mtlDevice.supportsFamily(.apple9) {
+    if MTLContext.global.device.supportsFamily(.apple9) {
       output.preferAsyncCache = true
       output.preferAsyncLoad = false
     } else {
@@ -104,6 +88,35 @@ extension AttentionDescriptor {
     // Choose the precision for each operand.
     output.memoryPrecisions = self.memoryPrecisions()
     output.registerPrecisions = self.registerPrecisions()
+    
+    return output
+  }
+  
+  // parallelization, traversal, head
+  private func blockDimensions() -> (UInt16, UInt16, UInt16) {
+    guard let matrixDimensions = self.matrixDimensions else {
+      fatalError("Descriptor was incomplete.")
+    }
+    
+    var output: (parallelization: UInt16, traversal: UInt16, head: UInt16)
+    
+    // Block sizes for the case where nothing is cached.
+    if MTLContext.global.device.supportsFamily(.apple9) {
+      if matrixDimensions.D % 8 == 0 {
+        output = (
+          parallelization: 16, traversal: 128, head: 16)
+      } else {
+        output = (
+          parallelization: 16, traversal: 128, head: 8)
+      }
+    } else {
+      output = (
+        parallelization: 32, traversal: 64, head: 32)
+    }
+    
+    // Enforce the rule that head block dimension <= head dimension.
+    let paddedHeadDimension = (matrixDimensions.D + 7) / 8 * 8
+    output.head = min(output.head, paddedHeadDimension)
     
     return output
   }
