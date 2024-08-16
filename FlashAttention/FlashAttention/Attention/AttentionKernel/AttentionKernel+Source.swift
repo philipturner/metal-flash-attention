@@ -73,11 +73,13 @@ extension AttentionKernel {
     // What operands does the kernel use?
     var operands: [AttentionOperand] = []
     switch type {
-    case .forward(let computeL):
+    case .forward:
+      // To simplify the implementation, we always compute log-sum-exp in the
+      // forward pass. Even when it will never be used (model inference).
+      // If this is an issue, clients can change the code to selectively
+      // omit the 'L' operand.
       operands += [.Q, .K, .V, .O]
-      if computeL {
-        operands += [.L]
-      }
+      operands += [.L]
     case .backwardQuery:
       operands += [.Q, .K, .V, .O]
       operands += [.dO, .dQ]

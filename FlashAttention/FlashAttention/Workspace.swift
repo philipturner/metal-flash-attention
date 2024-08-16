@@ -33,5 +33,6 @@ import QuartzCore
 //     and "store_bfloat" should appear on M1, and not appear on M3. [DONE]
 //   - Benchmark the numerical accuracy of accumulating the attention matrix
 //     in FP16, provided both inputs are FP16. [DONE]
-// - Check for improved occupancy on M1.
-//   - Does BF16 compression in memory make the occupancy worse?
+// - Check for improved occupancy on M1. [DONE]
+//   - Does BF16 compression in memory make the occupancy worse? [DONE]
+//   - Reduce the threadgroup memory allocation with mixed precision.

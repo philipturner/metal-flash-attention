@@ -25,6 +25,7 @@
 		9881AA232C25C22B0056D05C /* LaplacianTest.swift in Sources */ = {isa = PBXBuildFile; fileRef = 9881AA222C25C22B0056D05C /* LaplacianTest.swift */; };
 		9881AA252C25FDC20056D05C /* AdversarialShapeTest.swift in Sources */ = {isa = PBXBuildFile; fileRef = 9881AA242C25FDC20056D05C /* AdversarialShapeTest.swift */; };
 		9882512E2C4E9F890047052E /* AttentionKernel+Caching.swift in Sources */ = {isa = PBXBuildFile; fileRef = 9882512D2C4E9F890047052E /* AttentionKernel+Caching.swift */; };
+		9895F1562C6FD50A00D9CFA0 /* AttentionKernelType.swift in Sources */ = {isa = PBXBuildFile; fileRef = 9895F1552C6FD50A00D9CFA0 /* AttentionKernelType.swift */; };
 		98AFA2692C653D7700E88305 /* AttentionDescriptor.swift in Sources */ = {isa = PBXBuildFile; fileRef = 98AFA2682C653D7700E88305 /* AttentionDescriptor.swift */; };
 		98C100FF2C6BFFD90061C1DA /* ComplexModule in Frameworks */ = {isa = PBXBuildFile; productRef = 98C100FE2C6BFFD90061C1DA /* ComplexModule */; };
 		98C101012C6BFFD90061C1DA /* Numerics in Frameworks */ = {isa = PBXBuildFile; productRef = 98C101002C6BFFD90061C1DA /* Numerics */; };
@@ -62,6 +63,7 @@
 		9881AA222C25C22B0056D05C /* LaplacianTest.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = LaplacianTest.swift; sourceTree = "<group>"; };
 		9881AA242C25FDC20056D05C /* AdversarialShapeTest.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = AdversarialShapeTest.swift; sourceTree = "<group>"; };
 		9882512D2C4E9F890047052E /* AttentionKernel+Caching.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = "AttentionKernel+Caching.swift"; sourceTree = "<group>"; };
+		9895F1552C6FD50A00D9CFA0 /* AttentionKernelType.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = AttentionKernelType.swift; sourceTree = "<group>"; };
 		98AFA2682C653D7700E88305 /* AttentionDescriptor.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = AttentionDescriptor.swift; sourceTree = "<group>"; };
 		98DA5B352C2AFD65000F4E06 /* Network.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = Network.swift; sourceTree = "<group>"; };
 		98DA5B372C2AFF9E000F4E06 /* FiniteDifferencingTest.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = FiniteDifferencingTest.swift; sourceTree = "<group>"; };
@@ -171,6 +173,7 @@
 				9827D79B2C4ABC4900649C7B /* AttentionKernel */,
 				98AFA2682C653D7700E88305 /* AttentionDescriptor.swift */,
 				98DA5B492C2EF788000F4E06 /* AttentionKernelDescriptor.swift */,
+				9895F1552C6FD50A00D9CFA0 /* AttentionKernelType.swift */,
 				98FB0AB72C5E71FF0069ABA0 /* AttentionOperand.swift */,
 				98DA5B352C2AFD65000F4E06 /* Network.swift */,
 			);
@@ -302,6 +305,7 @@
 				98DA5B4A2C2EF788000F4E06 /* AttentionKernelDescriptor.swift in Sources */,
 				98FB66E12C347CBA00C56CED /* AttentionKernel+Source.swift in Sources */,
 				98FB0AB82C5E71FF0069ABA0 /* AttentionOperand.swift in Sources */,
+				9895F1562C6FD50A00D9CFA0 /* AttentionKernelType.swift in Sources */,
 				9881AA232C25C22B0056D05C /* LaplacianTest.swift in Sources */,
 				9881AA1C2C25B11C0056D05C /* CoreCount.swift in Sources */,
 				98FB0ABA2C5E7F850069ABA0 /* SquareAttentionTest.swift in Sources */,

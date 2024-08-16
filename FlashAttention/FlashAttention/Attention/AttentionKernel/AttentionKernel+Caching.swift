@@ -361,28 +361,22 @@ extension AttentionKernel {
     var output: String = ""
     
     switch type {
-    case .forward(let computeL):
+    case .forward:
       if cached(.O) {
         output += cache(operand: .O, type: .store)
       }
-      if computeL {
-        guard let memoryPrecisionL = memoryPrecisions[.L],
-              memoryPrecisionL != .BF16 else {
-          fatalError("Invalid memory precision for L.")
-        }
-        
-        // L is always either FP16 or FP32, so we don't need custom type
-        // conversion code here.
-        output += """
-        
-        if (\(unsafeParallelizationThreadOffset) < \(parallelizationDimension)) {
-          // Premultiplied by log_base_2(e).
-          float L_sram = m + fast::log2(l);
-          L[\(clampedParallelizationThreadOffset)] = L_sram;
-        }
-        
-        """
+      
+      // L is always either FP16 or FP32, so we don't need custom type
+      // conversion code here.
+      output += """
+      
+      if (\(unsafeParallelizationThreadOffset) < \(parallelizationDimension)) {
+        // Premultiplied by log_base_2(e).
+        float L_sram = m + fast::log2(l);
+        L[\(clampedParallelizationThreadOffset)] = L_sram;
       }
+      
+      """
       
     case .backwardQuery:
       if cached(.dQ) {

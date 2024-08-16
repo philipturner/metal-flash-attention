@@ -5,26 +5,6 @@
 //  Created by Philip Turner on 6/28/24.
 //
 
-/// The three kernels of the FlashAttention algorithm for devices without
-/// hardware acceleration for floating-point atomics.
-enum AttentionKernelType {
-  /// Forward attention, computing O and L.
-  ///
-  /// The associated value specifies whether the gradient will be needed.
-  /// - `false`: compute only O
-  /// - `true`: compute both O and L
-  case forward(Bool)
-  
-  /// Backward attention, computing D and dQ.
-  ///
-  /// Depends on L.
-  case backwardQuery
-  
-  /// Backward attention, computing dK and dV.
-  ///
-  /// Depends on L and D.
-  case backwardKeyValue
-}
 
 struct AttentionKernelDescriptor {
   var blockDimensions: (

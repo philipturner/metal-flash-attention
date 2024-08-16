@@ -34,8 +34,16 @@ func executeScript() {
 //  profileProblemSize(sequenceDimension: 384, headDimension: 95)
 //  profileProblemSize(sequenceDimension: 777, headDimension: 199)
   
-#if true
-  let D_array = Array(95...160)
+#if false
+  var D_array: [Int] = []
+  do {
+    var D_cursor = 4
+    while D_cursor <= 256 { // 4-128, 128-208, 208-256 (M4)
+      D_array.append(D_cursor)
+      D_cursor += 4
+    }
+  }
+  
   let N_array = [
     AttentionKernelType.forward(true),
     AttentionKernelType.backwardQuery,
@@ -50,7 +58,7 @@ func executeScript() {
     
     for N in N_array {
       let metric = profileProblemSize(
-        sequenceDimension: 8192,
+        sequenceDimension: 4096,
         headDimension: D,
         benchmarkedKernel: N)
       outputString += "\(metric), "
@@ -71,7 +79,7 @@ func executeScript() {
 func profileProblemSize(
   sequenceDimension: Int,
   headDimension: Int,
-  benchmarkedKernel: AttentionKernelType = .forward(true)
+  benchmarkedKernel: AttentionKernelType = .forward
 ) -> Int {
   var networkDesc = NetworkDescriptor()
   networkDesc.N = sequenceDimension
@@ -81,8 +89,8 @@ func profileProblemSize(
   // MARK: - Kernels
   
   var attentionDesc = AttentionDescriptor()
-  attentionDesc.lowPrecisionInputs = true
-  attentionDesc.lowPrecisionIntermediates = true
+  attentionDesc.lowPrecisionInputs = false
+  attentionDesc.lowPrecisionIntermediates = false
   attentionDesc.lowPrecisionOutputs = false
   attentionDesc.matrixDimensions = (
     R: UInt32(sequenceDimension),
@@ -95,7 +103,7 @@ func profileProblemSize(
     let attentionKernel = AttentionKernel(descriptor: attentionKernelDesc)
     return attentionKernel
   }
-  let kernelForward = createKernel(type: .forward(true))
+  let kernelForward = createKernel(type: .forward)
   let kernelBackwardQuery = createKernel(type: .backwardQuery)
   let kernelBackwardKeyValue = createKernel(type: .backwardKeyValue)
   
