@@ -242,6 +242,7 @@ extension GEMMKernelDescriptor {
     }
     guard !mtlDevice.supportsFamily(.apple9) else {
       self.blockDimensions = (32, 32, 8)
+      self.leadingBlockDimensions = (32, 32, 32)
       return
     }
     
