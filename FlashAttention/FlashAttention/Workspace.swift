@@ -38,3 +38,16 @@ import QuartzCore
 //   - Reduce the threadgroup memory allocation with mixed precision. [DONE]
 //   - Change the GEMM and Attention kernels, so the threadgroup memory
 //     allocation is computed beforehand. [DONE]
+//
+// Caching heuristics:
+// - Isolate the case where 0, 1, or 2 outputs are cached. +3, 4 for inputs.
+// - Find a relationship between block size and amount of SRAM cached.
+//   - Make a general model based on the exact amount of memory.
+//   - Each kernel (FWD, dQ, dK/dV) will not exactly follow the model. But it
+//     serves to help understand where certain block sizes are favorable.
+// - Find the best block size for the operable range of each permutation:
+//   {Each architecture} x
+//   {Each precision} x
+//   {Each kernel} x
+//   {Each category of memory allocation sizes}
+// - Define the operable range (which is unfortunately coupled to block size).
