@@ -102,13 +102,8 @@ extension AttentionDescriptor {
     
     // Block sizes for the case where nothing is cached.
     if MTLContext.global.device.supportsFamily(.apple9) {
-      if matrixDimensions.D % 8 == 0 {
-        output = (
-          parallelization: 16, traversal: 128, head: 16)
-      } else {
-        output = (
-          parallelization: 16, traversal: 128, head: 8)
-      }
+      output = (
+        parallelization: 16, traversal: 128, head: 16)
     } else {
       output = (
         parallelization: 32, traversal: 64, head: 32)

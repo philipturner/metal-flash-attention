@@ -10,7 +10,7 @@ import Metal
 // Test the performance of the attention kernel, using single-headed attention
 // over a square attention matrix.
 
-#if false
+#if true
 func executeScript() {
   // Automate the execution of the test suite.
 //  profileProblemSize(sequenceDimension: 10, headDimension: 3)
@@ -42,14 +42,16 @@ func executeScript() {
       D_cursor += 4
       D_array.append(D_cursor)
     }
-    while D_cursor < 160 {
-      D_cursor += 8
-      D_array.append(D_cursor)
-    }
-    while D_cursor < 256 {
-      D_cursor += 16
-      D_array.append(D_cursor)
-    }
+    
+//    var D_cursor = 96
+//    while D_cursor < 160 {
+//      D_cursor += 8
+//      D_array.append(D_cursor)
+//    }
+//    while D_cursor < 256 {
+//      D_cursor += 16
+//      D_array.append(D_cursor)
+//    }
   }
   
   let N_array = [
@@ -66,7 +68,7 @@ func executeScript() {
     
     for N in N_array {
       let metric = profileProblemSize(
-        sequenceDimension: 8192,
+        sequenceDimension: 4096,
         headDimension: D,
         benchmarkedKernel: N)
       outputString += "\(metric), "
