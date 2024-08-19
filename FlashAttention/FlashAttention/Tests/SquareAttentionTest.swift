@@ -35,7 +35,7 @@ func executeScript() {
 //  profileProblemSize(sequenceDimension: 777, headDimension: 199)
   
 #if true
-  let D_array: [Int] = [16, 16, 16]
+  let D_array: [Int] = [160, 160, 160]
   let N_array = [AttentionKernelType.forward]
   
   // Loop over the configurations.
@@ -46,7 +46,7 @@ func executeScript() {
     
     for N in N_array {
       let metric = profileProblemSize(
-        sequenceDimension: 8192,
+        sequenceDimension: 4096,
         headDimension: D,
         benchmarkedKernel: N)
       outputString += "\(metric), "
@@ -77,9 +77,8 @@ func profileProblemSize(
   // MARK: - Kernels
   
   var attentionDesc = AttentionDescriptor()
-  attentionDesc.lowPrecisionInputs = false
-  attentionDesc.lowPrecisionIntermediates = false
-  attentionDesc.lowPrecisionOutputs = false
+  attentionDesc.lowPrecisionInputs = true
+  attentionDesc.lowPrecisionIntermediates = true
   attentionDesc.matrixDimensions = (
     R: UInt32(sequenceDimension),
     C: UInt32(sequenceDimension),

@@ -106,8 +106,6 @@ extension AttentionDescriptor {
         parallelization: 32, traversal: 64, head: 32)
     }
     
-    // TODO: Inject fine-tuned block sizes through a function call here.
-    
     // Enforce the rule that head block dimension <= head dimension.
     let paddedHeadDimension = (matrixDimensions.D + 7) / 8 * 8
     output.head = min(output.head, paddedHeadDimension)
@@ -230,17 +228,27 @@ extension AttentionDescriptor {
     // BF16, within a smaller memory allocation. Then, deallocate the FP32
     // allocation. The overall training process will not be any slower than
     // if MFA outputted BF16 into the final buffer.
-    if lowPrecisionOutputs {
-      memoryPrecisions[.O] = .FP16
-      memoryPrecisions[.dV] = .FP32
-      memoryPrecisions[.dK] = .FP32
-      memoryPrecisions[.dQ] = .FP32
-    } else {
-      memoryPrecisions[.O] = .FP32
-      memoryPrecisions[.dV] = .FP32
-      memoryPrecisions[.dK] = .FP32
-      memoryPrecisions[.dQ] = .FP32
-    }
+    //
+    // ## Update
+    //
+    // Paging O as FP16 was found to be slower on M1. Like with BF16, the M3
+    // generation was faster. Writing O directly to FP16 is a very
+    // important use case: attention inference. Small head dimensions fit
+    // inside the registers and don't convert FP16 -> FP32 -> FP16 every loop
+    // iteration. They only convert once at the end of the kernel. It is the
+    // supermassive head dimensions that require register spilling, and
+    // therefore an FP32 memory allocation for O.
+    //
+    // I don't know the best way to resolve this. It seems like something the
+    // client should deal with. Therefore, the MFA reference implementation
+    // will always write O as FP32 in memory. This choice simplifies
+    // everything, just like the choice to always store log-sum-exp during the
+    // forward pass. It also removes the concern of rounding error from
+    // frequently truncating the FP32 numbers to FP16.
+    memoryPrecisions[.O] = .FP32
+    memoryPrecisions[.dV] = .FP32
+    memoryPrecisions[.dK] = .FP32
+    memoryPrecisions[.dQ] = .FP32
     
     return memoryPrecisions
   }
