@@ -58,22 +58,19 @@ extension AttentionDescriptor {
     }
     
     // Assign the cache state.
-    let cacheInputs = false
-    let cacheOutputs = false
-    
     switch type {
     case .forward:
-      output.cacheState[.Q] = cacheInputs
-      output.cacheState[.O] = cacheOutputs
+      output.cacheState[.Q] = false
+      output.cacheState[.O] = false
     case .backwardQuery:
-      output.cacheState[.Q] = cacheInputs
-      output.cacheState[.dO] = cacheInputs
-      output.cacheState[.dQ] = cacheOutputs
+      output.cacheState[.Q] = false
+      output.cacheState[.dO] = false
+      output.cacheState[.dQ] = false
     case .backwardKeyValue:
-      output.cacheState[.K] = cacheInputs
-      output.cacheState[.V] = cacheInputs
-      output.cacheState[.dV] = cacheOutputs
-      output.cacheState[.dK] = cacheOutputs
+      output.cacheState[.K] = false
+      output.cacheState[.V] = false
+      output.cacheState[.dV] = false
+      output.cacheState[.dK] = false
     }
     
     // Access pattern heuristic for when nothing is cached.
@@ -108,6 +105,8 @@ extension AttentionDescriptor {
       output = (
         parallelization: 32, traversal: 64, head: 32)
     }
+    
+    // TODO: Inject fine-tuned block sizes through a function call here.
     
     // Enforce the rule that head block dimension <= head dimension.
     let paddedHeadDimension = (matrixDimensions.D + 7) / 8 * 8

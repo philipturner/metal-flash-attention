@@ -35,28 +35,8 @@ func executeScript() {
 //  profileProblemSize(sequenceDimension: 777, headDimension: 199)
   
 #if true
-  var D_array: [Int] = []
-  do {
-    var D_cursor = 0
-    while D_cursor < 96 {
-      D_cursor += 4
-      D_array.append(D_cursor)
-    }
-    while D_cursor < 160 {
-      D_cursor += 8
-      D_array.append(D_cursor)
-    }
-    while D_cursor < 256 {
-      D_cursor += 16
-      D_array.append(D_cursor)
-    }
-  }
-  
-  let N_array = [
-    AttentionKernelType.forward,
-    AttentionKernelType.backwardQuery,
-    AttentionKernelType.backwardKeyValue
-  ]
+  let D_array: [Int] = [16, 16, 16]
+  let N_array = [AttentionKernelType.forward]
   
   // Loop over the configurations.
   var outputString: String = ""
@@ -66,7 +46,7 @@ func executeScript() {
     
     for N in N_array {
       let metric = profileProblemSize(
-        sequenceDimension: 4096,
+        sequenceDimension: 8192,
         headDimension: D,
         benchmarkedKernel: N)
       outputString += "\(metric), "
@@ -97,9 +77,9 @@ func profileProblemSize(
   // MARK: - Kernels
   
   var attentionDesc = AttentionDescriptor()
-  attentionDesc.lowPrecisionInputs = true
-  attentionDesc.lowPrecisionIntermediates = true
-  attentionDesc.lowPrecisionOutputs = true
+  attentionDesc.lowPrecisionInputs = false
+  attentionDesc.lowPrecisionIntermediates = false
+  attentionDesc.lowPrecisionOutputs = false
   attentionDesc.matrixDimensions = (
     R: UInt32(sequenceDimension),
     C: UInt32(sequenceDimension),
@@ -227,7 +207,6 @@ func profileProblemSize(
     
     for _ in 0..<dispatchCount {
       if dispatchCount > 1 {
-        // WARNING: Change this code to match the kernel you're profiling.
         switch benchmarkedKernel {
         case .forward:
           dispatch(
