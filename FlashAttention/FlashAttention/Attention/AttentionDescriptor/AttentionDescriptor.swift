@@ -35,6 +35,14 @@ extension AttentionDescriptor {
     #endif
     let table = AttentionParameterRow.parseTable(file)
     let row = row(table: table)
+//    print()
+//    print("matrix dimensions:", self.matrixDimensions!)
+//    print("maximum head dimension:", row.maximumHeadDimension)
+//    print("parallelization:", row.parallelization)
+//    print("traversal:", row.traversal)
+//    print("head:", row.head)
+//    print("cached:", row.cachedOperands)
+//    print()
     
     func createBlockDimensions() -> (UInt16, UInt16, UInt16) {
       guard let parallelization = UInt16(row.parallelization),
@@ -123,6 +131,23 @@ extension AttentionDescriptor {
     output.registerPrecisions = registerPrecisions()
     output.transposeState = createTransposeState()
     output.type = type
+    
+//    if matrixDimensions!.D == 64, type == .forward {
+//      output.blockDimensions = (32, 32, 64)
+//      output.cacheState = [
+//        .Q: false,
+//        .O: true,
+//      ]
+//    }
+    
+//    print()
+//    print(output.blockDimensions!)
+//    print(output.cacheState)
+//    print(output.headDimension!)
+//    print(output.memoryPrecisions)
+//    print(output.registerPrecisions)
+//    print(output.cacheState)
+//    print()
     
     return output
   }

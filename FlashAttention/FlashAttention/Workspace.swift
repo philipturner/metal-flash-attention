@@ -15,8 +15,9 @@ import QuartzCore
 
 // Tasks:
 // - Fire up the new square attention test, using the default parameters. [DONE]
-// - Run a benchmark over the head dimension.
-// - Run the same benchmark, but with the parameters.
+// - Run a benchmark over the head dimension. [DONE]
+// - Run the same benchmark, but with the parameters. [DONE]
 // - Check for a performance improvement from the parameters.
 // - Check for a performance improvement in the remaining ones.
 // - Tweak parameters that give the wrong performance.
+// - Test the revised parameters at a different sequence length.
