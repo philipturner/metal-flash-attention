@@ -37,8 +37,8 @@ func executeScript() {
 #if true
   var D_array: [Int] = []
   do {
-    var D_cursor = 60
-    while D_cursor < 64 {
+    var D_cursor = 0
+    while D_cursor < 32 {
       D_cursor += 4
       D_array.append(D_cursor)
     }
@@ -54,8 +54,8 @@ func executeScript() {
   
   let N_array = [
     AttentionKernelType.forward,
-//    AttentionKernelType.backwardQuery,
-//    AttentionKernelType.backwardKeyValue
+    AttentionKernelType.backwardQuery,
+    AttentionKernelType.backwardKeyValue
   ]
   
   // Loop over the configurations.
