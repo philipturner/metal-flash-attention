@@ -42,14 +42,14 @@ func executeScript() {
       D_cursor += 4
       D_array.append(D_cursor)
     }
-//    while D_cursor < 160 {
-//      D_cursor += 8
-//      D_array.append(D_cursor)
-//    }
-//    while D_cursor < 256 {
-//      D_cursor += 16
-//      D_array.append(D_cursor)
-//    }
+    while D_cursor < 160 {
+      D_cursor += 8
+      D_array.append(D_cursor)
+    }
+    while D_cursor < 256 {
+      D_cursor += 16
+      D_array.append(D_cursor)
+    }
   }
   
   let N_array = [

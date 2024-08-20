@@ -17,7 +17,7 @@ import QuartzCore
 // - Fire up the new square attention test, using the default parameters. [DONE]
 // - Run a benchmark over the head dimension. [DONE]
 // - Run the same benchmark, but with the parameters. [DONE]
-// - Check for a performance improvement from the parameters.
-// - Check for a performance improvement in the remaining ones.
-// - Tweak parameters that give the wrong performance.
+// - Tweak parameters that give the wrong performance on M1. [DONE]
+// - Tweak parameters that give the wrong performance on M3.
+//   - Expand the benchmarked range to D=384.
 // - Test the revised parameters at a different sequence length.

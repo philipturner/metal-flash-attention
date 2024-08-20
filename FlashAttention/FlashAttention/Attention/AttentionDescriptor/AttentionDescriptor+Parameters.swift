@@ -147,13 +147,20 @@ extension AttentionDescriptor {
       """
     }
   }
-  
+}
+
+extension AttentionDescriptor {
   /// Block sizes and cached operands for FP16/BF16 backward query.
   static func backwardQueryMixed(device: MTLDevice) -> String {
     if device.supportsFamily(.apple9) {
       return defaultParameters(device: device)
     } else {
-      return defaultParameters(device: device)
+      return """
+      | 32  | 32 | 64 | 32 | Q, dQ     |
+      | 96  | 32 | 64 | 32 | dQ        |
+      | 256 | 32 | 64 | 32 |           |
+      
+      """
     }
   }
   
@@ -178,13 +185,21 @@ extension AttentionDescriptor {
       """
     }
   }
-  
+}
+
+extension AttentionDescriptor {
   /// Block sizes and cached operands for FP16/BF16 backward query.
   static func backwardKeyValueMixed(device: MTLDevice) -> String {
     if device.supportsFamily(.apple9) {
       return defaultParameters(device: device)
     } else {
-      return defaultParameters(device: device)
+      return """
+      | 16  | 32 | 64 | 16 | V, dV, dK |
+      | 32  | 32 | 64 | 32 | dV, dK    |
+      | 96  | 32 | 64 | 32 | dV        |
+      | 256 | 32 | 64 | 32 |           |
+      
+      """
     }
   }
   
