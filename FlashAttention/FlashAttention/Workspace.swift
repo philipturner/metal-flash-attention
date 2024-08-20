@@ -13,9 +13,9 @@ import QuartzCore
 /// when the 'main' branch is in a stable state. Clients can utilize this
 /// function to script tests in their fork.
 
-// TODO:
-// - Fire up the new square attention test, using the default parameters.
-// - Run a benchmark over head dimension.
+// Tasks:
+// - Fire up the new square attention test, using the default parameters. [DONE]
+// - Run a benchmark over the head dimension.
 // - Run the same benchmark, but with the parameters.
 // - Check for a performance improvement from the parameters.
 // - Check for a performance improvement in the remaining ones.

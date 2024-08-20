@@ -27,7 +27,12 @@ extension AttentionDescriptor {
     type: AttentionKernelType
   ) -> AttentionKernelDescriptor {
     // Fetch the kernel-specific parameters.
+    #if true
+    let file = AttentionDescriptor
+      .defaultParameters(device: MTLContext.global.device)
+    #else
     let file = parameterFile(type: type)
+    #endif
     let table = AttentionParameterRow.parseTable(file)
     let row = row(table: table)
     

@@ -10,31 +10,31 @@ import Metal
 // Test the performance of the attention kernel, using single-headed attention
 // over a square attention matrix.
 
-#if false
+#if true
 func executeScript() {
   // Automate the execution of the test suite.
-//  profileProblemSize(sequenceDimension: 10, headDimension: 3)
-//  profileProblemSize(sequenceDimension: 10, headDimension: 80)
-//  profileProblemSize(sequenceDimension: 8, headDimension: 2)
-//  profileProblemSize(sequenceDimension: 9, headDimension: 2)
-//  profileProblemSize(sequenceDimension: 23, headDimension: 2)
-//  profileProblemSize(sequenceDimension: 24, headDimension: 2)
-//  profileProblemSize(sequenceDimension: 25, headDimension: 2)
-//  profileProblemSize(sequenceDimension: 192, headDimension: 77)
-//  profileProblemSize(sequenceDimension: 192, headDimension: 80)
-//  profileProblemSize(sequenceDimension: 93, headDimension: 32)
-//  profileProblemSize(sequenceDimension: 99, headDimension: 35)
-//  profileProblemSize(sequenceDimension: 64, headDimension: 32)
-//  profileProblemSize(sequenceDimension: 64, headDimension: 34)
-//  profileProblemSize(sequenceDimension: 64, headDimension: 36)
-//  profileProblemSize(sequenceDimension: 64, headDimension: 40)
-//  profileProblemSize(sequenceDimension: 32, headDimension: 64)
-//  profileProblemSize(sequenceDimension: 4, headDimension: 1)
-//  profileProblemSize(sequenceDimension: 4, headDimension: 2)
-//  profileProblemSize(sequenceDimension: 384, headDimension: 95)
-//  profileProblemSize(sequenceDimension: 777, headDimension: 199)
+  profileProblemSize(sequenceDimension: 10, headDimension: 3)
+  profileProblemSize(sequenceDimension: 10, headDimension: 80)
+  profileProblemSize(sequenceDimension: 8, headDimension: 2)
+  profileProblemSize(sequenceDimension: 9, headDimension: 2)
+  profileProblemSize(sequenceDimension: 23, headDimension: 2)
+  profileProblemSize(sequenceDimension: 24, headDimension: 2)
+  profileProblemSize(sequenceDimension: 25, headDimension: 2)
+  profileProblemSize(sequenceDimension: 192, headDimension: 77)
+  profileProblemSize(sequenceDimension: 192, headDimension: 80)
+  profileProblemSize(sequenceDimension: 93, headDimension: 32)
+  profileProblemSize(sequenceDimension: 99, headDimension: 35)
+  profileProblemSize(sequenceDimension: 64, headDimension: 32)
+  profileProblemSize(sequenceDimension: 64, headDimension: 34)
+  profileProblemSize(sequenceDimension: 64, headDimension: 36)
+  profileProblemSize(sequenceDimension: 64, headDimension: 40)
+  profileProblemSize(sequenceDimension: 32, headDimension: 64)
+  profileProblemSize(sequenceDimension: 4, headDimension: 1)
+  profileProblemSize(sequenceDimension: 4, headDimension: 2)
+  profileProblemSize(sequenceDimension: 384, headDimension: 95)
+  profileProblemSize(sequenceDimension: 777, headDimension: 199)
   
-#if true
+#if false
   let D_array: [Int] = [160, 160, 160]
   let N_array = [AttentionKernelType.forward]
   
@@ -77,8 +77,8 @@ func profileProblemSize(
   // MARK: - Kernels
   
   var attentionDesc = AttentionDescriptor()
-  attentionDesc.lowPrecisionInputs = true
-  attentionDesc.lowPrecisionIntermediates = true
+  attentionDesc.lowPrecisionInputs = false
+  attentionDesc.lowPrecisionIntermediates = false
   attentionDesc.matrixDimensions = (
     R: UInt32(sequenceDimension),
     C: UInt32(sequenceDimension),
@@ -247,14 +247,14 @@ func profileProblemSize(
     let start = commandBuffer.gpuStartTime
     let end = commandBuffer.gpuEndTime
     let latency = end - start
-    // print("latency:", Int(latency * 1e6))
+    print("latency:", Int(latency * 1e6))
     return latency
   }
   executeCommandBuffer(dispatchCount: 1)
   
   // MARK: - Validation
   
-#if false
+#if true
   // Utility function to make buffer copying more concise.
   func copyBuffer(
     _ destination: inout [Float],
@@ -407,8 +407,7 @@ func profileProblemSize(
   
   // Check the results.
   if attentionDesc.lowPrecisionInputs ||
-      attentionDesc.lowPrecisionIntermediates ||
-      attentionDesc.lowPrecisionOutputs {
+      attentionDesc.lowPrecisionIntermediates {
     check(expected: O, actual: resultO, tolerance: 5e-2)
     check(expected: L, actual: resultL, tolerance: 7e-3)
     check(expected: D, actual: resultD, tolerance: 1e-1)
@@ -428,7 +427,7 @@ func profileProblemSize(
   
   // MARK: - Profiling
   
-#if true
+#if false
   // Benchmark performance.
   var maxGINSTRS: Int = .zero
   for _ in 0..<5 {
