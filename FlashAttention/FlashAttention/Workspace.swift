@@ -16,7 +16,7 @@ import QuartzCore
 // Workspace for drafting the auto-parsing code.
 func executeScript() {
   let sequenceDimension: Int = 1024
-  let headDimension: Int = 12
+  let headDimension: Int = 97
   
   var attentionDesc = AttentionDescriptor()
   attentionDesc.lowPrecisionInputs = true
@@ -27,20 +27,30 @@ func executeScript() {
     D: UInt16(headDimension))
   attentionDesc.transposeState = (Q: false, K: false, V: false, O: false)
   
-  // Fetch the parameters.
-  let file = attentionDesc.parameterFile(type: .backwardKeyValue)
-  let table = AttentionParameterRow.parseTable(file)
-  let row = attentionDesc.row(table: table)
-  
-  let blockDimensions = row.createBlockDimensions()
-  let operands = AttentionParameterRow.parseOperands(row.cachedOperands)
+  /*
+   
+   maximum head dimension: 16
+   block dimension (R): 32
+   block dimension (C): 32
+   block dimension (D): 16
+   cached operands: [V, dV, dK]
+   */
+  let kernelDesc = attentionDesc.kernelDescriptor(type: .forward)
   
   // Display the selected parameters.
   print()
-  print("maximum head dimension:", row.maximumHeadDimension)
-  print("block dimension (R):", blockDimensions[0])
-  print("block dimension (C):", blockDimensions[1])
-  print("block dimension (D):", blockDimensions[2])
-  print("cached operands:", operands)
+  print("block dimension (R):", kernelDesc.blockDimensions?.parallelization)
+  print("block dimension (C):", kernelDesc.blockDimensions?.traversal)
+  print("block dimension (D):", kernelDesc.blockDimensions?.head)
+  print("cached operands:", kernelDesc.cacheState)
+  print()
+  print("memory precisions:")
+  for (key, value) in kernelDesc.memoryPrecisions {
+    print("- \(key) : \(value)")
+  }
+  print("register precisions:")
+  for (key, value) in kernelDesc.registerPrecisions {
+    print("- \(key) : \(value)")
+  }
   print()
 }

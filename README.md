@@ -59,6 +59,8 @@ Portability:
   - Leading dimension to handle multi-head attention.
 
 Documentation:
+- Move the folder `FlashAttention/FlashAttention/Archive` to `Documentation/Archive`.
+  - Can we get the folder to be referenced in the Xcodeproj file?
 - Provide example code for constructing an accurate benchmark.
   - Assessing the performance impact of a speculative optimization or other change to the code.
   - Explain how the rooflines are calculated.

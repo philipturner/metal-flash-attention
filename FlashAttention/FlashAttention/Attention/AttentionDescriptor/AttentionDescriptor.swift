@@ -26,62 +26,100 @@ extension AttentionDescriptor {
   func kernelDescriptor(
     type: AttentionKernelType
   ) -> AttentionKernelDescriptor {
-    guard let matrixDimensions = self.matrixDimensions,
-          let transposeState = self.transposeState else {
+    guard let matrixDimensions = self.matrixDimensions else {
       fatalError("Descriptor was incomplete.")
     }
     
+    // TODO: Refactor this into a bunch of nested functions.
+    
     var output = AttentionKernelDescriptor()
-    output.blockDimensions = self.blockDimensions()
     output.headDimension = matrixDimensions.D
     output.type = type
     
-    // Assign the transpose state.
-    output.transposeState[.Q] = transposeState.Q
-    output.transposeState[.K] = transposeState.K
-    output.transposeState[.V] = transposeState.V
+    // Fetch the kernel-specific parameters.
+    let file = parameterFile(type: type)
+    let table = AttentionParameterRow.parseTable(file)
+    let row = row(table: table)
     
-    switch type {
-    case .forward:
-      output.transposeState[.O] = transposeState.O
-    case .backwardQuery:
-      output.transposeState[.O] = transposeState.O
-      output.transposeState[.dO] = transposeState.O
-      output.transposeState[.dQ] = transposeState.Q
-    case .backwardKeyValue:
-      output.transposeState[.dO] = transposeState.O
-      output.transposeState[.dV] = transposeState.V
-      output.transposeState[.dK] = transposeState.K
+    // Set the block dimensions.
+    do {
+      var blockDimensions = row.createBlockDimensions()
+      
+      // Enforce the rule that head block dimension <= head dimension.
+      let paddedHeadDimension = (matrixDimensions.D + 7) / 8 * 8
+      blockDimensions[2] = min(blockDimensions[2], paddedHeadDimension)
+      
+      output.blockDimensions = (
+        parallelization: blockDimensions[0],
+        traversal: blockDimensions[1],
+        head: blockDimensions[2])
     }
     
     // Assign the cache state.
-    switch type {
-    case .forward:
-      output.cacheState[.Q] = false
-      output.cacheState[.O] = false
-    case .backwardQuery:
-      output.cacheState[.Q] = false
-      output.cacheState[.dO] = false
-      output.cacheState[.dQ] = false
-    case .backwardKeyValue:
-      output.cacheState[.K] = false
-      output.cacheState[.V] = false
-      output.cacheState[.dV] = false
-      output.cacheState[.dK] = false
+    do {
+      switch type {
+      case .forward:
+        output.cacheState[.Q] = false
+        output.cacheState[.O] = false
+      case .backwardQuery:
+        output.cacheState[.Q] = false
+        output.cacheState[.dO] = false
+        output.cacheState[.dQ] = false
+      case .backwardKeyValue:
+        output.cacheState[.K] = false
+        output.cacheState[.V] = false
+        output.cacheState[.dV] = false
+        output.cacheState[.dK] = false
+      }
+      
+      let operands = AttentionParameterRow.parseOperands(row.cachedOperands)
+      for operand in operands {
+        let previousValue = output.cacheState[operand]
+        guard previousValue == false else {
+          fatalError("Unexpected operand for \(type) kernel: \(operand)")
+        }
+        
+        output.cacheState[operand] = true
+      }
     }
     
-    // Access pattern heuristic for when nothing is cached.
-    if MTLContext.global.device.supportsFamily(.apple9) {
-      output.preferAsyncCache = true
-      output.preferAsyncLoad = false
-    } else {
-      output.preferAsyncCache = false
-      output.preferAsyncLoad = true
+    // Assign the transpose state.
+    do {
+      guard let transposeState = self.transposeState else {
+        fatalError("Descriptor was incomplete.")
+      }
+      
+      output.transposeState[.Q] = transposeState.Q
+      output.transposeState[.K] = transposeState.K
+      output.transposeState[.V] = transposeState.V
+      
+      switch type {
+      case .forward:
+        output.transposeState[.O] = transposeState.O
+      case .backwardQuery:
+        output.transposeState[.O] = transposeState.O
+        output.transposeState[.dO] = transposeState.O
+        output.transposeState[.dQ] = transposeState.Q
+      case .backwardKeyValue:
+        output.transposeState[.dO] = transposeState.O
+        output.transposeState[.dV] = transposeState.V
+        output.transposeState[.dK] = transposeState.K
+      }
     }
     
-    // Choose the precision for each operand.
-    output.memoryPrecisions = self.memoryPrecisions()
-    output.registerPrecisions = self.registerPrecisions()
+    // Choose the memory access pattern.
+    do {
+      output.memoryPrecisions = self.memoryPrecisions()
+      output.registerPrecisions = self.registerPrecisions()
+      
+      if MTLContext.global.device.supportsFamily(.apple9) {
+        output.preferAsyncCache = true
+        output.preferAsyncLoad = false
+      } else {
+        output.preferAsyncCache = false
+        output.preferAsyncLoad = true
+      }
+    }
     
     return output
   }
