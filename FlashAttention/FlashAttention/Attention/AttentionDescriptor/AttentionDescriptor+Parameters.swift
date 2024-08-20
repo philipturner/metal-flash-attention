@@ -1,11 +1,66 @@
 //
-//  AttentionDescriptor+BlockSizes.swift
+//  AttentionDescriptor+Parameters.swift
 //  FlashAttention
 //
 //  Created by Philip Turner on 8/19/24.
 //
 
 import Metal
+
+// MARK: - API
+
+extension AttentionDescriptor {
+  func parameterFile(type: AttentionKernelType) -> String {
+    var createParameters: (MTLDevice) -> String
+    
+    // Branch on the type.
+    switch type {
+    case .forward:
+      if lowPrecisionInputs && lowPrecisionIntermediates {
+        createParameters = Self.forwardHalfPrecision(device:)
+      } else {
+        createParameters = Self.forwardSinglePrecision(device:)
+      }
+    case .backwardQuery:
+      createParameters = Self.backwardQuery(device:)
+    case .backwardKeyValue:
+      createParameters = Self.backwardKeyValue(device:)
+    }
+    
+    // Retrieve the parameter file.
+    let device = MTLContext.global.device
+    return createParameters(device)
+  }
+  
+  func row(table: [AttentionParameterRow]) -> AttentionParameterRow {
+    guard let matrixDimensions = self.matrixDimensions else {
+      fatalError("Descriptor was incomplete.")
+    }
+    let headDimension = matrixDimensions.D
+    
+    // Pick a row of the table.
+    //
+    // Searching for a head dimension that exceeds the specified one.
+    var matchedRowID: Int?
+    for rowID in table.indices {
+      let row = table[rowID]
+      if headDimension <= row.maximumHeadDimension {
+        // Quit on the first match.
+        matchedRowID = rowID
+        break
+      }
+    }
+    
+    // Extract the row from the table.
+    if let matchedRowID {
+      return table[matchedRowID]
+    } else {
+      return table.last!
+    }
+  }
+}
+
+// MARK: - Parameters
 
 extension AttentionDescriptor {
   /// Default parameters, which should yield reasonable performance in
@@ -139,104 +194,4 @@ extension AttentionDescriptor {
       """
     }
   }
-}
-
-// MARK: - Parsing
-
-struct Row {
-  var maximumHeadDimension: UInt16 = .zero
-  var blockDimensionParallelization: UInt16 = .zero
-  var blockDimensionTraversal: UInt16 = .zero
-  var blockDimensionHead: UInt16 = .zero
-  var cachedOperands: [AttentionOperand] = []
-}
-
-/*private*/ func parseRows(_ rawString: String) -> [Row] {
-  // Split the lines by the newline delimiter.
-  let lines = rawString.split(separator: "\n").map(String.init)
-  
-  // Iterate over the lines.
-  var output: [Row] = []
-  for line in lines {
-    // Split the cells by the horizontal bar delimiter.
-    var segments = line.split(separator: "|").map(String.init)
-    
-    // Iterate over the cells.
-    for segmentID in segments.indices {
-      // Extract the null terminated C-style string.
-      let segment = segments[segmentID]
-      var characters = segment.utf8CString
-      
-      // Remove characters matching to the UTF-8 code for space.
-      characters.removeAll(where: {
-        $0 == 0x20
-      })
-      
-      // Overwrite the segment with the trimmed one.
-      let trimmedSegment = String(validatingUTF8: Array(characters))
-      guard let trimmedSegment else {
-        fatalError("UTF-8 was invalid.")
-      }
-      segments[segmentID] = trimmedSegment
-    }
-    
-    // Check that the correct number of cells exist.
-    guard segments.count == 5 else {
-      fatalError("Number of segments was invalid: \(segments.count)")
-    }
-    
-    // Utility function for parsing the integers.
-    func parseInteger(_ string: String) -> UInt16 {
-      let output = UInt16(string)
-      guard let output else {
-        fatalError("Invalid integer: \(string)")
-      }
-      return output
-    }
-    
-    // Utility function for parsing the operands.
-    func parseOperands(_ string: String) -> [AttentionOperand] {
-      // Split the operands by the comma delimiter.
-      let operandNames = string.split(separator: ",").map(String.init)
-      
-      // Using an O(keys * queries) algorithm to search through the accepted
-      // operands. This likely has less overhead than creating a dictionary.
-      // In addition, it is simpler to code.
-      let acceptedOperands: [AttentionOperand] = [
-        .Q, .K, .V, .O,
-        .dO, .dV, .dK, .dQ
-      ]
-      
-      // Iterate over the operand names.
-      var output: [AttentionOperand] = []
-      for operandName in operandNames {
-        var matchedOperand: AttentionOperand?
-        for operand in acceptedOperands {
-          guard operand.description == operandName else {
-            continue
-          }
-          matchedOperand = operand
-        }
-        
-        guard let matchedOperand else {
-          fatalError("Could not find match for \(operandName).")
-        }
-        output.append(matchedOperand)
-      }
-      
-      return output
-    }
-    
-    // Create a row object.
-    var row = Row()
-    row.maximumHeadDimension = parseInteger(segments[0])
-    row.blockDimensionParallelization = parseInteger(segments[1])
-    row.blockDimensionTraversal = parseInteger(segments[2])
-    row.blockDimensionHead = parseInteger(segments[3])
-    row.cachedOperands = parseOperands(segments[4])
-    
-    output.append(row)
-  }
-  
-  return output
 }

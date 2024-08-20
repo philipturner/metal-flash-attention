@@ -5,7 +5,6 @@
 //  Created by Philip Turner on 6/28/24.
 //
 
-
 struct AttentionKernelDescriptor {
   var blockDimensions: (
     parallelization: UInt16, traversal: UInt16, head: UInt16)?

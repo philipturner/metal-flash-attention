@@ -15,40 +15,32 @@ import QuartzCore
 
 // Workspace for drafting the auto-parsing code.
 func executeScript() {
-  // Specify the head dimension.
-  let headDimension: UInt16 = 40
+  let sequenceDimension: Int = 1024
+  let headDimension: Int = 12
   
-  // Load the parameters.
-  let device = MTLCreateSystemDefaultDevice()!
-  let parameters = AttentionDescriptor
-    .backwardQuery(device: device)
-  let rows = parseRows(parameters)
+  var attentionDesc = AttentionDescriptor()
+  attentionDesc.lowPrecisionInputs = true
+  attentionDesc.lowPrecisionIntermediates = true
+  attentionDesc.matrixDimensions = (
+    R: UInt32(sequenceDimension),
+    C: UInt32(sequenceDimension),
+    D: UInt16(headDimension))
+  attentionDesc.transposeState = (Q: false, K: false, V: false, O: false)
   
-  // Pick a row of the table.
-  var matchedRowID: Int?
-  for rowID in rows.indices {
-    let row = rows[rowID]
-    if headDimension <= row.maximumHeadDimension {
-      // Quit on the first match.
-      matchedRowID = rowID
-      break
-    }
-  }
+  // Fetch the parameters.
+  let file = attentionDesc.parameterFile(type: .backwardKeyValue)
+  let table = AttentionParameterRow.parseTable(file)
+  let row = attentionDesc.row(table: table)
   
-  // Extract the row from the table.
-  var row: Row
-  if let matchedRowID {
-    row = rows[matchedRowID]
-  } else {
-    row = rows.last!
-  }
+  let blockDimensions = row.createBlockDimensions()
+  let operands = AttentionParameterRow.parseOperands(row.cachedOperands)
   
   // Display the selected parameters.
   print()
   print("maximum head dimension:", row.maximumHeadDimension)
-  print("block dimension (R):", row.blockDimensionParallelization)
-  print("block dimension (C):", row.blockDimensionTraversal)
-  print("block dimension (D):", row.blockDimensionHead)
-  print("cached operands:", row.cachedOperands)
+  print("block dimension (R):", blockDimensions[0])
+  print("block dimension (C):", blockDimensions[1])
+  print("block dimension (D):", blockDimensions[2])
+  print("cached operands:", operands)
   print()
 }

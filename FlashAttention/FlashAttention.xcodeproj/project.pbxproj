@@ -11,7 +11,9 @@
 		9827D7A52C4ABF0F00649C7B /* AttentionKernel+Accumulate.swift in Sources */ = {isa = PBXBuildFile; fileRef = 9827D7A42C4ABF0F00649C7B /* AttentionKernel+Accumulate.swift */; };
 		9827D7A72C4AC05C00649C7B /* AttentionKernel+Softmax.swift in Sources */ = {isa = PBXBuildFile; fileRef = 9827D7A62C4AC05C00649C7B /* AttentionKernel+Softmax.swift */; };
 		982EBD602C5954D600AB4E00 /* AttentionKernel+OuterProduct.swift in Sources */ = {isa = PBXBuildFile; fileRef = 9827D7A22C4ABEEA00649C7B /* AttentionKernel+OuterProduct.swift */; };
-		984C9AA42C73DD2700E30399 /* AttentionDescriptor+BlockSizes.swift in Sources */ = {isa = PBXBuildFile; fileRef = 984C9AA32C73DD2700E30399 /* AttentionDescriptor+BlockSizes.swift */; };
+		984C9AA42C73DD2700E30399 /* AttentionDescriptor+Parameters.swift in Sources */ = {isa = PBXBuildFile; fileRef = 984C9AA32C73DD2700E30399 /* AttentionDescriptor+Parameters.swift */; };
+		984C9AA62C74F3C000E30399 /* AttentionParameterRow.swift in Sources */ = {isa = PBXBuildFile; fileRef = 984C9AA52C74F3C000E30399 /* AttentionParameterRow.swift */; };
+		984C9AA92C74F42E00E30399 /* AttentionDescriptor+Precisions.swift in Sources */ = {isa = PBXBuildFile; fileRef = 984C9AA82C74F42E00E30399 /* AttentionDescriptor+Precisions.swift */; };
 		9881A9F62C24C8230056D05C /* FlashAttentionApp.swift in Sources */ = {isa = PBXBuildFile; fileRef = 9881A9F52C24C8230056D05C /* FlashAttentionApp.swift */; };
 		9881A9F82C24C8230056D05C /* ContentView.swift in Sources */ = {isa = PBXBuildFile; fileRef = 9881A9F72C24C8230056D05C /* ContentView.swift */; };
 		9881AA052C24C85E0056D05C /* Workspace.swift in Sources */ = {isa = PBXBuildFile; fileRef = 9881AA042C24C85E0056D05C /* Workspace.swift */; };
@@ -48,7 +50,9 @@
 		9827D7A22C4ABEEA00649C7B /* AttentionKernel+OuterProduct.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = "AttentionKernel+OuterProduct.swift"; sourceTree = "<group>"; };
 		9827D7A42C4ABF0F00649C7B /* AttentionKernel+Accumulate.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = "AttentionKernel+Accumulate.swift"; sourceTree = "<group>"; };
 		9827D7A62C4AC05C00649C7B /* AttentionKernel+Softmax.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = "AttentionKernel+Softmax.swift"; sourceTree = "<group>"; };
-		984C9AA32C73DD2700E30399 /* AttentionDescriptor+BlockSizes.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = "AttentionDescriptor+BlockSizes.swift"; sourceTree = "<group>"; };
+		984C9AA32C73DD2700E30399 /* AttentionDescriptor+Parameters.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = "AttentionDescriptor+Parameters.swift"; sourceTree = "<group>"; };
+		984C9AA52C74F3C000E30399 /* AttentionParameterRow.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = AttentionParameterRow.swift; sourceTree = "<group>"; };
+		984C9AA82C74F42E00E30399 /* AttentionDescriptor+Precisions.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = "AttentionDescriptor+Precisions.swift"; sourceTree = "<group>"; };
 		9881A9F22C24C8230056D05C /* FlashAttention.app */ = {isa = PBXFileReference; explicitFileType = wrapper.application; includeInIndex = 0; path = FlashAttention.app; sourceTree = BUILT_PRODUCTS_DIR; };
 		9881A9F52C24C8230056D05C /* FlashAttentionApp.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = FlashAttentionApp.swift; sourceTree = "<group>"; };
 		9881A9F72C24C8230056D05C /* ContentView.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = ContentView.swift; sourceTree = "<group>"; };
@@ -112,6 +116,17 @@
 			path = AttentionKernel;
 			sourceTree = "<group>";
 		};
+		984C9AA72C74F40D00E30399 /* AttentionDescriptor */ = {
+			isa = PBXGroup;
+			children = (
+				98AFA2682C653D7700E88305 /* AttentionDescriptor.swift */,
+				984C9AA32C73DD2700E30399 /* AttentionDescriptor+Parameters.swift */,
+				984C9AA82C74F42E00E30399 /* AttentionDescriptor+Precisions.swift */,
+				984C9AA52C74F3C000E30399 /* AttentionParameterRow.swift */,
+			);
+			path = AttentionDescriptor;
+			sourceTree = "<group>";
+		};
 		9881A9E92C24C8230056D05C = {
 			isa = PBXGroup;
 			children = (
@@ -172,9 +187,8 @@
 		98DA5B3B2C2B3A81000F4E06 /* Attention */ = {
 			isa = PBXGroup;
 			children = (
+				984C9AA72C74F40D00E30399 /* AttentionDescriptor */,
 				9827D79B2C4ABC4900649C7B /* AttentionKernel */,
-				98AFA2682C653D7700E88305 /* AttentionDescriptor.swift */,
-				984C9AA32C73DD2700E30399 /* AttentionDescriptor+BlockSizes.swift */,
 				98DA5B492C2EF788000F4E06 /* AttentionKernelDescriptor.swift */,
 				9895F1552C6FD50A00D9CFA0 /* AttentionKernelType.swift */,
 				98FB0AB72C5E71FF0069ABA0 /* AttentionOperand.swift */,
@@ -321,8 +335,10 @@
 				9881AA142C25AED50056D05C /* GEMMKernelDescriptor.swift in Sources */,
 				98AFA2692C653D7700E88305 /* AttentionDescriptor.swift in Sources */,
 				98DA5B3D2C2C5086000F4E06 /* MTLContext.swift in Sources */,
-				984C9AA42C73DD2700E30399 /* AttentionDescriptor+BlockSizes.swift in Sources */,
+				984C9AA42C73DD2700E30399 /* AttentionDescriptor+Parameters.swift in Sources */,
 				9881AA162C25AEF10056D05C /* GEMMOperandPrecision.swift in Sources */,
+				984C9AA92C74F42E00E30399 /* AttentionDescriptor+Precisions.swift in Sources */,
+				984C9AA62C74F3C000E30399 /* AttentionParameterRow.swift in Sources */,
 			);
 			runOnlyForDeploymentPostprocessing = 0;
 		};
