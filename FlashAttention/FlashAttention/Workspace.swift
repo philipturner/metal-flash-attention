@@ -13,43 +13,10 @@ import QuartzCore
 /// when the 'main' branch is in a stable state. Clients can utilize this
 /// function to script tests in their fork.
 
-// Workspace for drafting the auto-parsing code.
-func executeScript() {
-  let sequenceDimension: Int = 1024
-  let headDimension: Int = 24
-  
-  var attentionDesc = AttentionDescriptor()
-  attentionDesc.lowPrecisionInputs = true
-  attentionDesc.lowPrecisionIntermediates = true
-  attentionDesc.matrixDimensions = (
-    R: UInt32(sequenceDimension),
-    C: UInt32(sequenceDimension),
-    D: UInt16(headDimension))
-  attentionDesc.transposeState = (Q: false, K: false, V: false, O: false)
-  
-  /*
-   maximum head dimension: 16
-   block dimension (R): 32
-   block dimension (C): 32
-   block dimension (D): 16
-   cached operands: [V, dV, dK]
-   */
-  let kernelDesc = attentionDesc.kernelDescriptor(type: .forward)
-  
-  // Display the selected parameters.
-  print()
-  print("block dimension (R):", kernelDesc.blockDimensions?.parallelization)
-  print("block dimension (C):", kernelDesc.blockDimensions?.traversal)
-  print("block dimension (D):", kernelDesc.blockDimensions?.head)
-  print("cached operands:", kernelDesc.cacheState)
-  print()
-  print("memory precisions:")
-  for (key, value) in kernelDesc.memoryPrecisions {
-    print("- \(key) : \(value)")
-  }
-  print("register precisions:")
-  for (key, value) in kernelDesc.registerPrecisions {
-    print("- \(key) : \(value)")
-  }
-  print()
-}
+// TODO:
+// - Fire up the new square attention test, using the default parameters.
+// - Run a benchmark over head dimension.
+// - Run the same benchmark, but with the parameters.
+// - Check for a performance improvement from the parameters.
+// - Check for a performance improvement in the remaining ones.
+// - Tweak parameters that give the wrong performance.
