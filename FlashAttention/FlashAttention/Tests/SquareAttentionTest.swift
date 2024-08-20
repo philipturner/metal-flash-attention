@@ -38,7 +38,7 @@ func executeScript() {
   var D_array: [Int] = []
   do {
     var D_cursor = 0
-    while D_cursor < 32 {
+    while D_cursor < 64 {
       D_cursor += 4
       D_array.append(D_cursor)
     }
