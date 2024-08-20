@@ -11,20 +11,26 @@ import Metal
 
 extension AttentionDescriptor {
   func parameterFile(type: AttentionKernelType) -> String {
+    // Choose a function pointer for the parameters.
     var createParameters: (MTLDevice) -> String
-    
-    // Branch on the type.
-    switch type {
-    case .forward:
-      if lowPrecisionInputs && lowPrecisionIntermediates {
-        createParameters = Self.forwardHalfPrecision(device:)
-      } else {
-        createParameters = Self.forwardSinglePrecision(device:)
+    if lowPrecisionInputs && lowPrecisionIntermediates {
+      switch type {
+      case .forward: 
+        createParameters = Self.forwardMixed(device:)
+      case .backwardQuery:
+        createParameters = Self.backwardQueryMixed(device:)
+      case .backwardKeyValue:
+        createParameters = Self.backwardKeyValueMixed(device:)
       }
-    case .backwardQuery:
-      createParameters = Self.backwardQuery(device:)
-    case .backwardKeyValue:
-      createParameters = Self.backwardKeyValue(device:)
+    } else {
+      switch type {
+      case .forward: 
+        createParameters = Self.forward(device:)
+      case .backwardQuery:
+        createParameters = Self.backwardQuery(device:)
+      case .backwardKeyValue:
+        createParameters = Self.backwardKeyValue(device:)
+      }
     }
     
     // Retrieve the parameter file.
@@ -95,7 +101,7 @@ extension AttentionDescriptor {
   /// registerPrecisions[.P] = .FP16
   /// registerPrecisions[.O] = .FP32
   /// ```
-  static func forwardHalfPrecision(device: MTLDevice) -> String {
+  static func forwardMixed(device: MTLDevice) -> String {
     if device.supportsFamily(.apple9) {
       return """
       | 16  | 16 | 128 | 16 | Q, O |
@@ -109,21 +115,16 @@ extension AttentionDescriptor {
       """
     } else {
       return """
-      | 16  | 32 | 128 | 16 | Q, O |
-      | 32  | 32 | 128 | 32 | Q, O |
-      | 64  | 32 | 128 | 32 | Q, O |
-      | 96  | 32 | 128 | 32 | O    |
+      | 96  | 32 | 128 | 32 | Q, O |
       | 128 | 32 | 128 | 32 | Q    |
-      | 160 | 32 | 128 | 32 | Q    |
       | 256 | 32 | 128 | 32 |      |
-      | 384 | 32 | 128 | 32 |      |
       
       """
     }
   }
   
   /// Block sizes and cached operands for FP32 forward.
-  static func forwardSinglePrecision(device: MTLDevice) -> String {
+  static func forward(device: MTLDevice) -> String {
     if device.supportsFamily(.apple9) {
       return """
       | 16  | 16 | 128 | 16 | Q, O |
@@ -147,6 +148,15 @@ extension AttentionDescriptor {
     }
   }
   
+  /// Block sizes and cached operands for FP16/BF16 backward query.
+  static func backwardQueryMixed(device: MTLDevice) -> String {
+    if device.supportsFamily(.apple9) {
+      return defaultParameters(device: device)
+    } else {
+      return defaultParameters(device: device)
+    }
+  }
+  
   /// Block sizes and cached operands for FP32 backward query.
   static func backwardQuery(device: MTLDevice) -> String {
     if device.supportsFamily(.apple9) {
@@ -166,6 +176,15 @@ extension AttentionDescriptor {
       | 256 | 32 | 64 | 32 |       |
       
       """
+    }
+  }
+  
+  /// Block sizes and cached operands for FP16/BF16 backward query.
+  static func backwardKeyValueMixed(device: MTLDevice) -> String {
+    if device.supportsFamily(.apple9) {
+      return defaultParameters(device: device)
+    } else {
+      return defaultParameters(device: device)
     }
   }
   
