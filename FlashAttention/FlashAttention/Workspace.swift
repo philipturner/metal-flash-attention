@@ -16,7 +16,7 @@ import QuartzCore
 // Workspace for drafting the auto-parsing code.
 func executeScript() {
   let sequenceDimension: Int = 1024
-  let headDimension: Int = 97
+  let headDimension: Int = 24
   
   var attentionDesc = AttentionDescriptor()
   attentionDesc.lowPrecisionInputs = true
@@ -28,7 +28,6 @@ func executeScript() {
   attentionDesc.transposeState = (Q: false, K: false, V: false, O: false)
   
   /*
-   
    maximum head dimension: 16
    block dimension (R): 32
    block dimension (C): 32

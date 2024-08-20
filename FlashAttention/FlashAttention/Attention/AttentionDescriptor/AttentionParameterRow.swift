@@ -16,17 +16,9 @@ struct AttentionParameterRow {
   
   // Operands cached in registers.
   var cachedOperands = String()
-  
-  // Decode the block dimensions.
-  func createBlockDimensions() -> SIMD3<UInt16> {
-    guard let x = UInt16(parallelization),
-          let y = UInt16(traversal),
-          let z = UInt16(head) else {
-      fatalError("Could not decode block dimensions.")
-    }
-    return SIMD3(x, y, z)
-  }
-  
+}
+
+extension AttentionParameterRow {
   static func parseTable(_ file: String) -> [AttentionParameterRow] {
     // Split the lines by the newline delimiter.
     let lines = file.split(separator: "\n").map(String.init)

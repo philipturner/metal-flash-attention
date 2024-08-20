@@ -26,124 +26,98 @@ extension AttentionDescriptor {
   func kernelDescriptor(
     type: AttentionKernelType
   ) -> AttentionKernelDescriptor {
-    guard let matrixDimensions = self.matrixDimensions else {
-      fatalError("Descriptor was incomplete.")
-    }
-    
-    // TODO: Refactor this into a bunch of nested functions.
-    
-    var output = AttentionKernelDescriptor()
-    output.headDimension = matrixDimensions.D
-    output.type = type
-    
     // Fetch the kernel-specific parameters.
     let file = parameterFile(type: type)
     let table = AttentionParameterRow.parseTable(file)
     let row = row(table: table)
     
-    // Set the block dimensions.
-    do {
-      var blockDimensions = row.createBlockDimensions()
+    func createBlockDimensions() -> (UInt16, UInt16, UInt16) {
+      guard let parallelization = UInt16(row.parallelization),
+            let traversal = UInt16(row.traversal),
+            let originalHead = UInt16(row.head) else {
+        fatalError("Could not decode block dimensions.")
+      }
       
       // Enforce the rule that head block dimension <= head dimension.
-      let paddedHeadDimension = (matrixDimensions.D + 7) / 8 * 8
-      blockDimensions[2] = min(blockDimensions[2], paddedHeadDimension)
+      let headDimension = createHeadDimension()
+      let paddedHeadDimension = (headDimension + 7) / 8 * 8
+      let revisedHead = min(originalHead, paddedHeadDimension)
       
-      output.blockDimensions = (
-        parallelization: blockDimensions[0],
-        traversal: blockDimensions[1],
-        head: blockDimensions[2])
+      return (parallelization, traversal, revisedHead)
     }
     
-    // Assign the cache state.
-    do {
+    func createCacheState() -> [AttentionOperand: Bool] {
+      var expectedOperands: Set<AttentionOperand>
       switch type {
       case .forward:
-        output.cacheState[.Q] = false
-        output.cacheState[.O] = false
+        expectedOperands = [.Q, .O]
       case .backwardQuery:
-        output.cacheState[.Q] = false
-        output.cacheState[.dO] = false
-        output.cacheState[.dQ] = false
+        expectedOperands = [.Q, .dO, .dQ]
       case .backwardKeyValue:
-        output.cacheState[.K] = false
-        output.cacheState[.V] = false
-        output.cacheState[.dV] = false
-        output.cacheState[.dK] = false
+        expectedOperands = [.K, .V, .dV, .dK]
       }
       
-      let operands = AttentionParameterRow.parseOperands(row.cachedOperands)
-      for operand in operands {
-        let previousValue = output.cacheState[operand]
-        guard previousValue == false else {
-          fatalError("Unexpected operand for \(type) kernel: \(operand)")
+      // Check for unexpected operands.
+      let cachedOperands = AttentionParameterRow
+        .parseOperands(row.cachedOperands)
+      for operand in cachedOperands {
+        guard expectedOperands.contains(operand) else {
+          fatalError("Unexpected operand: \(operand)")
         }
-        
-        output.cacheState[operand] = true
       }
+      
+      // Convert the list into a dictionary.
+      var output: [AttentionOperand: Bool] = [:]
+      for operand in expectedOperands {
+        output[operand] = false
+      }
+      for operand in cachedOperands {
+        output[operand] = true
+      }
+      
+      return output
     }
     
-    // Assign the transpose state.
-    do {
+    func createHeadDimension() -> UInt16 {
+      guard let matrixDimensions = self.matrixDimensions else {
+        fatalError("Descriptor was incomplete.")
+      }
+      return matrixDimensions.D
+    }
+    
+    func createTransposeState() -> [AttentionOperand: Bool] {
       guard let transposeState = self.transposeState else {
         fatalError("Descriptor was incomplete.")
       }
       
-      output.transposeState[.Q] = transposeState.Q
-      output.transposeState[.K] = transposeState.K
-      output.transposeState[.V] = transposeState.V
+      var output: [AttentionOperand: Bool] = [:]
+      output[.Q] = transposeState.Q
+      output[.K] = transposeState.K
+      output[.V] = transposeState.V
+      output[.O] = transposeState.O
       
-      switch type {
-      case .forward:
-        output.transposeState[.O] = transposeState.O
-      case .backwardQuery:
-        output.transposeState[.O] = transposeState.O
-        output.transposeState[.dO] = transposeState.O
-        output.transposeState[.dQ] = transposeState.Q
-      case .backwardKeyValue:
-        output.transposeState[.dO] = transposeState.O
-        output.transposeState[.dV] = transposeState.V
-        output.transposeState[.dK] = transposeState.K
-      }
+      output[.dO] = transposeState.O
+      output[.dV] = transposeState.V
+      output[.dK] = transposeState.K
+      output[.dQ] = transposeState.Q
+      return output
     }
     
-    // Choose the memory access pattern.
-    do {
-      output.memoryPrecisions = self.memoryPrecisions()
-      output.registerPrecisions = self.registerPrecisions()
-      
-      if MTLContext.global.device.supportsFamily(.apple9) {
-        output.preferAsyncCache = true
-        output.preferAsyncLoad = false
-      } else {
-        output.preferAsyncCache = false
-        output.preferAsyncLoad = true
-      }
-    }
-    
-    return output
-  }
-  
-  // parallelization, traversal, head
-  private func blockDimensions() -> (UInt16, UInt16, UInt16) {
-    guard let matrixDimensions = self.matrixDimensions else {
-      fatalError("Descriptor was incomplete.")
-    }
-    
-    var output: (parallelization: UInt16, traversal: UInt16, head: UInt16)
-    
-    // Block sizes for the case where nothing is cached.
+    var output = AttentionKernelDescriptor()
+    output.blockDimensions = createBlockDimensions()
+    output.cacheState = createCacheState()
+    output.headDimension = createHeadDimension()
+    output.memoryPrecisions = memoryPrecisions()
     if MTLContext.global.device.supportsFamily(.apple9) {
-      output = (
-        parallelization: 16, traversal: 128, head: 16)
+      output.preferAsyncCache = true
+      output.preferAsyncLoad = false
     } else {
-      output = (
-        parallelization: 32, traversal: 64, head: 32)
+      output.preferAsyncCache = false
+      output.preferAsyncLoad = true
     }
-    
-    // Enforce the rule that head block dimension <= head dimension.
-    let paddedHeadDimension = (matrixDimensions.D + 7) / 8 * 8
-    output.head = min(output.head, paddedHeadDimension)
+    output.registerPrecisions = registerPrecisions()
+    output.transposeState = createTransposeState()
+    output.type = type
     
     return output
   }
