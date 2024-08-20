@@ -7,8 +7,6 @@
 
 import Metal
 
-// TODO: Get the code to reproduce the parameter specification table exactly.
-
 extension AttentionDescriptor {
   /// The parameters that may vary from kernel to kernel.
   typealias CachingParameters = (
@@ -97,6 +95,6 @@ extension AttentionDescriptor {
   static func forwardSinglePrecision(
     headDimension: UInt16
   ) -> CachingParameters {
-    
+    fatalError("Not implemented.")
   }
 }
