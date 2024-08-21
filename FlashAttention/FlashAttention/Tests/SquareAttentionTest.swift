@@ -140,6 +140,7 @@ func profileProblemSize(
     let function = try! library.makeFunction(
       name: "attention", constantValues: functionConstants)
     
+    // A critical part of the heuristic: force the occupancy to 1024 on M1.
     let pipelineDesc = MTLComputePipelineDescriptor()
     pipelineDesc.computeFunction = function
     pipelineDesc.maxTotalThreadsPerThreadgroup = 1024
@@ -283,14 +284,14 @@ func profileProblemSize(
     let start = commandBuffer.gpuStartTime
     let end = commandBuffer.gpuEndTime
     let latency = end - start
-    print("latency:", Int(latency * 1e6))
+    // print("latency:", Int(latency * 1e6))
     return latency
   }
   executeCommandBuffer(dispatchCount: 1)
   
   // MARK: - Validation
   
-#if true
+#if false
   // Utility function to make buffer copying more concise.
   func copyBuffer(
     _ destination: inout [Float],
@@ -463,7 +464,7 @@ func profileProblemSize(
   
   // MARK: - Profiling
   
-#if false
+#if true
   // Benchmark performance.
   var maxGINSTRS: Int = .zero
   for _ in 0..<5 {
