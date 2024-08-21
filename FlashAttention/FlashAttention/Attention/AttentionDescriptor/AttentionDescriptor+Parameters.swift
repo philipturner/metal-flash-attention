@@ -82,7 +82,7 @@ extension AttentionDescriptor {
       """
     } else {
       return """
-      | 0   | 32 | 64  | 32 |      |
+      | 0   | 32 | 80  | 16 |      |
       
       """
     }
@@ -253,6 +253,7 @@ extension AttentionDescriptor {
       | 32  | 32 | 64 | 32 | dV, dK    |
       | 96  | 32 | 64 | 32 | dV        |
       | 256 | 32 | 64 | 32 |           |
+      | 384 | 32 | 64 | 16 |           |
       
       """
     }
