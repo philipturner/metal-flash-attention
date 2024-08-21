@@ -37,15 +37,15 @@ func executeScript() {
 #if true
   var D_array: [Int] = []
   do {
-    var D_cursor = 160
-//    while D_cursor < 64 {
+    var D_cursor = 192
+//    while D_cursor < 96 {
 //      D_cursor += 4
 //      D_array.append(D_cursor)
 //    }
-    while D_cursor < 160 {
-      D_cursor += 8
-      D_array.append(D_cursor)
-    }
+//    while D_cursor < 160 {
+//      D_cursor += 8
+//      D_array.append(D_cursor)
+//    }
     while D_cursor < 256 {
       D_cursor += 16
       D_array.append(D_cursor)

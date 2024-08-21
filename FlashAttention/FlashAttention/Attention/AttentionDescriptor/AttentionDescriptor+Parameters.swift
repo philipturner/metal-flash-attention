@@ -91,15 +91,17 @@ extension AttentionDescriptor {
   /// Block sizes and cached operands for FP16 forward.
   ///
   /// Requires the following statements to be true. If any operand does not
-  /// match the specified precision, use the heuristics for FP32 forward.
+  /// match the specified precision, the parameters will fail to generalize.
   ///
   /// ```swift
   /// registerPrecisions[.Q] = .FP16
   /// registerPrecisions[.K] = .FP16
-  /// registerPrecisions[.V] = .FP16
   /// registerPrecisions[.S] = .FP16
   /// registerPrecisions[.P] = .FP16
+  /// registerPrecisions[.V] = .FP16
   /// registerPrecisions[.O] = .FP32
+  ///
+  /// memoryPrecisions[.L] = .FP16
   /// ```
   static func forwardMixed(device: MTLDevice) -> String {
     if device.supportsFamily(.apple9) {
@@ -147,14 +149,31 @@ extension AttentionDescriptor {
 
 extension AttentionDescriptor {
   /// Block sizes and cached operands for FP16/BF16 backward query.
+  ///
+  /// Requires the following statements to be true. If any operand does not
+  /// match the specified precision, the parameters will fail to generalize.
+  ///
+  /// ```swift
+  /// registerPrecisions[.Q] = .FP16
+  /// registerPrecisions[.K] = .FP16
+  /// registerPrecisions[.S] = .FP16
+  /// registerPrecisions[.P] = .FP16
+  /// registerPrecisions[.V] = .FP16
+  /// registerPrecisions[.O] = .FP32
+  ///
+  /// memoryPrecisions[.D] = .BF16
+  ///
+  /// registerPrecisions[.dO] = .BF16 (M3) .FP32 (M1)
+  /// registerPrecisions[.dP] = .FP32
+  /// registerPrecisions[.dS] = .BF16 (M3) .FP32 (M1)
+  /// registerPrecisions[.dQ] = .FP32
+  /// ```
   static func backwardQueryMixed(device: MTLDevice) -> String {
     if device.supportsFamily(.apple9) {
       return """
-      | 16  | 16 | 64  | 8  | Q, dO, dQ |
-      | 32  | 16 | 64  | 16 | Q, dQ     |
+      | 80  | 16 | 64  | 8  | Q, dO, dQ |
       | 192 | 16 | 64  | 32 | Q, dQ     |
-      | 256 | 16 | 64  | 32 | dQ        |
-      | 384 | 16 | 128 | 16 |           |
+      | 384 | 16 | 128 | 32 |           |
       
       """
     } else {
@@ -191,6 +210,28 @@ extension AttentionDescriptor {
 
 extension AttentionDescriptor {
   /// Block sizes and cached operands for FP16/BF16 backward query.
+  ///
+  /// Requires the following statements to be true. If any operand does not
+  /// match the specified precision, the parameters will fail to generalize.
+  ///
+  /// ```swift
+  /// registerPrecisions[.Q] = .FP16
+  /// registerPrecisions[.K] = .FP16
+  /// registerPrecisions[.S] = .FP16
+  /// registerPrecisions[.P] = .FP16
+  /// registerPrecisions[.V] = .FP16
+  /// registerPrecisions[.O] = .FP32
+  ///
+  /// registerPrecisions[.L] = .FP16
+  /// registerPrecisions[.D] = .BF16 (M3) .FP32 (M1)
+  ///
+  /// registerPrecisions[.dO] = .BF16 (M3) .FP32 (M1)
+  /// registerPrecisions[.dV] = .FP32
+  /// registerPrecisions[.dP] = .FP32
+  /// registerPrecisions[.dS] = .BF16 (M3) .FP32 (M1)
+  /// registerPrecisions[.dK] = .FP32
+  /// registerPrecisions[.dQ] = .FP32
+  /// ```
   static func backwardKeyValueMixed(device: MTLDevice) -> String {
     if device.supportsFamily(.apple9) {
       return """
