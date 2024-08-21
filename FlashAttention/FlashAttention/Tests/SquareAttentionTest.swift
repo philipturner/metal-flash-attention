@@ -13,28 +13,28 @@ import Metal
 #if true
 func executeScript() {
   // Automate the execution of the test suite.
-//  profileProblemSize(sequenceDimension: 10, headDimension: 3)
-//  profileProblemSize(sequenceDimension: 10, headDimension: 80)
-//  profileProblemSize(sequenceDimension: 8, headDimension: 2)
-//  profileProblemSize(sequenceDimension: 9, headDimension: 2)
-//  profileProblemSize(sequenceDimension: 23, headDimension: 2)
-//  profileProblemSize(sequenceDimension: 24, headDimension: 2)
-//  profileProblemSize(sequenceDimension: 25, headDimension: 2)
-//  profileProblemSize(sequenceDimension: 192, headDimension: 77)
-//  profileProblemSize(sequenceDimension: 192, headDimension: 80)
-//  profileProblemSize(sequenceDimension: 93, headDimension: 32)
-//  profileProblemSize(sequenceDimension: 99, headDimension: 35)
-//  profileProblemSize(sequenceDimension: 64, headDimension: 32)
-//  profileProblemSize(sequenceDimension: 64, headDimension: 34)
-//  profileProblemSize(sequenceDimension: 64, headDimension: 36)
-//  profileProblemSize(sequenceDimension: 64, headDimension: 40)
-//  profileProblemSize(sequenceDimension: 32, headDimension: 64)
-//  profileProblemSize(sequenceDimension: 4, headDimension: 1)
-//  profileProblemSize(sequenceDimension: 4, headDimension: 2)
-//  profileProblemSize(sequenceDimension: 384, headDimension: 95)
-//  profileProblemSize(sequenceDimension: 777, headDimension: 199)
+  profileProblemSize(sequenceDimension: 10, headDimension: 3)
+  profileProblemSize(sequenceDimension: 10, headDimension: 80)
+  profileProblemSize(sequenceDimension: 8, headDimension: 2)
+  profileProblemSize(sequenceDimension: 9, headDimension: 2)
+  profileProblemSize(sequenceDimension: 23, headDimension: 2)
+  profileProblemSize(sequenceDimension: 24, headDimension: 2)
+  profileProblemSize(sequenceDimension: 25, headDimension: 2)
+  profileProblemSize(sequenceDimension: 192, headDimension: 77)
+  profileProblemSize(sequenceDimension: 192, headDimension: 80)
+  profileProblemSize(sequenceDimension: 93, headDimension: 32)
+  profileProblemSize(sequenceDimension: 99, headDimension: 35)
+  profileProblemSize(sequenceDimension: 64, headDimension: 32)
+  profileProblemSize(sequenceDimension: 64, headDimension: 34)
+  profileProblemSize(sequenceDimension: 64, headDimension: 36)
+  profileProblemSize(sequenceDimension: 64, headDimension: 40)
+  profileProblemSize(sequenceDimension: 32, headDimension: 64)
+  profileProblemSize(sequenceDimension: 4, headDimension: 1)
+  profileProblemSize(sequenceDimension: 4, headDimension: 2)
+  profileProblemSize(sequenceDimension: 384, headDimension: 95)
+  profileProblemSize(sequenceDimension: 777, headDimension: 199)
   
-#if true
+#if false
   var D_array: [Int] = []
   do {
     var D_cursor = 0
@@ -107,7 +107,19 @@ func profileProblemSize(
     R: UInt32(sequenceDimension),
     C: UInt32(sequenceDimension),
     D: UInt16(headDimension))
-  attentionDesc.transposeState = (Q: false, K: false, V: false, O: false)
+  attentionDesc.transposeState = (Q: true, K: true, V: true, O: true)
+  
+  func transpose(_ input: [Float]) -> [Float] {
+    var output = [Float](
+      repeating: .zero, count: sequenceDimension * headDimension)
+    for n in 0..<sequenceDimension {
+      for d in 0..<headDimension {
+        let value = input[n * headDimension + d]
+        output[d * sequenceDimension + n] = value
+      }
+    }
+    return output
+  }
   
   func createKernel(type: AttentionKernelType) -> AttentionKernel {
     let attentionKernelDesc = attentionDesc.kernelDescriptor(type: type)
@@ -161,10 +173,10 @@ func profileProblemSize(
   var resultDerivativeQ = [Float](repeating: .zero, count: operandSize)
   resultO[0] = .nan
   
-  let bufferQ = createBuffer(network.Q, .Q)
-  let bufferK = createBuffer(network.K, .K)
-  let bufferV = createBuffer(network.V, .V)
-  let bufferDerivativeO = createBuffer(network.C, .dO)
+  let bufferQ = createBuffer(transpose(network.Q), .Q)
+  let bufferK = createBuffer(transpose(network.K), .K)
+  let bufferV = createBuffer(transpose(network.V), .V)
+  let bufferDerivativeO = createBuffer(transpose(network.C), .dO)
   
   let bufferL = createBuffer(resultL, .L)
   let bufferD = createBuffer(resultD, .D)
@@ -271,14 +283,14 @@ func profileProblemSize(
     let start = commandBuffer.gpuStartTime
     let end = commandBuffer.gpuEndTime
     let latency = end - start
-    // print("latency:", Int(latency * 1e6))
+    print("latency:", Int(latency * 1e6))
     return latency
   }
   executeCommandBuffer(dispatchCount: 1)
   
   // MARK: - Validation
   
-#if false
+#if true
   // Utility function to make buffer copying more concise.
   func copyBuffer(
     _ destination: inout [Float],
@@ -292,12 +304,12 @@ func profileProblemSize(
     MTLContext.copy(source, into: &destination, precision: precision)
   }
   
-  let O = network.inferenceAttention()
+  let O = transpose(network.inferenceAttention())
   let L = (0..<sequenceDimension).map(network.createLTerm(rowID:))
   let D = (0..<sequenceDimension).map(network.createDTerm(rowID:))
-  let dV = network.derivativeV()
-  let dK = network.derivativeK()
-  let dQ = network.derivativeQ()
+  let dV = transpose(network.derivativeV())
+  let dK = transpose(network.derivativeK())
+  let dQ = transpose(network.derivativeQ())
   
   // Copy the results.
   do {
@@ -451,7 +463,7 @@ func profileProblemSize(
   
   // MARK: - Profiling
   
-#if true
+#if false
   // Benchmark performance.
   var maxGINSTRS: Int = .zero
   for _ in 0..<5 {

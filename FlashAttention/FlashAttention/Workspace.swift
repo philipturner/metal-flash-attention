@@ -22,5 +22,5 @@ import QuartzCore
 //   - Expand the benchmarked range to D=384. [DONE]
 // - Test the revised parameters at a different transpose state.
 //   - Change the square attention test, so the correctness tests pass with
-//     all operands transposed.
+//     all operands transposed. [DONE]
 // - Test the revised parameters at a different sequence length.
