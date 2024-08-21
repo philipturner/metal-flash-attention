@@ -127,14 +127,12 @@ extension AttentionDescriptor {
   static func forward(device: MTLDevice) -> String {
     if device.supportsFamily(.apple9) {
       return """
-      | 16  | 16 | 128 | 16 | Q, O |
-      | 32  | 16 | 128 | 32 | Q, O |
-      | 64  | 16 | 128 | 16 | Q, O |
-      | 128 | 16 | 128 | 16 | O    |
-      | 160 | 16 | 128 | 16 | O    |
+      | 8   | 16 | 128 | 16 | Q, O |
+      | 16  | 16 | 64  | 16 | Q, O |
+      | 48  | 16 | 32  | 8  | Q, O |
       | 192 | 16 | 64  | 16 | O    |
-      | 256 | 16 | 48  | 16 | O    |
-      | 384 | 16 | 128 | 8  |      |
+      | 384 | 16 | 48  | 16 | O    |
+      | 512 | 16 | 128 | 16 |      |
       
       """
     } else {
@@ -156,9 +154,9 @@ extension AttentionDescriptor {
       return defaultParameters(device: device)
     } else {
       return """
-      | 32  | 32 | 64 | 32 | Q, dQ     |
-      | 96  | 32 | 64 | 32 | dQ        |
-      | 256 | 32 | 64 | 32 |           |
+      | 32  | 32 | 64 | 32 | Q, dQ |
+      | 96  | 32 | 64 | 32 | dQ    |
+      | 256 | 32 | 64 | 32 |       |
       
       """
     }
