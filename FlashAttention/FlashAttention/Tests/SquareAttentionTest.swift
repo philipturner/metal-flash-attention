@@ -70,7 +70,7 @@ func executeScript() {
     
     for N in N_array {
       let metric = profileProblemSize(
-        sequenceDimension: 4096,
+        sequenceDimension: 8192,
         headDimension: D,
         benchmarkedKernel: N)
       outputString += "\(metric), "
@@ -101,8 +101,8 @@ func profileProblemSize(
   // MARK: - Kernels
   
   var attentionDesc = AttentionDescriptor()
-  attentionDesc.lowPrecisionInputs = true
-  attentionDesc.lowPrecisionIntermediates = true
+  attentionDesc.lowPrecisionInputs = false
+  attentionDesc.lowPrecisionIntermediates = false
   attentionDesc.matrixDimensions = (
     R: UInt32(sequenceDimension),
     C: UInt32(sequenceDimension),

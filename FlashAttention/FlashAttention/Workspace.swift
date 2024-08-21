@@ -18,6 +18,9 @@ import QuartzCore
 // - Run a benchmark over the head dimension. [DONE]
 // - Run the same benchmark, but with the parameters. [DONE]
 // - Tweak parameters that give the wrong performance on M1. [DONE]
-// - Tweak parameters that give the wrong performance on M3.
+// - Tweak parameters that give the wrong performance on M3. [DONE]
 //   - Expand the benchmarked range to D=384. [DONE]
+// - Test the revised parameters at a different transpose state.
+//   - Change the square attention test, so the correctness tests pass with
+//     all operands transposed.
 // - Test the revised parameters at a different sequence length.
