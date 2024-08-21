@@ -39,19 +39,19 @@ func executeScript() {
   do {
     var D_cursor = 0
     while D_cursor < 96 {
-      D_cursor += 4
-      D_array.append(D_cursor)
-    }
-    while D_cursor < 160 {
       D_cursor += 8
       D_array.append(D_cursor)
     }
-    while D_cursor < 256 {
+    while D_cursor < 160 {
       D_cursor += 16
       D_array.append(D_cursor)
     }
-    while D_cursor < 384 {
+    while D_cursor < 256 {
       D_cursor += 32
+      D_array.append(D_cursor)
+    }
+    while D_cursor < 384 {
+      D_cursor += 64
       D_array.append(D_cursor)
     }
   }
@@ -103,8 +103,8 @@ func profileProblemSize(
   // MARK: - Kernels
   
   var attentionDesc = AttentionDescriptor()
-  attentionDesc.lowPrecisionInputs = true
-  attentionDesc.lowPrecisionIntermediates = true
+  attentionDesc.lowPrecisionInputs = false
+  attentionDesc.lowPrecisionIntermediates = false
   attentionDesc.matrixDimensions = (
     R: UInt32(sequenceDimension),
     C: UInt32(sequenceDimension),
