@@ -37,23 +37,23 @@ func executeScript() {
 #if true
   var D_array: [Int] = []
   do {
-    var D_cursor = 24
-    while D_cursor < 56 {
+    var D_cursor = 0
+    while D_cursor < 96 {
       D_cursor += 4
       D_array.append(D_cursor)
     }
-//    while D_cursor < 160 {
-//      D_cursor += 8
-//      D_array.append(D_cursor)
-//    }
-//    while D_cursor < 256 {
-//      D_cursor += 16
-//      D_array.append(D_cursor)
-//    }
-//    while D_cursor < 384 {
-//      D_cursor += 32
-//      D_array.append(D_cursor)
-//    }
+    while D_cursor < 160 {
+      D_cursor += 8
+      D_array.append(D_cursor)
+    }
+    while D_cursor < 256 {
+      D_cursor += 16
+      D_array.append(D_cursor)
+    }
+    while D_cursor < 384 {
+      D_cursor += 32
+      D_array.append(D_cursor)
+    }
   }
   
 //  let D_array: [Int] = [8, 16, 32, 64, 96, 128, 160, 256, 384]
@@ -72,7 +72,7 @@ func executeScript() {
     
     for N in N_array {
       let metric = profileProblemSize(
-        sequenceDimension: 8192,
+        sequenceDimension: 4096,
         headDimension: D,
         benchmarkedKernel: N)
       outputString += "\(metric), "
@@ -103,13 +103,13 @@ func profileProblemSize(
   // MARK: - Kernels
   
   var attentionDesc = AttentionDescriptor()
-  attentionDesc.lowPrecisionInputs = false
-  attentionDesc.lowPrecisionIntermediates = false
+  attentionDesc.lowPrecisionInputs = true
+  attentionDesc.lowPrecisionIntermediates = true
   attentionDesc.matrixDimensions = (
     R: UInt32(sequenceDimension),
     C: UInt32(sequenceDimension),
     D: UInt16(headDimension))
-  attentionDesc.transposeState = (Q: true, K: true, V: true, O: true)
+  attentionDesc.transposeState = (Q: false, K: false, V: false, O: false)
   
   func transpose(_ input: [Float]) -> [Float] {
     var output = [Float](
