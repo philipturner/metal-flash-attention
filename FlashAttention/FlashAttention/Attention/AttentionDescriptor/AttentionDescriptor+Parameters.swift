@@ -166,12 +166,11 @@ extension AttentionDescriptor {
   static func backwardQuery(device: MTLDevice) -> String {
     if device.supportsFamily(.apple9) {
       return """
-      | 16  | 16 | 64  | 32 | Q, dQ |
-      | 32  | 16 | 64  | 32 | Q, dQ |
-      | 64  | 16 | 64  | 32 | Q, dQ |
-      | 128 | 16 | 64  | 32 | Q, dQ |
-      | 256 | 16 | 64  | 32 | dQ    |
-      | 384 | 16 | 128 | 8  |       |
+      | 16  | 16 | 64  | 8  | Q, dO, dQ |
+      | 32  | 16 | 64  | 16 | Q, dQ     |
+      | 192 | 16 | 64  | 32 | Q, dQ     |
+      | 256 | 16 | 64  | 32 | dQ        |
+      | 384 | 16 | 128 | 16 |           |
       
       """
     } else {
