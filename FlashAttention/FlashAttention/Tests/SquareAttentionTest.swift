@@ -37,19 +37,19 @@ func executeScript() {
 #if true
   var D_array: [Int] = []
   do {
-    var D_cursor = 0
-    while D_cursor < 96 {
-      D_cursor += 8
-      D_array.append(D_cursor)
-    }
-    while D_cursor < 160 {
-      D_cursor += 16
-      D_array.append(D_cursor)
-    }
-    while D_cursor < 256 {
-      D_cursor += 32
-      D_array.append(D_cursor)
-    }
+    var D_cursor = 256
+//    while D_cursor < 96 {
+//      D_cursor += 8
+//      D_array.append(D_cursor)
+//    }
+//    while D_cursor < 160 {
+//      D_cursor += 16
+//      D_array.append(D_cursor)
+//    }
+//    while D_cursor < 256 {
+//      D_cursor += 32
+//      D_array.append(D_cursor)
+//    }
     while D_cursor < 384 {
       D_cursor += 64
       D_array.append(D_cursor)
@@ -72,7 +72,7 @@ func executeScript() {
     
     for N in N_array {
       let metric = profileProblemSize(
-        sequenceDimension: 4096,
+        sequenceDimension: 16384,
         headDimension: D,
         benchmarkedKernel: N)
       outputString += "\(metric), "
@@ -103,8 +103,8 @@ func profileProblemSize(
   // MARK: - Kernels
   
   var attentionDesc = AttentionDescriptor()
-  attentionDesc.lowPrecisionInputs = false
-  attentionDesc.lowPrecisionIntermediates = false
+  attentionDesc.lowPrecisionInputs = true
+  attentionDesc.lowPrecisionIntermediates = true
   attentionDesc.matrixDimensions = (
     R: UInt32(sequenceDimension),
     C: UInt32(sequenceDimension),
