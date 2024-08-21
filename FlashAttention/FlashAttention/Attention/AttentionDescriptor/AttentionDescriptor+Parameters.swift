@@ -104,13 +104,11 @@ extension AttentionDescriptor {
   static func forwardMixed(device: MTLDevice) -> String {
     if device.supportsFamily(.apple9) {
       return """
-      | 16  | 16 | 128 | 16 | Q, O |
       | 32  | 16 | 128 | 16 | Q, O |
-      | 64  | 16 | 128 | 32 | Q, O |
       | 96  | 16 | 128 | 32 | Q, O |
-      | 128 | 16 | 128 | 32 | O    |
       | 160 | 16 | 128 | 32 | O    |
-      | 256 | 16 | 128 | 32 |      |
+      | 224 | 16 | 128 | 32 | Q    |
+      | 384 | 16 | 128 | 32 |      |
       
       """
     } else {
@@ -151,7 +149,14 @@ extension AttentionDescriptor {
   /// Block sizes and cached operands for FP16/BF16 backward query.
   static func backwardQueryMixed(device: MTLDevice) -> String {
     if device.supportsFamily(.apple9) {
-      return defaultParameters(device: device)
+      return """
+      | 16  | 16 | 64  | 8  | Q, dO, dQ |
+      | 32  | 16 | 64  | 16 | Q, dQ     |
+      | 192 | 16 | 64  | 32 | Q, dQ     |
+      | 256 | 16 | 64  | 32 | dQ        |
+      | 384 | 16 | 128 | 16 |           |
+      
+      """
     } else {
       return """
       | 32  | 32 | 64 | 32 | Q, dQ |
@@ -188,7 +193,15 @@ extension AttentionDescriptor {
   /// Block sizes and cached operands for FP16/BF16 backward query.
   static func backwardKeyValueMixed(device: MTLDevice) -> String {
     if device.supportsFamily(.apple9) {
-      return defaultParameters(device: device)
+      return """
+      | 16  | 16 | 64  | 8  | K, V, dV, dK |
+      | 32  | 16 | 32  | 16 | K, V, dV, dK |
+      | 64  | 16 | 32  | 16 | V, dV, dK    |
+      | 128 | 16 | 128 | 16 | dV, dK       |
+      | 160 | 16 | 128 | 16 | dV           |
+      | 384 | 16 | 128 | 16 |              |
+      
+      """
     } else {
       return """
       | 16  | 32 | 64 | 16 | V, dV, dK |
