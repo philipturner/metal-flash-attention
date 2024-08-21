@@ -124,6 +124,8 @@ extension AttentionDescriptor {
   }
   
   /// Block sizes and cached operands for FP32 forward.
+  ///
+  /// If any of the operands is FP16, the parameters will fail to generalize.
   static func forward(device: MTLDevice) -> String {
     if device.supportsFamily(.apple9) {
       return """
@@ -187,6 +189,9 @@ extension AttentionDescriptor {
   }
   
   /// Block sizes and cached operands for FP32 backward query.
+  ///
+  /// If any of the operands is FP16 or BF16, the parameters will fail to
+  /// generalize.
   static func backwardQuery(device: MTLDevice) -> String {
     if device.supportsFamily(.apple9) {
       return """
@@ -235,11 +240,10 @@ extension AttentionDescriptor {
   static func backwardKeyValueMixed(device: MTLDevice) -> String {
     if device.supportsFamily(.apple9) {
       return """
-      | 16  | 16 | 64  | 8  | K, V, dV, dK |
-      | 32  | 16 | 32  | 16 | K, V, dV, dK |
-      | 64  | 16 | 32  | 16 | V, dV, dK    |
-      | 128 | 16 | 128 | 16 | dV, dK       |
-      | 160 | 16 | 128 | 16 | dV           |
+      | 56  | 16 | 64  | 8  | K, V, dV, dK |
+      | 80  | 16 | 32  | 16 | V, dV, dK    |
+      | 144 | 16 | 128 | 16 | dV, dK       |
+      | 224 | 16 | 128 | 16 | dV           |
       | 384 | 16 | 128 | 16 |              |
       
       """
@@ -255,6 +259,9 @@ extension AttentionDescriptor {
   }
   
   /// Block sizes and cached operands for FP32 backward key-value.
+  ///
+  /// If any of the operands is FP16 or BF16, the parameters will fail to
+  /// generalize.
   static func backwardKeyValue(device: MTLDevice) -> String {
     if device.supportsFamily(.apple9) {
       return """
