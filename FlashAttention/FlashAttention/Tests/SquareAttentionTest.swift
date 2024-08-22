@@ -38,8 +38,8 @@ func executeScript() {
   var D_array: [Int] = []
   do {
     var D_cursor = 0
-    while D_cursor < 56 {
-      D_cursor += 8
+    while D_cursor < 64 {
+      D_cursor += 4
       D_array.append(D_cursor)
     }
     //    while D_cursor < 160 {
@@ -90,7 +90,7 @@ func executeScript() {
     print(outputString)
   }
   
-  runSuite(sequenceDimension: 16384, transposeAll: false)
+  runSuite(sequenceDimension: 8192, transposeAll: true)
 #endif
 }
 
