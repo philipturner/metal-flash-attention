@@ -38,8 +38,8 @@ func executeScript() {
   var D_array: [Int] = []
   do {
     var D_cursor = 0
-    while D_cursor < 64 {
-      D_cursor += 8
+    while D_cursor < 96 {
+      D_cursor += 4
       D_array.append(D_cursor)
     }
     //    while D_cursor < 160 {
@@ -56,9 +56,7 @@ func executeScript() {
     //    }
   }
   
-  //  let D_array: [Int] = [8, 16, 32, 64, 96, 128, 160, 256, 384]
-  
-  let N_array = [
+  let kernelArray = [
     AttentionKernelType.forward,
     AttentionKernelType.backwardQuery,
     AttentionKernelType.backwardKeyValue,
@@ -66,31 +64,26 @@ func executeScript() {
   
   var outputString: String = ""
   
-  func runSuite(sequenceDimension: Int, transposeAll: Bool) {
-    // Loop over the configurations.
-    for D in D_array {
-      outputString += "\(D), "
-      print("D =", D, terminator: ", ")
-      
-      for N in N_array {
-        let metric = profileProblemSize(
-          sequenceDimension: sequenceDimension,
-          headDimension: D,
-          benchmarkedKernel: N,
-          transposeAll: transposeAll)
-        outputString += "\(metric), "
-        print(metric, terminator: ", ")
-      }
-      
-      outputString.removeLast(2)
-      outputString += "\n"
-      print()
+  // Loop over the configurations.
+  for D in D_array {
+    outputString += "\(D), "
+    print("D =", D, terminator: ", ")
+    
+    for kernel in kernelArray {
+      let metric = profileProblemSize(
+        sequenceDimension: 8192,
+        headDimension: D,
+        benchmarkedKernel: kernel)
+      outputString += "\(metric), "
+      print(metric, terminator: ", ")
     }
+    
+    outputString.removeLast(2)
+    outputString += "\n"
     print()
-    print(outputString)
   }
-  
-  runSuite(sequenceDimension: 16384, transposeAll: false)
+  print()
+  print(outputString)
 #endif
 }
 
@@ -99,8 +92,7 @@ func executeScript() {
 func profileProblemSize(
   sequenceDimension: Int,
   headDimension: Int,
-  benchmarkedKernel: AttentionKernelType = .forward,
-  transposeAll: Bool
+  benchmarkedKernel: AttentionKernelType = .forward
 ) -> Int {
   var networkDesc = NetworkDescriptor()
   networkDesc.N = sequenceDimension
@@ -110,13 +102,13 @@ func profileProblemSize(
   // MARK: - Kernels
   
   var attentionDesc = AttentionDescriptor()
-  attentionDesc.lowPrecisionInputs = true
-  attentionDesc.lowPrecisionIntermediates = true
+  attentionDesc.lowPrecisionInputs = false
+  attentionDesc.lowPrecisionIntermediates = false
   attentionDesc.matrixDimensions = (
     R: UInt32(sequenceDimension),
     C: UInt32(sequenceDimension),
     D: UInt16(headDimension))
-  attentionDesc.transposeState = (Q: transposeAll, K: transposeAll, V: transposeAll, O: transposeAll)
+  attentionDesc.transposeState = (Q: false, K: false, V: false, O: false)
   
   func transpose(_ input: [Float]) -> [Float] {
     var output = [Float](
