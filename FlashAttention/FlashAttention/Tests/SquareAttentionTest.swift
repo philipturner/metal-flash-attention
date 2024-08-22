@@ -37,52 +37,66 @@ func executeScript() {
 #if true
   var D_array: [Int] = []
   do {
-    var D_cursor = 256
-//    while D_cursor < 96 {
+    var D_cursor = 24
+    while D_cursor < 56 {
+      D_cursor += 8
+      D_array.append(D_cursor)
+    }
+//    while D_cursor < 160 {
 //      D_cursor += 8
 //      D_array.append(D_cursor)
 //    }
-//    while D_cursor < 160 {
+//    while D_cursor < 256 {
 //      D_cursor += 16
 //      D_array.append(D_cursor)
 //    }
-//    while D_cursor < 256 {
+//    while D_cursor < 384 {
 //      D_cursor += 32
 //      D_array.append(D_cursor)
 //    }
-    while D_cursor < 384 {
-      D_cursor += 64
-      D_array.append(D_cursor)
-    }
   }
   
 //  let D_array: [Int] = [8, 16, 32, 64, 96, 128, 160, 256, 384]
   
   let N_array = [
-    AttentionKernelType.forward,
-    AttentionKernelType.backwardQuery,
     AttentionKernelType.backwardKeyValue
   ]
   
-  // Loop over the configurations.
   var outputString: String = ""
-  for D in D_array {
-    outputString += "\(D), "
-    print("D =", D, terminator: ", ")
-    
-    for N in N_array {
-      let metric = profileProblemSize(
-        sequenceDimension: 16384,
-        headDimension: D,
-        benchmarkedKernel: N)
-      outputString += "\(metric), "
-      print(metric, terminator: ", ")
+  
+  func runSuite(sequenceDimension: Int, transposeAll: Bool) {
+    // Loop over the configurations.
+    for D in D_array {
+      if D != 32 {
+        outputString += "\(D), "
+      }
+      print("D =", D, terminator: ", ")
+      
+      for N in N_array {
+        let metric = profileProblemSize(
+          sequenceDimension: sequenceDimension,
+          headDimension: D,
+          benchmarkedKernel: N,
+        transposeAll: transposeAll)
+        if D != 32 {
+          outputString += "\(metric), "
+        }
+        print(metric, terminator: ", ")
+      }
+      
+      if D != 32 {
+        outputString.removeLast(2)
+        outputString += "\n"
+      }
+      print()
     }
-    
-    outputString.removeLast(2)
-    outputString += "\n"
-    print()
   }
+  
+  runSuite(sequenceDimension: 8192, transposeAll: false)
+  runSuite(sequenceDimension: 8192, transposeAll: true)
+//  runSuite(sequenceDimension: 16384, transposeAll: false)
+//  runSuite(sequenceDimension: 16384, transposeAll: true)
+//  runSuite(sequenceDimension: 32768, transposeAll: true)
   print()
   print(outputString)
 #endif
@@ -93,7 +107,8 @@ func executeScript() {
 func profileProblemSize(
   sequenceDimension: Int,
   headDimension: Int,
-  benchmarkedKernel: AttentionKernelType = .forward
+  benchmarkedKernel: AttentionKernelType = .forward,
+  transposeAll: Bool
 ) -> Int {
   var networkDesc = NetworkDescriptor()
   networkDesc.N = sequenceDimension
@@ -103,13 +118,13 @@ func profileProblemSize(
   // MARK: - Kernels
   
   var attentionDesc = AttentionDescriptor()
-  attentionDesc.lowPrecisionInputs = true
-  attentionDesc.lowPrecisionIntermediates = true
+  attentionDesc.lowPrecisionInputs = false
+  attentionDesc.lowPrecisionIntermediates = false
   attentionDesc.matrixDimensions = (
     R: UInt32(sequenceDimension),
     C: UInt32(sequenceDimension),
     D: UInt16(headDimension))
-  attentionDesc.transposeState = (Q: false, K: false, V: false, O: false)
+  attentionDesc.transposeState = (Q: transposeAll, K: transposeAll, V: transposeAll, O: transposeAll)
   
   func transpose(_ input: [Float]) -> [Float] {
     var output = [Float](
