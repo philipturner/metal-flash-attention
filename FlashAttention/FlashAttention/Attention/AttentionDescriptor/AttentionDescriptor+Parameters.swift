@@ -203,7 +203,8 @@ extension AttentionDescriptor {
     } else {
       return """
       | 16  | 32 | 64 | 16 | Q, dQ |
-      | 56  | 32 | 64 | 32 | dQ    |
+      | 32  | 32 | 64 | 32 | dQ    |
+      | 56  | 32 | 64 | 24 | dQ    |
       | 384 | 32 | 80 | 16 |       |
       
       """

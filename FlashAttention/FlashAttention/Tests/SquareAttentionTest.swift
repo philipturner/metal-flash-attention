@@ -13,53 +13,55 @@ import Metal
 #if true
 func executeScript() {
   // Automate the execution of the test suite.
-//  profileProblemSize(sequenceDimension: 10, headDimension: 3)
-//  profileProblemSize(sequenceDimension: 10, headDimension: 80)
-//  profileProblemSize(sequenceDimension: 8, headDimension: 2)
-//  profileProblemSize(sequenceDimension: 9, headDimension: 2)
-//  profileProblemSize(sequenceDimension: 23, headDimension: 2)
-//  profileProblemSize(sequenceDimension: 24, headDimension: 2)
-//  profileProblemSize(sequenceDimension: 25, headDimension: 2)
-//  profileProblemSize(sequenceDimension: 192, headDimension: 77)
-//  profileProblemSize(sequenceDimension: 192, headDimension: 80)
-//  profileProblemSize(sequenceDimension: 93, headDimension: 32)
-//  profileProblemSize(sequenceDimension: 99, headDimension: 35)
-//  profileProblemSize(sequenceDimension: 64, headDimension: 32)
-//  profileProblemSize(sequenceDimension: 64, headDimension: 34)
-//  profileProblemSize(sequenceDimension: 64, headDimension: 36)
-//  profileProblemSize(sequenceDimension: 64, headDimension: 40)
-//  profileProblemSize(sequenceDimension: 32, headDimension: 64)
-//  profileProblemSize(sequenceDimension: 4, headDimension: 1)
-//  profileProblemSize(sequenceDimension: 4, headDimension: 2)
-//  profileProblemSize(sequenceDimension: 384, headDimension: 95)
-//  profileProblemSize(sequenceDimension: 777, headDimension: 199)
+  //  profileProblemSize(sequenceDimension: 10, headDimension: 3)
+  //  profileProblemSize(sequenceDimension: 10, headDimension: 80)
+  //  profileProblemSize(sequenceDimension: 8, headDimension: 2)
+  //  profileProblemSize(sequenceDimension: 9, headDimension: 2)
+  //  profileProblemSize(sequenceDimension: 23, headDimension: 2)
+  //  profileProblemSize(sequenceDimension: 24, headDimension: 2)
+  //  profileProblemSize(sequenceDimension: 25, headDimension: 2)
+  //  profileProblemSize(sequenceDimension: 192, headDimension: 77)
+  //  profileProblemSize(sequenceDimension: 192, headDimension: 80)
+  //  profileProblemSize(sequenceDimension: 93, headDimension: 32)
+  //  profileProblemSize(sequenceDimension: 99, headDimension: 35)
+  //  profileProblemSize(sequenceDimension: 64, headDimension: 32)
+  //  profileProblemSize(sequenceDimension: 64, headDimension: 34)
+  //  profileProblemSize(sequenceDimension: 64, headDimension: 36)
+  //  profileProblemSize(sequenceDimension: 64, headDimension: 40)
+  //  profileProblemSize(sequenceDimension: 32, headDimension: 64)
+  //  profileProblemSize(sequenceDimension: 4, headDimension: 1)
+  //  profileProblemSize(sequenceDimension: 4, headDimension: 2)
+  //  profileProblemSize(sequenceDimension: 384, headDimension: 95)
+  //  profileProblemSize(sequenceDimension: 777, headDimension: 199)
   
 #if true
   var D_array: [Int] = []
   do {
-    var D_cursor = 24
+    var D_cursor = 0
     while D_cursor < 56 {
       D_cursor += 8
       D_array.append(D_cursor)
     }
-//    while D_cursor < 160 {
-//      D_cursor += 8
-//      D_array.append(D_cursor)
-//    }
-//    while D_cursor < 256 {
-//      D_cursor += 16
-//      D_array.append(D_cursor)
-//    }
-//    while D_cursor < 384 {
-//      D_cursor += 32
-//      D_array.append(D_cursor)
-//    }
+    //    while D_cursor < 160 {
+    //      D_cursor += 8
+    //      D_array.append(D_cursor)
+    //    }
+    //    while D_cursor < 256 {
+    //      D_cursor += 16
+    //      D_array.append(D_cursor)
+    //    }
+    //    while D_cursor < 384 {
+    //      D_cursor += 32
+    //      D_array.append(D_cursor)
+    //    }
   }
   
-//  let D_array: [Int] = [8, 16, 32, 64, 96, 128, 160, 256, 384]
+  //  let D_array: [Int] = [8, 16, 32, 64, 96, 128, 160, 256, 384]
   
   let N_array = [
-    AttentionKernelType.backwardKeyValue
+    AttentionKernelType.forward,
+    AttentionKernelType.backwardQuery,
+    AttentionKernelType.backwardKeyValue,
   ]
   
   var outputString: String = ""
@@ -67,9 +69,7 @@ func executeScript() {
   func runSuite(sequenceDimension: Int, transposeAll: Bool) {
     // Loop over the configurations.
     for D in D_array {
-      if D != 32 {
-        outputString += "\(D), "
-      }
+      outputString += "\(D), "
       print("D =", D, terminator: ", ")
       
       for N in N_array {
@@ -77,28 +77,20 @@ func executeScript() {
           sequenceDimension: sequenceDimension,
           headDimension: D,
           benchmarkedKernel: N,
-        transposeAll: transposeAll)
-        if D != 32 {
-          outputString += "\(metric), "
-        }
+          transposeAll: transposeAll)
+        outputString += "\(metric), "
         print(metric, terminator: ", ")
       }
       
-      if D != 32 {
-        outputString.removeLast(2)
-        outputString += "\n"
-      }
+      outputString.removeLast(2)
+      outputString += "\n"
       print()
     }
+    print()
+    print(outputString)
   }
   
-  runSuite(sequenceDimension: 8192, transposeAll: false)
-  runSuite(sequenceDimension: 8192, transposeAll: true)
-//  runSuite(sequenceDimension: 16384, transposeAll: false)
-//  runSuite(sequenceDimension: 16384, transposeAll: true)
-//  runSuite(sequenceDimension: 32768, transposeAll: true)
-  print()
-  print(outputString)
+  runSuite(sequenceDimension: 16384, transposeAll: false)
 #endif
 }
 
