@@ -276,7 +276,6 @@ extension AttentionDescriptor {
       return """
       | 16  | 32 | 32 | 16 | V, dV, dK |
       | 24  | 32 | 64 | 24 | dV, dK    |
-      | 32  | 32 | 80 | 16 | dV        |
       | 56  | 32 | 80 | 16 | dV        |
       | 384 | 32 | 80 | 16 |           |
       
