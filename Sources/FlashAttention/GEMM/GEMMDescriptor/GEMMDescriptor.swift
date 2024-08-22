@@ -8,19 +8,19 @@
 import Metal
 
 /// A description of a dense matrix-matrix multiplication.
-struct GEMMDescriptor {
+public struct GEMMDescriptor {
   /// The number of equally sized multiplications that run in parallel.
   /// Batching is out of scope for the reference implementation. However, there
   /// should be a guide for clients that wish to modify the shader, in ways
   /// that increase the compute workload. For example, by batching the
   /// multiplication of (sub)matrices located at arbitrary pointers in memory
   /// (with potentially nonuniform stride or noncontiguous padding).
-  var batchDimension: Int = 1
+  public var batchDimension: Int = 1
   
   /// Optional. Custom leading dimensions.
-  var leadingDimensions: (A: UInt32, B: UInt32, C: UInt32)?
+  public var leadingDimensions: (A: UInt32, B: UInt32, C: UInt32)?
   
-  var loadPreviousC: Bool = false
+  public var loadPreviousC: Bool = false
   
   /// The dimensions of the input and output matrices.
   /// - Parameter M: Number of output columns.
@@ -34,12 +34,16 @@ struct GEMMDescriptor {
   /// in any reasonable application. Handling larger allocations likely
   /// requires consideration of more failure points than just integer
   /// overflows.
-  var matrixDimensions: (M: UInt32, N: UInt32, K: UInt32)?
+  public var matrixDimensions: (M: UInt32, N: UInt32, K: UInt32)?
   
-  var memoryPrecisions: (
+  public var memoryPrecisions: (
     A: GEMMOperandPrecision, B: GEMMOperandPrecision, C: GEMMOperandPrecision)?
   
-  var transposeState: (A: Bool, B: Bool)?
+  public var transposeState: (A: Bool, B: Bool)?
+  
+  public init() {
+    
+  }
 }
 
 struct GEMMKey: Equatable, Hashable {
@@ -70,13 +74,16 @@ struct GEMMKey: Equatable, Hashable {
 }
 
 extension GEMMDescriptor: Hashable, Equatable {
-  static func == (lhs: GEMMDescriptor, rhs: GEMMDescriptor) -> Bool {
+  public static func == (
+    lhs: GEMMDescriptor,
+    rhs: GEMMDescriptor
+  ) -> Bool {
     let lhsKey = GEMMKey(copying: lhs)
     let rhsKey = GEMMKey(copying: rhs)
     return lhsKey == rhsKey
   }
   
-  func hash(into hasher: inout Hasher) {
+  public func hash(into hasher: inout Hasher) {
     let key = GEMMKey(copying: self)
     hasher.combine(key)
   }
@@ -96,7 +103,7 @@ extension GEMMKernelDescriptor {
   /// core count queries.
   ///
   /// Acceptable latency: no more than 1 μs per invocation.
-  init(descriptor: GEMMDescriptor) {
+  public init(descriptor: GEMMDescriptor) {
     guard let matrixDimensions = descriptor.matrixDimensions,
           let memoryPrecisions = descriptor.memoryPrecisions,
           let transposeState = descriptor.transposeState else {

@@ -18,7 +18,7 @@ import protocol Metal.MTLDevice
 /// about performance. It should only be responsible for correctly generating
 /// a shader source, provided a configuration. The user is responsible for
 /// choosing that configuration.
-struct GEMMKernelDescriptor {
+public struct GEMMKernelDescriptor {
   /// Required. The number of matrix elements spanned by each threadgroup.
   /// - Parameter M: Number of output columns spanned.
   /// - Parameter N: Number of output rows spanned.
@@ -113,7 +113,7 @@ struct GEMMKernelDescriptor {
   /// else
   ///   choose large block size (48x48x32xFP16)
   /// ```
-  var blockDimensions: (M: UInt16, N: UInt16, K: UInt16)?
+  public var blockDimensions: (M: UInt16, N: UInt16, K: UInt16)?
   
   /// Optional. The layout of elements in threadgroup memory.
   ///
@@ -123,9 +123,9 @@ struct GEMMKernelDescriptor {
   /// operand will have 16 FP32 elements per row, there is good chance of
   /// increased bank conflicts on M1. One may pad that threadgroup memory
   /// allocation to 20 FP32 elements per row.
-  var leadingBlockDimensions: (A: UInt16, B: UInt16, C: UInt16)?
+  public var leadingBlockDimensions: (A: UInt16, B: UInt16, C: UInt16)?
   
-  var memoryPrecisions: (
+  public var memoryPrecisions: (
     A: GEMMOperandPrecision, B: GEMMOperandPrecision, C: GEMMOperandPrecision)?
   
   /// Required. Whether async copies will improve performance during the
@@ -136,13 +136,13 @@ struct GEMMKernelDescriptor {
   /// essential for correctness when reading from the edges of unaligned
   /// matrices. Setting the value to `false` means skipping async copies when
   /// doing so will not change the final result.
-  var preferAsyncLoad: Bool = true
+  public var preferAsyncLoad: Bool = true
   
   /// Required. Whether async copies will improve performance when storing the
   /// accumulator to main memory.
   ///
   /// There is no default value that will reliably yield consistent performance.
-  var preferAsyncStore: Bool?
+  public var preferAsyncStore: Bool?
   
   /// Set the register precision based on the GPU architecture, and your choice
   /// for memory precision. The following set of logic statements should provide
@@ -162,7 +162,7 @@ struct GEMMKernelDescriptor {
   ///   If memB is BF16,
   ///     regB is FP32
   /// ```
-  var registerPrecisions: (
+  public var registerPrecisions: (
     A: GEMMOperandPrecision, B: GEMMOperandPrecision, C: GEMMOperandPrecision)?
   
   /// Required. The array of SIMDs to divide the threadgroup into.
@@ -170,10 +170,14 @@ struct GEMMKernelDescriptor {
   /// Optimal values:
   /// - Apple7 and Apple8: 2x2
   /// - Apple9 and later: 1x1
-  var splits: (M: UInt16, N: UInt16)?
+  public var splits: (M: UInt16, N: UInt16)?
   
   /// Required. Whether each of the inputs deviates from row-major order.
-  var transposeState: (A: Bool, B: Bool)?
+  public var transposeState: (A: Bool, B: Bool)?
+  
+  public init() {
+    
+  }
 }
 
 struct GEMMKernelKey: Equatable, Hashable {
@@ -251,13 +255,16 @@ struct GEMMKernelKey: Equatable, Hashable {
 }
 
 extension GEMMKernelDescriptor: Hashable, Equatable {
-  static func == (lhs: GEMMKernelDescriptor, rhs: GEMMKernelDescriptor) -> Bool {
+  public static func == (
+    lhs: GEMMKernelDescriptor, 
+    rhs: GEMMKernelDescriptor
+  ) -> Bool {
     let lhsKey = GEMMKernelKey(copying: lhs)
     let rhsKey = GEMMKernelKey(copying: rhs)
     return lhsKey == rhsKey
   }
   
-  func hash(into hasher: inout Hasher) {
+  public func hash(into hasher: inout Hasher) {
     let key = GEMMKernelKey(copying: self)
     hasher.combine(key)
   }

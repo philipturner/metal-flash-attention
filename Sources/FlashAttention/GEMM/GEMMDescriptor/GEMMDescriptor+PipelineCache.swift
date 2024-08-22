@@ -8,20 +8,20 @@
 import Metal
 
 extension GEMMKernel {
-  typealias LibraryValue = (
+  public typealias LibraryValue = (
     kernel: GEMMKernel, library: MTLLibrary)
-  typealias PipelineValue = (
+  public typealias PipelineValue = (
     kernel: GEMMKernel, pipeline: MTLComputePipelineState)
   
-  static var libraryCache: [
+  public static var libraryCache: [
     GEMMKernelDescriptor: LibraryValue] = [:]
-  static var pipelineCache: [
+  public static var pipelineCache: [
     GEMMDescriptor: PipelineValue] = [:]
 }
 
 extension GEMMKernel {
   // Register this problem configuration in the cache.
-  static func register(descriptor: GEMMDescriptor) {
+  public static func register(descriptor: GEMMDescriptor) {
     guard pipelineCache[descriptor] == nil else {
       return
     }

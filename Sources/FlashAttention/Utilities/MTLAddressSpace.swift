@@ -5,18 +5,18 @@
 //  Created by Philip Turner on 8/9/24.
 //
 
-enum MTLAddressSpace {
+public enum MTLAddressSpace {
   case device
   case threadgroup
   
-  var keyword: String {
+  public var keyword: String {
     switch self {
     case .device: return "device"
     case .threadgroup: return "threadgroup"
     }
   }
   
-  var offsetType: String {
+  public var offsetType: String {
     switch self {
     case .device: return "uint"
     case .threadgroup: return "ushort"

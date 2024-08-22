@@ -7,7 +7,7 @@
 
 import protocol Metal.MTLLibrary
 
-struct GEMMKernel {
+public struct GEMMKernel {
   // Categorical attributes for each operand.
   var memoryPrecisions: (
     A: GEMMOperandPrecision, B: GEMMOperandPrecision, C: GEMMOperandPrecision)
@@ -18,12 +18,12 @@ struct GEMMKernel {
   var transposeState: (A: Bool, B: Bool)
   
   // Layout of the data in registers and threadgroup memory.
-  var blockDimensions: (M: UInt16, N: UInt16, K: UInt16)
+  public var blockDimensions: (M: UInt16, N: UInt16, K: UInt16)
   var leadingBlockDimensions: (A: UInt16, B: UInt16, C: UInt16)
   var splits: (M: UInt16, N: UInt16)
-  var threadgroupMemoryAllocation: UInt16
+  public var threadgroupMemoryAllocation: UInt16
   
-  init(descriptor: GEMMKernelDescriptor) {
+  public init(descriptor: GEMMKernelDescriptor) {
     guard let blockDimensions = descriptor.blockDimensions,
           let memoryPrecisions = descriptor.memoryPrecisions,
           let preferAsyncStore = descriptor.preferAsyncStore,
@@ -257,7 +257,7 @@ extension GEMMKernel {
     blockDimensions.N / splits.N
   }
   
-  var threadgroupSize: UInt16 {
+  public var threadgroupSize: UInt16 {
     32 * splits.M * splits.N
   }
   

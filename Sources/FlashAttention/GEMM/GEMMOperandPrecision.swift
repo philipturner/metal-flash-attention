@@ -30,13 +30,13 @@
 /// For example, the reference implementation treats BF16 like a quantized
 /// integer type on Apple7 and Apple8 GPUs. It is decompressed to FP32 in
 /// registers.
-enum GEMMOperandPrecision: UInt16 {
+public enum GEMMOperandPrecision: UInt16 {
   case FP32 = 0
   case FP16 = 1
   case BF16 = 2
   
   // The MSL keyword corresponding to the precision.
-  var name: String {
+  public var name: String {
     switch self {
     case .FP32:
       return "float"
@@ -48,7 +48,7 @@ enum GEMMOperandPrecision: UInt16 {
   }
   
   // The size of a scalar, in bytes.
-  var size: Int {
+  public var size: Int {
     switch self {
     case .FP32:
       return 4
