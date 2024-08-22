@@ -22,8 +22,3 @@ Portability:
 - Refactor into a Swift package with a separate module for tests?
   - The benchmark needs to be documented somewhere, so somebody can copy the raw code into a new Xcodeproj for iOS.
   - Minimal examples of the benchmarks that don't actually measure problems large enough to get performance statistics?
-
-Documentation:
-- Move the folder `FlashAttention/FlashAttention/Archive` to `Documentation/Archive`.
-- Explain how the library was designed, the combinatorial search procedure.
-  - Find a way to publish the spreadsheet used.

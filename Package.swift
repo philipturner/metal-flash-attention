@@ -4,7 +4,14 @@
 import PackageDescription
 
 let package = Package(
-  name: "FlashAttention",
+  name: "metal-flash-attention",
+  platforms: [
+    // Add all of the operating systems that (I recall) have Metal.
+    .iOS(.v17),
+    .macOS(.v14),
+    .tvOS(.v17),
+    .visionOS(.v1),
+  ],
   products: [
     // Products define the executables and libraries a package produces, making them visible to other packages.
     .library(
