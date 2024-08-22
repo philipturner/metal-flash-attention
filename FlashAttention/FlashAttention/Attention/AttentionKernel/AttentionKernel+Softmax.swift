@@ -40,8 +40,10 @@ extension AttentionKernel {
           return """
           
           // Where the dO data will be read from.
-          auto dO_src = simdgroup_matrix_storage<float>::apply_offset(
-            dO, \(leadingDimension(.dO)), offset_src, \(transposed(.dO)));
+          auto dO_src = simdgroup_matrix_storage<\(memoryName(.dO))>
+          ::apply_offset(
+            dO, \(leadingDimension(.dO)), 
+            offset_src, \(transposed(.dO)));
           
           """
         }
@@ -56,8 +58,8 @@ extension AttentionKernel {
         } else {
           return """
           
-          simdgroup_matrix_storage<float> dO;
-          dO.load(
+          simdgroup_matrix_storage<\(registerName(.dO))> dO;
+          dO.\(loadFunction(.dO))(
             dO_src, \(leadingDimension(.dO)),
             ushort2(d, 0), \(transposed(.dO)));
           
@@ -76,23 +78,25 @@ extension AttentionKernel {
       \(declareDerivativeOLocation())
       
       // Where the O data will be read from.
-      auto O_src = simdgroup_matrix_storage<float>::apply_offset(
-        O, \(leadingDimension(.O)), offset_src, \(transposed(.O)));
+      auto O_src = simdgroup_matrix_storage<\(memoryName(.O))>
+      ::apply_offset(
+        O, \(leadingDimension(.O)),
+        offset_src, \(transposed(.O)));
       
       // Going to use async copy to handle the matrix edge.
       #pragma clang loop unroll(disable)
       for (ushort d = 0; d < \(truncatedHeadDimension); d += 8) {
         \(loadDerivativeO())
         
-        simdgroup_matrix_storage<float> O;
-        O.load(
+        simdgroup_matrix_storage<\(registerName(.O))> O;
+        O.\(loadFunction(.O))(
           O_src, \(leadingDimension(.O)),
           ushort2(d, 0), \(transposed(.O)));
         
         // Perform the pointwise multiplication.
-        float2 dO_value = *(dO.thread_elements());
-        float2 O_value = *(O.thread_elements());
-        D_accumulator += dO_value * O_value;
+        auto dO_value = *(dO.thread_elements());
+        auto O_value = *(O.thread_elements());
+        D_accumulator += float2(dO_value) * float2(O_value);
       }
 
       """
@@ -113,6 +117,14 @@ extension AttentionKernel {
         }
       }
       
+      // Distinct from the block bytes that would be used to calculate
+      // the threadgroup memory allocation.
+      func blockBytesDerivativeO() -> UInt16 {
+        let memoryPrecision = memoryPrecisions[.dO]!
+        let size = UInt16(memoryPrecision.size)
+        return blockDimensions.parallelization * 8 * size
+      }
+      
       return """
       
       threadgroup_barrier(mem_flags::mem_threadgroup);
@@ -121,13 +133,18 @@ extension AttentionKernel {
         uint R_offset = \(parallelizationGroupOffset);
         uint2 offset_src(D_offset, R_offset);
         
-        auto dO_src = simdgroup_matrix_storage<float>::apply_offset(
-          dO, \(leadingDimension(.dO)), offset_src, \(transposed(.dO)));
-        auto O_src = simdgroup_matrix_storage<float>::apply_offset(
-          O, \(leadingDimension(.O)), offset_src, \(transposed(.O)));
-        auto dO_dst = (threadgroup float*)(threadgroup_block);
-        auto O_dst = (threadgroup float*)(threadgroup_block);
-        O_dst += \(blockDimensions.parallelization * 8);
+        auto dO_src = simdgroup_matrix_storage<\(memoryName(.dO))>
+        ::apply_offset(
+          dO, \(leadingDimension(.dO)), 
+          offset_src, \(transposed(.dO)));
+        auto O_src = simdgroup_matrix_storage<\(memoryName(.O))>
+        ::apply_offset(
+          O, \(leadingDimension(.O)), 
+          offset_src, \(transposed(.O)));
+        
+        auto dO_dst = (threadgroup \(memoryName(.dO))*)(threadgroup_block);
+        auto O_dst = (threadgroup \(memoryName(.O))*)(
+          threadgroup_block + \(blockBytesDerivativeO()));
         
         ushort D_src_dimension = \(headDimension) % 8;
         ushort D_dst_dimension = 8;
@@ -150,31 +167,35 @@ extension AttentionKernel {
       
       // Where the dO and O data will be read from.
       ushort2 offset_src(morton_offset.x, morton_offset.y + sidx * 8);
-      auto dO_block = (threadgroup float*)(threadgroup_block);
-      auto O_block = (threadgroup float*)(threadgroup_block);
-      O_block += \(blockDimensions.parallelization * 8);
+      auto dO_block = (threadgroup \(memoryName(.dO))*)(threadgroup_block);
+      auto O_block = (threadgroup \(memoryName(.O))*)(
+        threadgroup_block + \(blockBytesDerivativeO()));
       
-      dO_block = simdgroup_matrix_storage<float>::apply_offset(
+      dO_block = simdgroup_matrix_storage<\(memoryName(.dO))>
+      ::apply_offset(
         dO_block, \(leadingBlockDimension(.dO)),
         offset_src, \(transposed(.dO)));
-      O_block = simdgroup_matrix_storage<float>::apply_offset(
+      O_block = simdgroup_matrix_storage<\(memoryName(.O))>
+      ::apply_offset(
         O_block, \(leadingBlockDimension(.O)),
         offset_src, \(transposed(.O)));
       threadgroup_barrier(mem_flags::mem_threadgroup);
       
       // Load the zero-padded edge data.
       ushort2 origin(0, 0);
-      simdgroup_matrix_storage<float> dO;
-      simdgroup_matrix_storage<float> O;
-      dO.load(
-        dO_block, \(leadingBlockDimension(.dO)), origin, \(transposed(.dO)));
-      O.load(
-        O_block, \(leadingBlockDimension(.O)), origin, \(transposed(.O)));
+      simdgroup_matrix_storage<\(registerName(.dO))> dO;
+      simdgroup_matrix_storage<\(registerName(.O))> O;
+      dO.\(loadFunction(.dO))(
+        dO_block, \(leadingBlockDimension(.dO)),
+        origin, \(transposed(.dO)));
+      O.\(loadFunction(.O))(
+        O_block, \(leadingBlockDimension(.O)),
+        origin, \(transposed(.O)));
       
       // Perform the pointwise multiplication.
-      float2 dO_value = *(dO.thread_elements());
-      float2 O_value = *(O.thread_elements());
-      D_accumulator += dO_value * O_value;
+      auto dO_value = *(dO.thread_elements());
+      auto O_value = *(O.thread_elements());
+      D_accumulator += float2(dO_value) * float2(O_value);
       
       """
     }
@@ -208,6 +229,7 @@ extension AttentionKernel {
     let blockDim = blockDimensions.traversal
     let remainder = "(\(traversalDimension) % \(blockDim))"
     let remainderFloor = "(\(remainder) - (\(remainder) % 8))";
+    let logBase2E: Float = 1.442695041
     
     return """
     
@@ -217,8 +239,8 @@ extension AttentionKernel {
       // exponentiation. If the multiplication during FMA returns -INF,
       // subtracting a positive 'm' value will turn it into zero. We don't want
       // that. exp(0) evaluates to 1.00 and corrupts the value of 'l'.
-      const float mask_value =
-      (0.875 / M_LOG2E_F) * -numeric_limits<float>::max();
+      const \(registerName(.S)) mask_value =
+      (0.875 / \(logBase2E)) * -numeric_limits<\(registerName(.S))>::max();
       
       #pragma clang loop unroll(full)
       for (ushort index = 0; index < 2; ++index) {
@@ -246,7 +268,7 @@ extension AttentionKernel {
     """
     
     // update 'm'
-    float2 m_new_accumulator;
+    vec<\(registerName(.S)), 2> m_new_accumulator;
     #pragma clang loop unroll(full)
     for (ushort c = 0; c < \(blockDimensions.traversal); c += 8) {
       auto S_elements = S_sram[c / 8].thread_elements();
@@ -280,6 +302,18 @@ extension AttentionKernel {
   
   // Reduce sum during the online softmax.
   func onlineReduceSum() -> String {
+    // I don't think keeping the sum in FP16 here, should negatively affect
+    // numerical accuracy too much. It is typically 8-16 summations. If I am
+    // wrong, clients - please just fix this ('float2 l_new_accumulator')
+    // instead of promoting the entire P matrix to FP32. Having P in low
+    // precision is critical for performance on M1, which typically will not
+    // receive high coverage in your performance tests.
+    //
+    // TODO: When debugging mixed precision, revert this to float2. Examine
+    // the impact it has on numerical correctness, with every other variable
+    // in FP32.
+    // - Casting to float2 may cause the Metal compiler to allocate a bunch
+    //   of extra registers for the FP16 attention matrix.
     """
     
     // update 'l'
@@ -288,9 +322,9 @@ extension AttentionKernel {
     for (ushort c = 0; c < \(blockDimensions.traversal); c += 8) {
       auto P_elements = P_sram[c / 8].thread_elements();
       if (c == 0) {
-        l_new_accumulator = *P_elements;
+        l_new_accumulator = float2(*P_elements);
       } else {
-        l_new_accumulator += *P_elements;
+        l_new_accumulator += float2(*P_elements);
       }
     }
     float l_new = l_new_accumulator[0] + l_new_accumulator[1];
@@ -317,13 +351,15 @@ extension AttentionKernel {
       if !derivative {
         return """
         
-        simdgroup_matrix_storage<float> P_sram[\(blockDim) / 8];
+        simdgroup_matrix_storage<\(registerName(.P))> \
+        P_sram[\(blockDim) / 8];
         
         """
       } else {
         return """
         
-        simdgroup_matrix_storage<float> dS_sram[\(blockDim) / 8];
+        simdgroup_matrix_storage<\(registerName(.dS))> \
+        dS_sram[\(blockDim) / 8];
         
         """
       }
@@ -334,9 +370,9 @@ extension AttentionKernel {
       
       threadgroup_barrier(mem_flags::mem_threadgroup);
       if (sidx == 0) {
-        // Locate the \(operand)[i] in device and threadgroup memory.
         auto \(operand)_src = \(operand) + \(traversalOffset);
-        auto \(operand)_dst = (threadgroup float*)(threadgroup_block);
+        auto \(operand)_dst =
+        (threadgroup \(memoryName(operand))*)(threadgroup_block);
         
         ushort R_src_dimension = min(
           uint(\(blockDimensions.traversal)),
@@ -370,7 +406,8 @@ extension AttentionKernel {
       } else {
         return """
         
-        auto \(operand)_src = (threadgroup float*)(threadgroup_block);
+        auto \(operand)_src =
+        (threadgroup \(memoryName(operand))*)(threadgroup_block);
         \(operand)_src += morton_offset.x;
         threadgroup_barrier(mem_flags::mem_threadgroup);
         
@@ -384,17 +421,19 @@ extension AttentionKernel {
       if !derivative {
         return """
         
-        float2 S = float2(*(S_sram[c / 8].thread_elements()));
-        float2 P = fast::exp2(S * \(scale) - L);
+        auto S = *(S_sram[c / 8].thread_elements());
+        auto P = vec<\(registerName(.P)), 2>(
+          fast::exp2(float2(S) * \(scale) - float2(L_elements)));
         *(P_sram[c / 8].thread_elements()) = P;
         
         """
       } else {
         return """
         
-        float2 P = float2(*(P_sram[c / 8].thread_elements()));
-        float2 dP = float2(*(dP_sram[c / 8].thread_elements()));
-        float2 dS = P * (dP * \(scale) - D);
+        auto P = *(P_sram[c / 8].thread_elements());
+        auto dP = *(dP_sram[c / 8].thread_elements());
+        auto dS = vec<\(registerName(.dS)), 2>(
+          float2(P) * (float2(dP) * \(scale) - float2(D_elements)));
         *(dS_sram[c / 8].thread_elements()) = dS;
         
         """
@@ -408,7 +447,7 @@ extension AttentionKernel {
         
         #pragma clang loop unroll(full)
         for (ushort c = 0; c < \(blockDimensions.traversal); c += 8) {
-          auto L = m;
+          auto L_elements = m;
           \(overwriteAttentionMatrixElements())
         }
         
@@ -418,7 +457,7 @@ extension AttentionKernel {
         
         #pragma clang loop unroll(full)
         for (ushort c = 0; c < \(blockDimensions.traversal); c += 8) {
-          auto \(operand) = \(operand)_sram;
+          auto \(operand)_elements = \(operand)_sram;
           \(overwriteAttentionMatrixElements())
         }
         
@@ -428,10 +467,12 @@ extension AttentionKernel {
         
         #pragma clang loop unroll(full)
         for (ushort c = 0; c < \(blockDimensions.traversal); c += 8) {
-          ushort2 origin(c, 0);
-          simdgroup_matrix_storage<float> \(operand)_sram;
-          \(operand)_sram.load(\(operand)_src, 1, origin, false);
-          float2 \(operand) = *(\(operand)_sram.thread_elements());
+          ushort2 \(operand)_origin(c, 0);
+          simdgroup_matrix_storage<\(registerName(operand))> \(operand);
+          \(operand).\(loadFunction(operand))(
+            \(operand)_src, 1,
+            \(operand)_origin, false);
+          auto \(operand)_elements = *(\(operand).thread_elements());
           
           \(overwriteAttentionMatrixElements())
         }

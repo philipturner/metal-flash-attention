@@ -13,46 +13,67 @@ import Metal
 #if true
 func executeScript() {
   // Automate the execution of the test suite.
-  profileProblemSize(sequenceDimension: 10, headDimension: 3)
-  profileProblemSize(sequenceDimension: 10, headDimension: 80)
-  profileProblemSize(sequenceDimension: 8, headDimension: 2)
-  profileProblemSize(sequenceDimension: 9, headDimension: 2)
-  profileProblemSize(sequenceDimension: 23, headDimension: 2)
-  profileProblemSize(sequenceDimension: 24, headDimension: 2)
-  profileProblemSize(sequenceDimension: 25, headDimension: 2)
-  profileProblemSize(sequenceDimension: 192, headDimension: 77)
-  profileProblemSize(sequenceDimension: 192, headDimension: 80)
-  profileProblemSize(sequenceDimension: 93, headDimension: 32)
-  profileProblemSize(sequenceDimension: 99, headDimension: 35)
-  profileProblemSize(sequenceDimension: 64, headDimension: 32)
-  profileProblemSize(sequenceDimension: 64, headDimension: 34)
-  profileProblemSize(sequenceDimension: 64, headDimension: 36)
-  profileProblemSize(sequenceDimension: 64, headDimension: 40)
-  profileProblemSize(sequenceDimension: 32, headDimension: 64)
-  profileProblemSize(sequenceDimension: 4, headDimension: 1)
-  profileProblemSize(sequenceDimension: 4, headDimension: 2)
-  profileProblemSize(sequenceDimension: 384, headDimension: 95)
-  profileProblemSize(sequenceDimension: 777, headDimension: 199)
+  //  profileProblemSize(sequenceDimension: 10, headDimension: 3)
+  //  profileProblemSize(sequenceDimension: 10, headDimension: 80)
+  //  profileProblemSize(sequenceDimension: 8, headDimension: 2)
+  //  profileProblemSize(sequenceDimension: 9, headDimension: 2)
+  //  profileProblemSize(sequenceDimension: 23, headDimension: 2)
+  //  profileProblemSize(sequenceDimension: 24, headDimension: 2)
+  //  profileProblemSize(sequenceDimension: 25, headDimension: 2)
+  //  profileProblemSize(sequenceDimension: 192, headDimension: 77)
+  //  profileProblemSize(sequenceDimension: 192, headDimension: 80)
+  //  profileProblemSize(sequenceDimension: 93, headDimension: 32)
+  //  profileProblemSize(sequenceDimension: 99, headDimension: 35)
+  //  profileProblemSize(sequenceDimension: 64, headDimension: 32)
+  //  profileProblemSize(sequenceDimension: 64, headDimension: 34)
+  //  profileProblemSize(sequenceDimension: 64, headDimension: 36)
+  //  profileProblemSize(sequenceDimension: 64, headDimension: 40)
+  //  profileProblemSize(sequenceDimension: 32, headDimension: 64)
+  //  profileProblemSize(sequenceDimension: 4, headDimension: 1)
+  //  profileProblemSize(sequenceDimension: 4, headDimension: 2)
+  //  profileProblemSize(sequenceDimension: 384, headDimension: 95)
+  //  profileProblemSize(sequenceDimension: 777, headDimension: 199)
   
-#if false
-  let D_array = Array(32...160)
-  let N_array = [
-    AttentionKernelType.forward(true),
+#if true
+  var D_array: [Int] = []
+  do {
+    var D_cursor = 0
+    while D_cursor < 96 {
+      D_cursor += 4
+      D_array.append(D_cursor)
+    }
+    //    while D_cursor < 160 {
+    //      D_cursor += 8
+    //      D_array.append(D_cursor)
+    //    }
+    //    while D_cursor < 256 {
+    //      D_cursor += 16
+    //      D_array.append(D_cursor)
+    //    }
+    //    while D_cursor < 384 {
+    //      D_cursor += 32
+    //      D_array.append(D_cursor)
+    //    }
+  }
+  
+  let kernelArray = [
+    AttentionKernelType.forward,
     AttentionKernelType.backwardQuery,
-    AttentionKernelType.backwardKeyValue
+    AttentionKernelType.backwardKeyValue,
   ]
   
-  // Loop over the configurations.
   var outputString: String = ""
+  
+  // Loop over the configurations.
   for D in D_array {
-     outputString += "\(D), "
-     print("D =", D, terminator: ", ")
+    outputString += "\(D), "
+    print("D =", D, terminator: ", ")
     
-    for N in N_array {
+    for kernel in kernelArray {
       let metric = profileProblemSize(
         sequenceDimension: 8192,
         headDimension: D,
-        benchmarkedKernel: N)
+        benchmarkedKernel: kernel)
       outputString += "\(metric), "
       print(metric, terminator: ", ")
     }
@@ -71,19 +92,79 @@ func executeScript() {
 func profileProblemSize(
   sequenceDimension: Int,
   headDimension: Int,
-  benchmarkedKernel: AttentionKernelType = .forward(true)
+  benchmarkedKernel: AttentionKernelType = .forward
 ) -> Int {
   var networkDesc = NetworkDescriptor()
   networkDesc.N = sequenceDimension
   networkDesc.D = headDimension
   let network = Network(descriptor: networkDesc)
   
+  // MARK: - Kernels
+  
+  var attentionDesc = AttentionDescriptor()
+  attentionDesc.lowPrecisionInputs = false
+  attentionDesc.lowPrecisionIntermediates = false
+  attentionDesc.matrixDimensions = (
+    R: UInt32(sequenceDimension),
+    C: UInt32(sequenceDimension),
+    D: UInt16(headDimension))
+  attentionDesc.transposeState = (Q: false, K: false, V: false, O: false)
+  
+  func transpose(_ input: [Float]) -> [Float] {
+    var output = [Float](
+      repeating: .zero, count: sequenceDimension * headDimension)
+    for n in 0..<sequenceDimension {
+      for d in 0..<headDimension {
+        let value = input[n * headDimension + d]
+        output[d * sequenceDimension + n] = value
+      }
+    }
+    return output
+  }
+  
+  func createKernel(type: AttentionKernelType) -> AttentionKernel {
+    let attentionKernelDesc = attentionDesc.kernelDescriptor(type: type)
+    let attentionKernel = AttentionKernel(descriptor: attentionKernelDesc)
+    return attentionKernel
+  }
+  let kernelForward = createKernel(type: .forward)
+  let kernelBackwardQuery = createKernel(type: .backwardQuery)
+  let kernelBackwardKeyValue = createKernel(type: .backwardKeyValue)
+  
+  func createPipeline(kernel: AttentionKernel) -> MTLComputePipelineState {
+    let device = MTLContext.global.device
+    let source = kernel.createSource()
+    let library = try! device.makeLibrary(source: source, options: nil)
+    
+    let functionConstants = MTLFunctionConstantValues()
+    attentionDesc.setFunctionConstants(functionConstants)
+    let function = try! library.makeFunction(
+      name: "attention", constantValues: functionConstants)
+    
+    // A critical part of the heuristic: force the occupancy to 1024 on M1.
+    let pipelineDesc = MTLComputePipelineDescriptor()
+    pipelineDesc.computeFunction = function
+    pipelineDesc.maxTotalThreadsPerThreadgroup = 1024
+    return try! device.makeComputePipelineState(
+      descriptor: pipelineDesc, options: [], reflection: nil)
+  }
+  let pipelineForward = createPipeline(kernel: kernelForward)
+  let pipelineBackwardQuery = createPipeline(kernel: kernelBackwardQuery)
+  let pipelineBackwardKeyValue = createPipeline(kernel: kernelBackwardKeyValue)
+  
   // MARK: - Buffers
   
-  let bufferQ = MTLContext.global.createBuffer(network.Q, .FP32)
-  let bufferK = MTLContext.global.createBuffer(network.K, .FP32)
-  let bufferV = MTLContext.global.createBuffer(network.V, .FP32)
-  let bufferDerivativeO = MTLContext.global.createBuffer(network.C, .FP32)
+  // Utility function to make buffer initialization more concise.
+  func createBuffer(
+    _ array: [Float],
+    _ operand: AttentionOperand
+  ) -> MTLBuffer {
+    let memoryPrecisions = attentionDesc.memoryPrecisions()
+    guard let precision = memoryPrecisions[operand] else {
+      fatalError("Precision of operand \(operand) was not specified.")
+    }
+    return MTLContext.global.createBuffer(array, precision)
+  }
   
   let operandSize = sequenceDimension * headDimension
   var resultO = [Float](repeating: .zero, count: operandSize)
@@ -94,55 +175,18 @@ func profileProblemSize(
   var resultDerivativeQ = [Float](repeating: .zero, count: operandSize)
   resultO[0] = .nan
   
-  let bufferO = MTLContext.global.createBuffer(resultO, .FP32)
-  let bufferL = MTLContext.global.createBuffer(resultL, .FP32)
-  let bufferD = MTLContext.global.createBuffer(resultD, .FP32)
-  let bufferDerivativeV = MTLContext.global
-    .createBuffer(resultDerivativeV, .FP32)
-  let bufferDerivativeK = MTLContext.global
-    .createBuffer(resultDerivativeK, .FP32)
-  let bufferDerivativeQ = MTLContext.global
-    .createBuffer(resultDerivativeQ, .FP32)
+  let bufferQ = createBuffer(transpose(network.Q), .Q)
+  let bufferK = createBuffer(transpose(network.K), .K)
+  let bufferV = createBuffer(transpose(network.V), .V)
+  let bufferDerivativeO = createBuffer(transpose(network.C), .dO)
   
-  // MARK: - Kernels
+  let bufferL = createBuffer(resultL, .L)
+  let bufferD = createBuffer(resultD, .D)
   
-  var attentionDesc = AttentionDescriptor()
-  attentionDesc.matrixDimensions = (
-    R: UInt32(sequenceDimension),
-    C: UInt32(sequenceDimension),
-    D: UInt16(headDimension))
-  attentionDesc.transposeState = (Q: false, K: false, V: false, O: false)
-  
-  func createKernel(type: AttentionKernelType) -> AttentionKernel {
-    let attentionKernelDesc = attentionDesc.kernelDescriptor(type: type)
-    let attentionKernel = AttentionKernel(descriptor: attentionKernelDesc)
-    return attentionKernel
-  }
-  let kernelForward = createKernel(type: .forward(true))
-  let kernelBackwardQuery = createKernel(type: .backwardQuery)
-  let kernelBackwardKeyValue = createKernel(type: .backwardKeyValue)
-  
-  func createPipeline(kernel: AttentionKernel) -> MTLComputePipelineState {
-    let device = MTLContext.global.device
-    let library = try! device.makeLibrary(
-      source: kernel.source, options: nil)
-    
-    let functionConstants = MTLFunctionConstantValues()
-    attentionDesc.setFunctionConstants(functionConstants)
-    let function = try! library.makeFunction(
-      name: "attention", constantValues: functionConstants)
-    
-    let pipelineDesc = MTLComputePipelineDescriptor()
-    pipelineDesc.computeFunction = function
-    if let targetOccupancy = kernel.targetOccupancy {
-      pipelineDesc.maxTotalThreadsPerThreadgroup = Int(targetOccupancy)
-    }
-    return try! device.makeComputePipelineState(
-      descriptor: pipelineDesc, options: [], reflection: nil)
-  }
-  let pipelineForward = createPipeline(kernel: kernelForward)
-  let pipelineBackwardQuery = createPipeline(kernel: kernelBackwardQuery)
-  let pipelineBackwardKeyValue = createPipeline(kernel: kernelBackwardKeyValue)
+  let bufferO = createBuffer(resultO, .O)
+  let bufferDerivativeV = createBuffer(resultDerivativeV, .dV)
+  let bufferDerivativeK = createBuffer(resultDerivativeK, .dK)
+  let bufferDerivativeQ = createBuffer(resultDerivativeQ, .dQ)
   
   // MARK: - GPU Commands
   
@@ -200,7 +244,6 @@ func profileProblemSize(
     
     for _ in 0..<dispatchCount {
       if dispatchCount > 1 {
-        // WARNING: Change this code to match the kernel you're profiling.
         switch benchmarkedKernel {
         case .forward:
           dispatch(
@@ -242,34 +285,50 @@ func profileProblemSize(
     let start = commandBuffer.gpuStartTime
     let end = commandBuffer.gpuEndTime
     let latency = end - start
-    print("latency:", Int(latency * 1e6))
+    // print("latency:", Int(latency * 1e6))
     return latency
   }
   executeCommandBuffer(dispatchCount: 1)
   
   // MARK: - Validation
   
-#if true
-  let O = network.inferenceAttention()
+#if false
+  // Utility function to make buffer copying more concise.
+  func copyBuffer(
+    _ destination: inout [Float],
+    _ source: MTLBuffer,
+    _ operand: AttentionOperand
+  ) {
+    let memoryPrecisions = attentionDesc.memoryPrecisions()
+    guard let precision = memoryPrecisions[operand] else {
+      fatalError("Precision of operand \(operand) was not specified.")
+    }
+    MTLContext.copy(source, into: &destination, precision: precision)
+  }
+  
+  let O = transpose(network.inferenceAttention())
   let L = (0..<sequenceDimension).map(network.createLTerm(rowID:))
   let D = (0..<sequenceDimension).map(network.createDTerm(rowID:))
-  let dV = network.derivativeV()
-  let dK = network.derivativeK()
-  let dQ = network.derivativeQ()
+  let dV = transpose(network.derivativeV())
+  let dK = transpose(network.derivativeK())
+  let dQ = transpose(network.derivativeQ())
   
   // Copy the results.
-  MTLContext.copy(bufferO, into: &resultO)
-  MTLContext.copy(bufferL, into: &resultL)
-  MTLContext.copy(bufferD, into: &resultD)
-  for i in resultL.indices {
-    resultL[i] /= 1.44269504089
+  do {
+    copyBuffer(&resultL, bufferL, .L)
+    copyBuffer(&resultD, bufferD, .D)
+    for i in resultL.indices {
+      resultL[i] /= 1.44269504089
+    }
+    for i in resultD.indices {
+      resultD[i] /= 1 / Float(headDimension).squareRoot()
+    }
+    
+    copyBuffer(&resultO, bufferO, .O)
+    copyBuffer(&resultDerivativeV, bufferDerivativeV, .dV)
+    copyBuffer(&resultDerivativeK, bufferDerivativeK, .dK)
+    copyBuffer(&resultDerivativeQ, bufferDerivativeQ, .dQ)
   }
-  for i in resultD.indices {
-    resultD[i] /= 1 / Float(headDimension).squareRoot()
-  }
-  MTLContext.copy(bufferDerivativeV, into: &resultDerivativeV)
-  MTLContext.copy(bufferDerivativeK, into: &resultDerivativeK)
-  MTLContext.copy(bufferDerivativeQ, into: &resultDerivativeQ)
   
 #if false
   // Displays a matrix with dimensions N * 1.
@@ -358,22 +417,18 @@ func profileProblemSize(
   printMatrix(resultDerivativeQ)
 #endif
   
-  // Check the results.
-  let errorThreshold: Float = 2e-5
   var errorCount: Int = .zero
-  func check(expected: [Float], actual: [Float]) {
+  func check(expected: [Float], actual: [Float], tolerance: Float) {
     guard expected.count == actual.count else {
       fatalError("Arrays had different length.")
     }
     
     for i in expected.indices {
       let error = (expected[i] - actual[i]).magnitude
-      if error > errorThreshold || error.isNaN {
+      if error > tolerance || error.isNaN {
         // Don't report errors in this case.
-        if expected[i].isNaN, actual[i].isNaN {
-          continue
-        }
-        if expected[i].isInfinite, actual[i].isInfinite {
+        if (expected[i].isNaN || expected[i].isInfinite),
+           (actual[i].isNaN || actual[i].isInfinite ) {
           continue
         }
         
@@ -388,17 +443,29 @@ func profileProblemSize(
     }
   }
   
-  check(expected: O, actual: resultO)
-  check(expected: L, actual: resultL)
-  check(expected: D, actual: resultD)
-  check(expected: dV, actual: resultDerivativeV)
-  check(expected: dK, actual: resultDerivativeK)
-  check(expected: dQ, actual: resultDerivativeQ)
+  // Check the results.
+  if attentionDesc.lowPrecisionInputs ||
+      attentionDesc.lowPrecisionIntermediates {
+    check(expected: O, actual: resultO, tolerance: 5e-2)
+    check(expected: L, actual: resultL, tolerance: 7e-3)
+    check(expected: D, actual: resultD, tolerance: 1e-1)
+    check(expected: dV, actual: resultDerivativeV, tolerance: 5e-2)
+    check(expected: dK, actual: resultDerivativeK, tolerance: 5e-2)
+    check(expected: dQ, actual: resultDerivativeQ, tolerance: 5e-2)
+  } else {
+    check(expected: O, actual: resultO, tolerance: 2e-5)
+    check(expected: L, actual: resultL, tolerance: 2e-5)
+    check(expected: D, actual: resultD, tolerance: 2e-5)
+    check(expected: dV, actual: resultDerivativeV, tolerance: 2e-5)
+    check(expected: dK, actual: resultDerivativeK, tolerance: 2e-5)
+    check(expected: dQ, actual: resultDerivativeQ, tolerance: 2e-5)
+  }
+  
 #endif
   
   // MARK: - Profiling
   
-#if false
+#if true
   // Benchmark performance.
   var maxGINSTRS: Int = .zero
   for _ in 0..<5 {

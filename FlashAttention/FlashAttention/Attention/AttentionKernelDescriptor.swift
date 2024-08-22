@@ -5,27 +5,6 @@
 //  Created by Philip Turner on 6/28/24.
 //
 
-/// The three kernels of the FlashAttention algorithm for devices without
-/// hardware acceleration for floating-point atomics.
-enum AttentionKernelType {
-  /// Forward attention, computing O and L.
-  ///
-  /// The associated value specifies whether the gradient will be needed.
-  /// - `false`: compute only O
-  /// - `true`: compute both O and L
-  case forward(Bool)
-  
-  /// Backward attention, computing D and dQ.
-  ///
-  /// Depends on L.
-  case backwardQuery
-  
-  /// Backward attention, computing dK and dV.
-  ///
-  /// Depends on L and D.
-  case backwardKeyValue
-}
-
 struct AttentionKernelDescriptor {
   var blockDimensions: (
     parallelization: UInt16, traversal: UInt16, head: UInt16)?
@@ -36,16 +15,15 @@ struct AttentionKernelDescriptor {
   /// Required. The problem size along the head dimension.
   var headDimension: UInt16?
   
+  var memoryPrecisions: [AttentionOperand: GEMMOperandPrecision] = [:]
+  
   /// Reads with a one-to-one mapping to threads (like GEMM store) and writes.
   var preferAsyncCache: Bool?
   
   /// Reads that are shared among threads (like GEMM load).
   var preferAsyncLoad: Bool?
   
-  /// Optional. Desired occupancy in threads per core.
-  ///
-  /// Copied into the kernel object, for reference when initializing the PSO.
-  var targetOccupancy: UInt16?
+  var registerPrecisions: [AttentionOperand: GEMMOperandPrecision] = [:]
   
   /// Whether each operand is transposed in RAM.
   ///

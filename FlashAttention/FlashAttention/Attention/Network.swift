@@ -7,6 +7,9 @@
 
 import Numerics
 
+// TODO: Refactor this code, to facilitate tests with non-square attention
+// matrices, masks, and multi-headed attention.
+
 // How do I even evaluate the gradient of a transformer?
 //
 // Attempt to find a simple model to compute and take the gradient of:

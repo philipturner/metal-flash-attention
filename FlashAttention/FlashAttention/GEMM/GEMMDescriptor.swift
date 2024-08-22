@@ -117,7 +117,7 @@ extension GEMMKernelDescriptor {
     // - iOS 17
     //   - Swift debug mode,   Metal API validation on:   ≥0 μs
     //   - Swift release mode, Metal API validation off:  ≥0 μs
-    let mtlDevice = MTLCreateSystemDefaultDevice()!
+    let mtlDevice = MTLContext.global.device
     
     // Trim the device name to something easier to process.
     //
@@ -242,6 +242,18 @@ extension GEMMKernelDescriptor {
     }
     guard !mtlDevice.supportsFamily(.apple9) else {
       self.blockDimensions = (32, 32, 8)
+      
+      // Only a change to A's K dimension is safe. B's K dimension causes a
+      // regression for 16-bit data types.
+      switch transposeState {
+      case (false, true):
+        // Mx(K), (K)xN, Mx(N)
+        let paddedAK = (memoryPrecisions.A == .FP32) ? UInt16(8) : 32
+        leadingBlockDimensions = (paddedAK, 8, 32)
+      default:
+        break
+      }
+      
       return
     }
     

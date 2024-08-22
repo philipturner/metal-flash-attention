@@ -7,45 +7,21 @@
 
 // Declaration of the attention kernel data structure.
 
-// MARK: - Attention Kernel
-
-// Design a set of simple kernels for forward and backward FlashAttention:
-// - FP32 (hardcoded data type keyword)
-// - 32x32 block, 4 splits (hardcoded block size)
-// - all GEMM operands accessed like with standard GEMM + M1
-//   - use async copies liberally (no origin shifting for M3)
-//   - transposes are supported
-// - no masking, dropout, etc.
-//
-// Within this constrained design space, reach the greatest performance
-// physically possible. Compare to standard and semi-standard attention
-// kernels with the same data type constraints. Prove the efficacy of each
-// design choice before fine-tuning block sizes.
-
 struct AttentionKernel {
-  // Problem size information that must be known during codegen.
+  var type: AttentionKernelType
+  
+  // Categorical attributes for each operand.
+  var cacheState: [AttentionOperand: Bool]
+  var memoryPrecisions: [AttentionOperand: GEMMOperandPrecision]
+  var preferAsyncCache: Bool
+  var preferAsyncLoad: Bool
+  var registerPrecisions: [AttentionOperand: GEMMOperandPrecision]
+  var transposeState: [AttentionOperand: Bool]
+  
+  // Layout of the data in registers and threadgroup memory.
   var blockDimensions: (
     parallelization: UInt16, traversal: UInt16, head: UInt16)
   var headDimension: UInt16
-  
-  // Categorical information about various operand attributes.
-  var cacheState: [AttentionOperand: Bool]
-  var preferAsyncCache: Bool
-  var preferAsyncLoad: Bool
-  var transposeState: [AttentionOperand: Bool]
-  var type: AttentionKernelType
-  
-  // The source code to compile.
-  var source: String = ""
-  
-  // The occupancy to compile the PSO with, if any.
-  var targetOccupancy: UInt16?
-  
-  // The number of threads per group.
-  var threadgroupSize: UInt16
-  
-  // If you allocate threadgroup memory after compiling the kernel, the code
-  // has higher performance.
   var threadgroupMemoryAllocation: UInt16
   
   init(descriptor: AttentionKernelDescriptor) {
@@ -56,70 +32,112 @@ struct AttentionKernel {
           let type = descriptor.type else {
       fatalError("Descriptor was incomplete.")
     }
+    self.type = type
+    
+    self.cacheState = descriptor.cacheState
+    self.memoryPrecisions = descriptor.memoryPrecisions
+    self.preferAsyncCache = preferAsyncCache
+    self.preferAsyncLoad = preferAsyncLoad
+    self.registerPrecisions = descriptor.registerPrecisions
+    self.transposeState = descriptor.transposeState
+    
     self.blockDimensions = blockDimensions
     self.headDimension = headDimension
     
-    self.cacheState = descriptor.cacheState
-    self.preferAsyncCache = preferAsyncCache
-    self.preferAsyncLoad = preferAsyncLoad
-    self.targetOccupancy = descriptor.targetOccupancy
-    self.transposeState = descriptor.transposeState
-    self.type = type
-    
-    threadgroupSize = 32 * (blockDimensions.parallelization / 8)
-    threadgroupMemoryAllocation = max(
-      blockDimensions.parallelization * blockDimensions.head * 4,
-      blockDimensions.traversal * blockDimensions.head * 4)
-    
-    if case .backwardQuery = type {
-      // D[i] = dO * O
-      threadgroupMemoryAllocation = max(
-        threadgroupMemoryAllocation,
-        2 * blockDimensions.parallelization * 8 * 4)
-    }
-    if case .backwardKeyValue = type {
-      // load L or D[i]
-      threadgroupMemoryAllocation = max(
-        threadgroupMemoryAllocation,
-        blockDimensions.traversal * 4)
-    }
-    
-    // Add the contents of the headers.
-    source += """
-    
-    \(createMetalSimdgroupEvent())
-    \(createMetalSimdgroupMatrixStorage())
-    using namespace metal;
-    
-    
-    
-    """
-    
-    // Add the contents of the function.
-    source += createFunctionSignature()
-    source += createSetup()
-    
-    switch type {
-    case .forward:
-      source += loopForward()
-    case .backwardQuery:
-      source += loopBackwardQuery()
-    case .backwardKeyValue:
-      source += loopBackwardKeyValue()
-    }
-    
-    source += createCleanup(type: type)
-    source += """
-    
-    }
-    
-    """
+    // Pick the threadgroup memory allocation size.
+    threadgroupMemoryAllocation = .zero
+    threadgroupMemoryAllocation = createThreadgroupMemoryAllocation()
   }
 }
 
 // MARK: - Utilities
 
+// Appearances of BF16 -> FP32 conversion functions.
+//
+// M1
+//              FWD | dQ | dK/dV | dK/dV (outputs cached)
+// load_bfloat    2   12      24      16
+// store_bfloat   2    6      10       8
+//
+// M3
+//              FWD | dQ | dK/dV | dK/dV (outputs cached)
+// load_bfloat    2    6      10       2
+// store_bfloat   2    6      10       8
 extension AttentionKernel {
+  func memoryName(_ operand: AttentionOperand) -> String {
+    guard let memoryPrecision = memoryPrecisions[operand] else {
+      fatalError("Memory precision of \(operand) was not specified.")
+    }
+    return memoryPrecision.name
+  }
+  
+  func registerName(_ operand: AttentionOperand) -> String {
+    guard let registerPrecision = registerPrecisions[operand] else {
+      fatalError("Memory precision of \(operand) was not specified.")
+    }
+    return registerPrecision.name
+  }
+  
+  func loadFunction(_ operand: AttentionOperand) -> String {
+    guard let memoryPrecision = memoryPrecisions[operand],
+          let registerPrecision = registerPrecisions[operand] else {
+      fatalError("Precision of \(operand) was not specified.")
+    }
+    
+    switch (memoryPrecision, registerPrecision) {
+    case (.FP16, .FP16):
+      return "load"
+    case (.FP16, .BF16):
+      fatalError("Invalid precisions.")
+    case (.FP16, .FP32):
+      return "load"
+      
+    case (.BF16, .FP16):
+      fatalError("Invalid precisions.")
+    case (.BF16, .BF16):
+      return "load"
+    case (.BF16, .FP32):
+      return "load_bfloat"
+      
+    case (.FP32, .FP16):
+      fatalError("Invalid precisions.")
+    case (.FP32, .BF16):
+      fatalError("Invalid precisions.")
+    case (.FP32, .FP32):
+      return "load"
+    }
+  }
+  
+  func storeFunction(_ operand: AttentionOperand) -> String {
+    guard let memoryPrecision = memoryPrecisions[operand],
+          let registerPrecision = registerPrecisions[operand] else {
+      fatalError("Precision of \(operand) was not specified.")
+    }
+    
+    switch (memoryPrecision, registerPrecision) {
+    case (.FP16, .FP16):
+      return "store"
+    case (.FP16, .BF16):
+      fatalError("Invalid precisions.")
+    case (.FP16, .FP32):
+      return "store"
+      
+    case (.BF16, .FP16):
+      fatalError("Invalid precisions.")
+    case (.BF16, .BF16):
+      return "store"
+    case (.BF16, .FP32):
+      return "store_bfloat"
+      
+    case (.FP32, .FP16):
+      fatalError("Invalid precisions.")
+    case (.FP32, .BF16):
+      fatalError("Invalid precisions.")
+    case (.FP32, .FP32):
+      return "store"
+    }
+  }
+  
   func cached(_ operand: AttentionOperand) -> Bool {
     guard let output = cacheState[operand] else {
       fatalError("Cache state of \(operand) was not specified.")
@@ -133,7 +151,9 @@ extension AttentionKernel {
     }
     return output
   }
-  
+}
+
+extension AttentionKernel {
   func sequenceLength(_ operand: AttentionOperand) -> String {
     switch operand {
     case .Q, .dQ: return "R"
@@ -244,70 +264,101 @@ extension AttentionKernel {
     output = (((output)) + 7) / 8 * 8
     return output
   }
-}
-
-// MARK: - Function Signature
-
-extension AttentionKernel {
-  func createFunctionSignature() -> String {
-    // What operands does the kernel use?
-    var operands: [AttentionOperand] = []
+  
+  var threadgroupSize: UInt16 {
+    32 * (blockDimensions.parallelization / 8)
+  }
+  
+  private func createThreadgroupMemoryAllocation() -> UInt16 {
+    var output: UInt16 = .zero
+    
+    // Sets the allocation to the maximum of this and the previous allocated
+    // size.
+    func allocateParallelization(_ operand: AttentionOperand) {
+      guard let memoryPrecision = memoryPrecisions[operand] else {
+        fatalError("Precision of \(operand) was not specified.")
+      }
+      
+      var blockBytes: UInt16 = 1
+      blockBytes *= blockDimensions.parallelization
+      blockBytes *= blockDimensions.head
+      blockBytes *= UInt16(memoryPrecision.size)
+      
+      output = max(output, blockBytes)
+    }
+    func allocateTraversal(_ operand: AttentionOperand) {
+      guard let memoryPrecision = memoryPrecisions[operand] else {
+        fatalError("Precision of \(operand) was not specified.")
+      }
+      
+      var blockBytes: UInt16 = 1
+      blockBytes *= blockDimensions.traversal
+      blockBytes *= blockDimensions.head
+      blockBytes *= UInt16(memoryPrecision.size)
+      
+      output = max(output, blockBytes)
+    }
+    
+    // Allocate memory for the GEMM operands.
     switch type {
-    case .forward(let computeL):
-      operands += [.Q, .K, .V, .O]
-      if computeL {
-        operands += [.L]
-      }
+    case .forward:
+      // S = Q * K^T
+      allocateParallelization(.Q)
+      allocateTraversal(.K)
+      
+      // O += P * V
+      allocateParallelization(.O)
+      allocateTraversal(.V)
+      
     case .backwardQuery:
-      operands += [.Q, .K, .V, .O]
-      operands += [.dO, .dQ]
-      operands += [.L, .D]
+      // S = Q * K^T
+      allocateParallelization(.Q)
+      allocateTraversal(.K)
+      
+      // dP = dO * V^T
+      allocateParallelization(.dO)
+      allocateTraversal(.V)
+      
+      // dQ += dS * K
+      allocateParallelization(.dQ)
+      allocateTraversal(.K)
+      
     case .backwardKeyValue:
-      operands += [.Q, .K, .V]
-      operands += [.dO, .dV, .dK]
-      operands += [.L, .D]
-    }
-    operands.sort {
-      $0.bufferBinding! < $1.bufferBinding!
-    }
-    
-    // Declare the buffer binding for each operand.
-    func createBufferBindings() -> String {
-      var output: String = ""
-      for key in operands {
-        var line = "device float* \(key) "
-        line += "[[buffer(\(key.bufferBinding!))]],"
-        output += "  " + line + "\n"
-      }
-      return output
-    }
-    
-    // Generate the full signature.
-    return """
-    
-    // R = row dimension (output sequence)
-    // C = column dimension (input sequence)
-    constant uint R [[function_constant(0)]];
-    constant uint C [[function_constant(1)]];
-    
-    // Declare the function.
-    kernel void attention(
-      \(createBufferBindings())
-      threadgroup uchar *threadgroup_block [[threadgroup(0)]],
+      // S^T = K * Q^T
+      allocateParallelization(.K)
+      allocateTraversal(.Q)
       
-      uint gid [[threadgroup_position_in_grid]],
-      ushort sidx [[simdgroup_index_in_threadgroup]],
-      ushort lane_id [[thread_index_in_simdgroup]]
-    ) {
-      ushort2 morton_offset = morton_order(lane_id);
-      uint parallelization_group_offset = gid;
-      parallelization_group_offset *= \(blockDimensions.parallelization);
+      // dV += P^T * dO
+      allocateParallelization(.dV)
+      allocateTraversal(.dO)
       
-      // Return early if the entire SIMD is out of bounds.
-      if (\(parallelizationGroupOffset) >= \(parallelizationDimension)) {
-        return;
-      }
+      // dP^T = V * dO^T
+      allocateParallelization(.V)
+      allocateTraversal(.dO)
+      
+      // dK += dS^T * Q
+      allocateParallelization(.dK)
+      allocateTraversal(.Q)
+    }
     
-    """
+    // dO * O
+    //
+    // Will never exceed 4 KB (128 threads/group), 8 KB (256 threads/group).
+    if case .backwardQuery = type {
+      output = max(
+        output,
+        2 * blockDimensions.parallelization * 8 * 4)
+    }
+    
+    // L or D
+    //
+    // Will never exceed ~512 bytes.
+    if case .backwardKeyValue = type {
+      output = max(
+        output,
+        blockDimensions.traversal * 4)
+    }
+    
+    return output
   }
 }

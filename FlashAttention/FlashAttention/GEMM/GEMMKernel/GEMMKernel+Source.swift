@@ -81,7 +81,9 @@ kernel void gemm(device \(memoryName("A")) *A [[buffer(0)]],
 
 """
   }
-  
+}
+
+extension GEMMKernel {
   func createConstants() -> String {
     """
     

@@ -137,7 +137,8 @@ func runCorrectnessTest(descriptor: GEMMDescriptor) {
   let checkpoint1 = CACurrentMediaTime()
   
   // Generate the kernel.
-  let (kernel, pipeline) = GEMMKernel.fetchKernel(descriptor: descriptor)
+  GEMMKernel.register(descriptor: descriptor)
+  let (kernel, pipeline) = GEMMKernel.pipelineCache[descriptor]!
   
   let checkpoint2 = CACurrentMediaTime()
   

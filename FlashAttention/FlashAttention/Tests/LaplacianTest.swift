@@ -116,10 +116,325 @@ func executeScript() {
       (true, true),
     ]
     
+    /*
+     Before any changes
+     
+     FP32
+     
+     problemSize =  255 | A   B   | 1024 threads/core | 1556 GFLOPS
+     problemSize =  255 | A   B^T | 1024 threads/core | 1590 GFLOPS
+     problemSize =  255 | A^T B   | 1024 threads/core | 1543 GFLOPS
+     problemSize =  255 | A^T B^T | 1024 threads/core | 1049 GFLOPS
+     problemSize =  256 | A   B   | 1024 threads/core | 1159 GFLOPS
+     problemSize =  256 | A   B^T | 1024 threads/core | 1248 GFLOPS
+     problemSize =  256 | A^T B   | 1024 threads/core | 1827 GFLOPS
+     problemSize =  256 | A^T B^T | 1024 threads/core | 1777 GFLOPS
+     problemSize =  257 | A   B   | 1024 threads/core | 1352 GFLOPS
+     problemSize =  257 | A   B^T | 1024 threads/core | 1466 GFLOPS
+     problemSize =  257 | A^T B   | 1024 threads/core | 1328 GFLOPS
+     problemSize =  257 | A^T B^T | 1024 threads/core | 1290 GFLOPS
+     
+     problemSize =  511 | A   B   | 1024 threads/core | 2700 GFLOPS
+     problemSize =  511 | A   B^T | 1024 threads/core | 2711 GFLOPS
+     problemSize =  511 | A^T B   | 1024 threads/core | 2675 GFLOPS
+     problemSize =  511 | A^T B^T | 1024 threads/core | 2655 GFLOPS
+     problemSize =  512 | A   B   | 1024 threads/core | 2793 GFLOPS
+     problemSize =  512 | A   B^T | 1024 threads/core | 2812 GFLOPS
+     problemSize =  512 | A^T B   | 1024 threads/core | 2747 GFLOPS
+     problemSize =  512 | A^T B^T | 1024 threads/core | 2707 GFLOPS
+     problemSize =  513 | A   B   | 1024 threads/core | 2367 GFLOPS
+     problemSize =  513 | A   B^T | 1024 threads/core | 2380 GFLOPS
+     problemSize =  513 | A^T B   | 1024 threads/core | 2334 GFLOPS
+     problemSize =  513 | A^T B^T | 1024 threads/core | 2324 GFLOPS
+     
+     problemSize = 1023 | A   B   | 1024 threads/core | 3036 GFLOPS
+     problemSize = 1023 | A   B^T | 1024 threads/core | 2813 GFLOPS
+     problemSize = 1023 | A^T B   | 1024 threads/core | 2999 GFLOPS
+     problemSize = 1023 | A^T B^T | 1024 threads/core | 2972 GFLOPS
+     problemSize = 1024 | A   B   | 1024 threads/core | 3077 GFLOPS
+     problemSize = 1024 | A   B^T | 1024 threads/core | 3054 GFLOPS
+     problemSize = 1024 | A^T B   | 1024 threads/core | 3025 GFLOPS
+     problemSize = 1024 | A^T B^T | 1024 threads/core | 2993 GFLOPS
+     problemSize = 1025 | A   B   | 1024 threads/core | 2859 GFLOPS
+     problemSize = 1025 | A   B^T | 1024 threads/core | 2635 GFLOPS
+     problemSize = 1025 | A^T B   | 1024 threads/core | 2831 GFLOPS
+     problemSize = 1025 | A^T B^T | 1024 threads/core | 2800 GFLOPS
+     
+     problemSize = 1488 | A   B   | 1024 threads/core | 3074 GFLOPS
+     problemSize = 1488 | A   B^T | 1024 threads/core | 3042 GFLOPS
+     problemSize = 1488 | A^T B   | 1024 threads/core | 3053 GFLOPS
+     problemSize = 1488 | A^T B^T | 1024 threads/core | 2962 GFLOPS
+     problemSize = 1489 | A   B   | 1024 threads/core | 3029 GFLOPS
+     problemSize = 1489 | A   B^T | 1024 threads/core | 2786 GFLOPS
+     problemSize = 1489 | A^T B   | 1024 threads/core | 3009 GFLOPS
+     problemSize = 1489 | A^T B^T | 1024 threads/core | 2976 GFLOPS
+     
+     BF16
+     
+     problemSize =  255 | A   B   | 1024 threads/core | 1814 GFLOPS
+     problemSize =  255 | A   B^T | 1024 threads/core | 1831 GFLOPS
+     problemSize =  255 | A^T B   | 1024 threads/core | 1675 GFLOPS
+     problemSize =  255 | A^T B^T | 1024 threads/core | 1725 GFLOPS
+     problemSize =  256 | A   B   | 1024 threads/core | 1853 GFLOPS
+     problemSize =  256 | A   B^T | 1024 threads/core | 2000 GFLOPS
+     problemSize =  256 | A^T B   | 1024 threads/core | 1839 GFLOPS
+     problemSize =  256 | A^T B^T | 1024 threads/core | 1831 GFLOPS
+     problemSize =  257 | A   B   | 1024 threads/core | 1426 GFLOPS
+     problemSize =  257 | A   B^T | 1024 threads/core | 1523 GFLOPS
+     problemSize =  257 | A^T B   | 1024 threads/core | 1406 GFLOPS
+     problemSize =  257 | A^T B^T | 1024 threads/core | 1482 GFLOPS
+     
+     problemSize =  511 | A   B   | 1024 threads/core | 2838 GFLOPS
+     problemSize =  511 | A   B^T | 1024 threads/core | 2869 GFLOPS
+     problemSize =  511 | A^T B   | 1024 threads/core | 2776 GFLOPS
+     problemSize =  511 | A^T B^T | 1024 threads/core | 2800 GFLOPS
+     problemSize =  512 | A   B   | 1024 threads/core | 2974 GFLOPS
+     problemSize =  512 | A   B^T | 1024 threads/core | 3034 GFLOPS
+     problemSize =  512 | A^T B   | 1024 threads/core | 2901 GFLOPS
+     problemSize =  512 | A^T B^T | 1024 threads/core | 2869 GFLOPS
+     problemSize =  513 | A   B   | 1024 threads/core | 2570 GFLOPS
+     problemSize =  513 | A   B^T | 1024 threads/core | 2556 GFLOPS
+     problemSize =  513 | A^T B   | 1024 threads/core | 2451 GFLOPS
+     problemSize =  513 | A^T B^T | 1024 threads/core | 2465 GFLOPS
+     
+     problemSize = 1023 | A   B   | 1024 threads/core | 3340 GFLOPS
+     problemSize = 1023 | A   B^T | 1024 threads/core | 3288 GFLOPS
+     problemSize = 1023 | A^T B   | 1024 threads/core | 3319 GFLOPS
+     problemSize = 1023 | A^T B^T | 1024 threads/core | 3270 GFLOPS
+     problemSize = 1024 | A   B   | 1024 threads/core | 3308 GFLOPS
+     problemSize = 1024 | A   B^T | 1024 threads/core | 3329 GFLOPS
+     problemSize = 1024 | A^T B   | 1024 threads/core | 3297 GFLOPS
+     problemSize = 1024 | A^T B^T | 1024 threads/core | 3233 GFLOPS
+     problemSize = 1025 | A   B   | 1024 threads/core | 3170 GFLOPS
+     problemSize = 1025 | A   B^T | 1024 threads/core | 3108 GFLOPS
+     problemSize = 1025 | A^T B   | 1024 threads/core | 3134 GFLOPS
+     problemSize = 1025 | A^T B^T | 1024 threads/core | 3091 GFLOPS
+     
+     problemSize = 1488 | A   B   | 1024 threads/core | 3352 GFLOPS
+     problemSize = 1488 | A   B^T | 1024 threads/core | 3325 GFLOPS
+     problemSize = 1488 | A^T B   | 1024 threads/core | 3338 GFLOPS
+     problemSize = 1488 | A^T B^T | 1024 threads/core | 3287 GFLOPS
+     problemSize = 1489 | A   B   | 1024 threads/core | 3376 GFLOPS
+     problemSize = 1489 | A   B^T | 1024 threads/core | 3317 GFLOPS
+     problemSize = 1489 | A^T B   | 1024 threads/core | 3344 GFLOPS
+     problemSize = 1489 | A^T B^T | 1024 threads/core | 3296 GFLOPS
+     
+     */
+    
+    /*
+     After adding a dedicated set of leading dimensions for M3
+     
+     FP32
+     
+     problemSize =  255 | A   B   | 1024 threads/core | 1658 GFLOPS
+     problemSize =  255 | A   B^T | 1024 threads/core | 1578 GFLOPS
+     problemSize =  255 | A^T B   | 1024 threads/core | 1649 GFLOPS
+     problemSize =  255 | A^T B^T | 1024 threads/core | 1563 GFLOPS
+     problemSize =  256 | A   B   | 1024 threads/core | 1787 GFLOPS
+     problemSize =  256 | A   B^T | 1024 threads/core | 1911 GFLOPS
+     problemSize =  256 | A^T B   | 1024 threads/core | 1681 GFLOPS
+     problemSize =  256 | A^T B^T | 1024 threads/core | 1734 GFLOPS
+     problemSize =  257 | A   B   | 1024 threads/core | 1474 GFLOPS
+     problemSize =  257 | A   B^T | 1024 threads/core | 1422 GFLOPS
+     problemSize =  257 | A^T B   | 1024 threads/core | 1375 GFLOPS
+     problemSize =  257 | A^T B^T | 1024 threads/core | 1338 GFLOPS
+     
+     problemSize =  511 | A   B   | 1024 threads/core | 2706 GFLOPS
+     problemSize =  511 | A   B^T | 1024 threads/core | 2504 GFLOPS <- regression
+     problemSize =  511 | A^T B   | 1024 threads/core | 2676 GFLOPS
+     problemSize =  511 | A^T B^T | 1024 threads/core | 2649 GFLOPS
+     problemSize =  512 | A   B   | 1024 threads/core | 2807 GFLOPS
+     problemSize =  512 | A   B^T | 1024 threads/core | 2811 GFLOPS
+     problemSize =  512 | A^T B   | 1024 threads/core | 2746 GFLOPS
+     problemSize =  512 | A^T B^T | 1024 threads/core | 2700 GFLOPS
+     problemSize =  513 | A   B   | 1024 threads/core | 2350 GFLOPS
+     problemSize =  513 | A   B^T | 1024 threads/core | 2236 GFLOPS <- regression
+     problemSize =  513 | A^T B   | 1024 threads/core | 2329 GFLOPS
+     problemSize =  513 | A^T B^T | 1024 threads/core | 2320 GFLOPS
+     
+     problemSize = 1023 | A   B   | 1024 threads/core | 3034 GFLOPS
+     problemSize = 1023 | A   B^T | 1024 threads/core | 2760 GFLOPS <- regression
+     problemSize = 1023 | A^T B   | 1024 threads/core | 2997 GFLOPS
+     problemSize = 1023 | A^T B^T | 1024 threads/core | 2969 GFLOPS
+     problemSize = 1024 | A   B   | 1024 threads/core | 3081 GFLOPS
+     problemSize = 1024 | A   B^T | 1024 threads/core | 3051 GFLOPS
+     problemSize = 1024 | A^T B   | 1024 threads/core | 3025 GFLOPS
+     problemSize = 1024 | A^T B^T | 1024 threads/core | 2991 GFLOPS
+     problemSize = 1025 | A   B   | 1024 threads/core | 2864 GFLOPS
+     problemSize = 1025 | A   B^T | 1024 threads/core | 2614 GFLOPS <- regression
+     problemSize = 1025 | A^T B   | 1024 threads/core | 2829 GFLOPS
+     problemSize = 1025 | A^T B^T | 1024 threads/core | 2802 GFLOPS
+     
+     problemSize = 1488 | A   B   | 1024 threads/core | 3075 GFLOPS
+     problemSize = 1488 | A   B^T | 1024 threads/core | 3041 GFLOPS
+     problemSize = 1488 | A^T B   | 1024 threads/core | 3054 GFLOPS
+     problemSize = 1488 | A^T B^T | 1024 threads/core | 2962 GFLOPS
+     problemSize = 1489 | A   B   | 1024 threads/core | 3009 GFLOPS
+     problemSize = 1489 | A   B^T | 1024 threads/core | 2599 GFLOPS <- regression
+     problemSize = 1489 | A^T B   | 1024 threads/core | 3008 GFLOPS
+     problemSize = 1489 | A^T B^T | 1024 threads/core | 2959 GFLOPS
+     
+     BF16
+     
+     problemSize =  255 | A   B   | 1024 threads/core | 1808 GFLOPS
+     problemSize =  255 | A   B^T | 1024 threads/core | 1852 GFLOPS
+     problemSize =  255 | A^T B   | 1024 threads/core | 1712 GFLOPS
+     problemSize =  255 | A^T B^T | 1024 threads/core | 1707 GFLOPS
+     problemSize =  256 | A   B   | 1024 threads/core | 1864 GFLOPS
+     problemSize =  256 | A   B^T | 1024 threads/core | 2047 GFLOPS
+     problemSize =  256 | A^T B   | 1024 threads/core | 1800 GFLOPS
+     problemSize =  256 | A^T B^T | 1024 threads/core | 1821 GFLOPS
+     problemSize =  257 | A   B   | 1024 threads/core | 1417 GFLOPS
+     problemSize =  257 | A   B^T | 1024 threads/core | 1471 GFLOPS
+     problemSize =  257 | A^T B   | 1024 threads/core | 1507 GFLOPS
+     problemSize =  257 | A^T B^T | 1024 threads/core | 1392 GFLOPS
+     
+     problemSize =  511 | A   B   | 1024 threads/core | 2846 GFLOPS
+     problemSize =  511 | A   B^T | 1024 threads/core | 2870 GFLOPS
+     problemSize =  511 | A^T B   | 1024 threads/core | 2792 GFLOPS
+     problemSize =  511 | A^T B^T | 1024 threads/core | 2890 GFLOPS
+     problemSize =  512 | A   B   | 1024 threads/core | 2991 GFLOPS
+     problemSize =  512 | A   B^T | 1024 threads/core | 3027 GFLOPS
+     problemSize =  512 | A^T B   | 1024 threads/core | 2887 GFLOPS
+     problemSize =  512 | A^T B^T | 1024 threads/core | 2839 GFLOPS
+     problemSize =  513 | A   B   | 1024 threads/core | 2587 GFLOPS
+     problemSize =  513 | A   B^T | 1024 threads/core | 2573 GFLOPS
+     problemSize =  513 | A^T B   | 1024 threads/core | 2464 GFLOPS
+     problemSize =  513 | A^T B^T | 1024 threads/core | 2500 GFLOPS
+     
+     problemSize = 1023 | A   B   | 1024 threads/core | 3346 GFLOPS
+     problemSize = 1023 | A   B^T | 1024 threads/core | 3297 GFLOPS
+     problemSize = 1023 | A^T B   | 1024 threads/core | 3316 GFLOPS
+     problemSize = 1023 | A^T B^T | 1024 threads/core | 3240 GFLOPS
+     problemSize = 1024 | A   B   | 1024 threads/core | 3319 GFLOPS
+     problemSize = 1024 | A   B^T | 1024 threads/core | 3329 GFLOPS
+     problemSize = 1024 | A^T B   | 1024 threads/core | 3296 GFLOPS
+     problemSize = 1024 | A^T B^T | 1024 threads/core | 3231 GFLOPS
+     problemSize = 1025 | A   B   | 1024 threads/core | 3170 GFLOPS
+     problemSize = 1025 | A   B^T | 1024 threads/core | 3108 GFLOPS
+     problemSize = 1025 | A^T B   | 1024 threads/core | 3142 GFLOPS
+     problemSize = 1025 | A^T B^T | 1024 threads/core | 3067 GFLOPS
+     
+     problemSize = 1488 | A   B   | 1024 threads/core | 3353 GFLOPS
+     problemSize = 1488 | A   B^T | 1024 threads/core | 3324 GFLOPS
+     problemSize = 1488 | A^T B   | 1024 threads/core | 3338 GFLOPS
+     problemSize = 1488 | A^T B^T | 1024 threads/core | 3288 GFLOPS
+     problemSize = 1489 | A   B   | 1024 threads/core | 3373 GFLOPS
+     problemSize = 1489 | A   B^T | 1024 threads/core | 3318 GFLOPS
+     problemSize = 1489 | A^T B   | 1024 threads/core | 3344 GFLOPS
+     problemSize = 1489 | A^T B^T | 1024 threads/core | 3269 GFLOPS
+     
+     */
+    
+    /*
+     After a more complex heuristic, which eliminates the regression
+     
+     FP32
+     
+     problemSize =  255 | A   B   | 1024 threads/core | 1583 GFLOPS
+     problemSize =  255 | A   B^T | 1024 threads/core | 1705 GFLOPS
+     problemSize =  255 | A^T B   | 1024 threads/core | 1643 GFLOPS
+     problemSize =  255 | A^T B^T | 1024 threads/core | 1575 GFLOPS
+     problemSize =  256 | A   B   | 1024 threads/core | 1746 GFLOPS
+     problemSize =  256 | A   B^T | 1024 threads/core | 1853 GFLOPS
+     problemSize =  256 | A^T B   | 1024 threads/core | 1809 GFLOPS
+     problemSize =  256 | A^T B^T | 1024 threads/core | 1767 GFLOPS
+     problemSize =  257 | A   B   | 1024 threads/core | 1365 GFLOPS
+     problemSize =  257 | A   B^T | 1024 threads/core | 1509 GFLOPS
+     problemSize =  257 | A^T B   | 1024 threads/core | 1350 GFLOPS
+     problemSize =  257 | A^T B^T | 1024 threads/core | 1446 GFLOPS
+     
+     problemSize =  511 | A   B   | 1024 threads/core | 2698 GFLOPS
+     problemSize =  511 | A   B^T | 1024 threads/core | 2715 GFLOPS
+     problemSize =  511 | A^T B   | 1024 threads/core | 2667 GFLOPS
+     problemSize =  511 | A^T B^T | 1024 threads/core | 2654 GFLOPS
+     problemSize =  512 | A   B   | 1024 threads/core | 2796 GFLOPS
+     problemSize =  512 | A   B^T | 1024 threads/core | 2808 GFLOPS
+     problemSize =  512 | A^T B   | 1024 threads/core | 2746 GFLOPS
+     problemSize =  512 | A^T B^T | 1024 threads/core | 2711 GFLOPS
+     problemSize =  513 | A   B   | 1024 threads/core | 2367 GFLOPS
+     problemSize =  513 | A   B^T | 1024 threads/core | 2379 GFLOPS
+     problemSize =  513 | A^T B   | 1024 threads/core | 2332 GFLOPS
+     problemSize =  513 | A^T B^T | 1024 threads/core | 2323 GFLOPS
+     
+     problemSize = 1023 | A   B   | 1024 threads/core | 3033 GFLOPS
+     problemSize = 1023 | A   B^T | 1024 threads/core | 2812 GFLOPS
+     problemSize = 1023 | A^T B   | 1024 threads/core | 2999 GFLOPS
+     problemSize = 1023 | A^T B^T | 1024 threads/core | 2968 GFLOPS
+     problemSize = 1024 | A   B   | 1024 threads/core | 3081 GFLOPS
+     problemSize = 1024 | A   B^T | 1024 threads/core | 3048 GFLOPS
+     problemSize = 1024 | A^T B   | 1024 threads/core | 3022 GFLOPS
+     problemSize = 1024 | A^T B^T | 1024 threads/core | 2993 GFLOPS
+     problemSize = 1025 | A   B   | 1024 threads/core | 2856 GFLOPS
+     problemSize = 1025 | A   B^T | 1024 threads/core | 2635 GFLOPS
+     problemSize = 1025 | A^T B   | 1024 threads/core | 2830 GFLOPS
+     problemSize = 1025 | A^T B^T | 1024 threads/core | 2801 GFLOPS
+     
+     problemSize = 1488 | A   B   | 1024 threads/core | 3073 GFLOPS
+     problemSize = 1488 | A   B^T | 1024 threads/core | 3041 GFLOPS
+     problemSize = 1488 | A^T B   | 1024 threads/core | 3053 GFLOPS
+     problemSize = 1488 | A^T B^T | 1024 threads/core | 2962 GFLOPS
+     problemSize = 1489 | A   B   | 1024 threads/core | 3031 GFLOPS
+     problemSize = 1489 | A   B^T | 1024 threads/core | 2787 GFLOPS
+     problemSize = 1489 | A^T B   | 1024 threads/core | 3003 GFLOPS
+     problemSize = 1489 | A^T B^T | 1024 threads/core | 2977 GFLOPS
+     
+     BF16
+     
+     problemSize =  255 | A   B   | 1024 threads/core | 1767 GFLOPS
+     problemSize =  255 | A   B^T | 1024 threads/core | 1829 GFLOPS
+     problemSize =  255 | A^T B   | 1024 threads/core | 1658 GFLOPS
+     problemSize =  255 | A^T B^T | 1024 threads/core | 1683 GFLOPS
+     problemSize =  256 | A   B   | 1024 threads/core | 1834 GFLOPS
+     problemSize =  256 | A   B^T | 1024 threads/core | 2144 GFLOPS
+     problemSize =  256 | A^T B   | 1024 threads/core | 1759 GFLOPS
+     problemSize =  256 | A^T B^T | 1024 threads/core | 1844 GFLOPS
+     problemSize =  257 | A   B   | 1024 threads/core | 1383 GFLOPS
+     problemSize =  257 | A   B^T | 1024 threads/core | 1544 GFLOPS
+     problemSize =  257 | A^T B   | 1024 threads/core | 1403 GFLOPS
+     problemSize =  257 | A^T B^T | 1024 threads/core | 1398 GFLOPS
+     
+     problemSize =  511 | A   B   | 1024 threads/core | 2865 GFLOPS
+     problemSize =  511 | A   B^T | 1024 threads/core | 2901 GFLOPS
+     problemSize =  511 | A^T B   | 1024 threads/core | 2801 GFLOPS
+     problemSize =  511 | A^T B^T | 1024 threads/core | 2797 GFLOPS
+     problemSize =  512 | A   B   | 1024 threads/core | 2990 GFLOPS
+     problemSize =  512 | A   B^T | 1024 threads/core | 3010 GFLOPS
+     problemSize =  512 | A^T B   | 1024 threads/core | 2913 GFLOPS
+     problemSize =  512 | A^T B^T | 1024 threads/core | 2864 GFLOPS
+     problemSize =  513 | A   B   | 1024 threads/core | 2564 GFLOPS
+     problemSize =  513 | A   B^T | 1024 threads/core | 2567 GFLOPS
+     problemSize =  513 | A^T B   | 1024 threads/core | 2527 GFLOPS
+     problemSize =  513 | A^T B^T | 1024 threads/core | 2465 GFLOPS
+     
+     problemSize = 1023 | A   B   | 1024 threads/core | 3346 GFLOPS
+     problemSize = 1023 | A   B^T | 1024 threads/core | 3294 GFLOPS
+     problemSize = 1023 | A^T B   | 1024 threads/core | 3316 GFLOPS
+     problemSize = 1023 | A^T B^T | 1024 threads/core | 3269 GFLOPS
+     problemSize = 1024 | A   B   | 1024 threads/core | 3328 GFLOPS
+     problemSize = 1024 | A   B^T | 1024 threads/core | 3331 GFLOPS
+     problemSize = 1024 | A^T B   | 1024 threads/core | 3298 GFLOPS
+     problemSize = 1024 | A^T B^T | 1024 threads/core | 3232 GFLOPS
+     problemSize = 1025 | A   B   | 1024 threads/core | 3169 GFLOPS
+     problemSize = 1025 | A   B^T | 1024 threads/core | 3114 GFLOPS
+     problemSize = 1025 | A^T B   | 1024 threads/core | 3137 GFLOPS
+     problemSize = 1025 | A^T B^T | 1024 threads/core | 3090 GFLOPS
+     
+     problemSize = 1488 | A   B   | 1024 threads/core | 3353 GFLOPS
+     problemSize = 1488 | A   B^T | 1024 threads/core | 3325 GFLOPS
+     problemSize = 1488 | A^T B   | 1024 threads/core | 3339 GFLOPS
+     problemSize = 1488 | A^T B^T | 1024 threads/core | 3290 GFLOPS
+     problemSize = 1489 | A   B   | 1024 threads/core | 3377 GFLOPS
+     problemSize = 1489 | A   B^T | 1024 threads/core | 3313 GFLOPS
+     problemSize = 1489 | A^T B   | 1024 threads/core | 3343 GFLOPS
+     problemSize = 1489 | A^T B^T | 1024 threads/core | 3298 GFLOPS
+     
+     */
+    
     // Working on investigating BF16 performance with large matrices.
     print()
     print("Performance tests:")
-    for problemSize in 1488...1489 {
+    for problemSize in 511...513 {
       for transposeState in transposeStates {
         var testDescriptor = TestDescriptor()
         testDescriptor.precision = .BF16
@@ -203,7 +518,8 @@ func profileProblemSize(
   var occupancy: Int = .zero
   do {
     // Generate the kernel.
-    let (kernel, pipeline) = GEMMKernel.fetchKernel(descriptor: descriptor)
+    GEMMKernel.register(descriptor: descriptor)
+    let (kernel, pipeline) = GEMMKernel.pipelineCache[descriptor]!
     occupancy = pipeline.maxTotalThreadsPerThreadgroup
     
     // Create the buffers.

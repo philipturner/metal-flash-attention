@@ -25,7 +25,7 @@ extension AttentionKernel {
       if type == .load {
         return """
         
-        simdgroup_matrix_storage<float> \
+        simdgroup_matrix_storage<\(registerName(operand))> \
         \(operand)_sram[\(paddedHeadDimension / 8)];
         
         """
@@ -41,10 +41,11 @@ extension AttentionKernel {
         threadgroup_barrier(mem_flags::mem_threadgroup);
         if (sidx == 0) {
           uint2 \(operand)_offset(d_outer, \(parallelizationGroupOffset));
-          auto src = simdgroup_matrix_storage<float>::apply_offset(
+          auto src = simdgroup_matrix_storage<\(memoryName(operand))>
+          ::apply_offset(
             \(operand), \(leadingDimension(operand)),
             \(operand)_offset, \(transposed(operand)));
-          auto dst = (threadgroup float*)(threadgroup_block);
+          auto dst = (threadgroup \(memoryName(operand))*)(threadgroup_block);
           
           ushort D_src_dimension = min(
             ushort(\(blockDimensions.head)),
@@ -73,8 +74,9 @@ extension AttentionKernel {
         threadgroup_barrier(mem_flags::mem_threadgroup);
         if (sidx == 0) {
           uint2 \(operand)_offset(d_outer, \(parallelizationGroupOffset));
-          auto src = (threadgroup float*)(threadgroup_block);
-          auto dst = simdgroup_matrix_storage<float>::apply_offset(
+          auto src = (threadgroup \(memoryName(operand))*)(threadgroup_block);
+          auto dst = simdgroup_matrix_storage<\(memoryName(operand))>
+          ::apply_offset(
             \(operand), \(leadingDimension(operand)),
             \(operand)_offset, \(transposed(operand)));
           
@@ -117,7 +119,8 @@ extension AttentionKernel {
         uint2 \(operand)_src_offset(
           morton_offset.x + d_outer,
           \(clampedParallelizationThreadOffset));
-        auto \(operand)_src = simdgroup_matrix_storage<float>::apply_offset(
+        auto \(operand)_src = simdgroup_matrix_storage<\(memoryName(operand))>
+        ::apply_offset(
           \(operand), \(leadingDimension(operand)),
           \(operand)_src_offset, \(transposed(operand)));
         
@@ -126,9 +129,13 @@ extension AttentionKernel {
         return """
         
         ushort2 \(operand)_block_offset(
-          morton_offset.x, morton_offset.y + sidx * 8);
-        auto \(operand)_src = (threadgroup float*)(threadgroup_block);
-        \(operand)_src = simdgroup_matrix_storage<float>::apply_offset(
+          morton_offset.x, 
+          morton_offset.y + sidx * 8);
+        auto \(operand)_src =
+        (threadgroup \(memoryName(operand))*)(threadgroup_block);
+        
+        \(operand)_src = simdgroup_matrix_storage<\(memoryName(operand))>
+        ::apply_offset(
           \(operand)_src, \(leadingBlockDimension(operand)),
           \(operand)_block_offset, \(transposed(operand)));
         threadgroup_barrier(mem_flags::mem_threadgroup);
@@ -149,10 +156,10 @@ extension AttentionKernel {
         
         #pragma clang loop unroll(full)
         for (ushort d = \(headStart); d < \(headEnd); d += 8) {
-          ushort2 origin(d, 0);
-          \(operand)_sram[(d_outer + d) / 8].load(
+          ushort2 \(operand)_origin(d, 0);
+          \(operand)_sram[(d_outer + d) / 8].\(loadFunction(operand))(
             \(operand)_src, \(leadingDimensionOperand(descriptor)),
-            origin, \(transposed(operand)));
+            \(operand)_origin, \(transposed(operand)));
         }
         
         """
@@ -161,10 +168,10 @@ extension AttentionKernel {
         
         #pragma clang loop unroll(full)
         for (ushort d = \(headStart); d < \(headEnd); d += 8) {
-          ushort2 origin(d, 0);
-          \(operand)_sram[(d_outer + d) / 8].store(
+          ushort2 \(operand)_origin(d, 0);
+          \(operand)_sram[(d_outer + d) / 8].\(storeFunction(operand))(
             \(operand)_src, \(leadingDimensionOperand(descriptor)),
-            origin, \(transposed(operand)));
+            \(operand)_origin, \(transposed(operand)));
         }
         
         """
@@ -281,7 +288,7 @@ extension AttentionKernel {
     func allocate(operand: AttentionOperand) -> String {
       """
       
-      simdgroup_matrix_storage<float> \
+      simdgroup_matrix_storage<\(registerName(operand))> \
       \(operand)_sram[\(paddedHeadDimension / 8)];
       
       """
@@ -315,6 +322,14 @@ extension AttentionKernel {
       if cached(.dQ) {
         output += allocate(operand: .dQ)
       }
+      
+      guard let memoryPrecisionL = memoryPrecisions[.L],
+            memoryPrecisionL != .BF16 else {
+        fatalError("Invalid memory precision for L.")
+      }
+      
+      // L is always either FP16 or FP32, so we don't need custom type
+      // conversion code here.
       output += """
       
       float L_sram = L[\(clampedParallelizationThreadOffset)];
@@ -346,30 +361,53 @@ extension AttentionKernel {
     var output: String = ""
     
     switch type {
-    case .forward(let computeL):
+    case .forward:
       if cached(.O) {
         output += cache(operand: .O, type: .store)
       }
-      if computeL {
-        output += """
-        
-        if (\(unsafeParallelizationThreadOffset) < \(parallelizationDimension)) {
-          // Premultiplied by M_LOG2E_F.
-          float L_sram = m + fast::log2(l);
-          L[\(clampedParallelizationThreadOffset)] = L_sram;
-        }
-        
-        """
+      
+      // L is always either FP16 or FP32, so we don't need custom type
+      // conversion code here.
+      output += """
+      
+      if (\(unsafeParallelizationThreadOffset) < \(parallelizationDimension)) {
+        // Premultiplied by log_base_2(e).
+        float L_sram = m + fast::log2(l);
+        L[\(clampedParallelizationThreadOffset)] = L_sram;
       }
+      
+      """
       
     case .backwardQuery:
       if cached(.dQ) {
         output += cache(operand: .dQ, type: .store)
       }
+      
+      // Cast D from FP32 to potentially BF16.
+      func storeD() -> String {
+        switch memoryPrecisions[.D] {
+        case .FP32:
+          return """
+          
+          D[\(clampedParallelizationThreadOffset)] = D_sram;
+          
+          """
+        case .BF16:
+          return """
+          
+          bfloat2 registerForm = *(thread bfloat2*)(&D_sram);
+          bfloat memoryForm = registerForm[1];
+          D[\(clampedParallelizationThreadOffset)] = memoryForm;
+          
+          """
+        default:
+          fatalError("Invalid memory precision for D.")
+        }
+      }
       output += """
       
       if (\(unsafeParallelizationThreadOffset) < \(parallelizationDimension)) {
-        D[\(clampedParallelizationThreadOffset)] = D_sram;
+        \(storeD())
       }
       
       """
