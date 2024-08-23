@@ -63,7 +63,7 @@ final class AdversarialShapeTest: XCTestCase {
   }
 }
 
-// Run a test with the specified configuration.
+/// Run a test with the specified configuration.
 private func runCorrectnessTest(descriptor: GEMMDescriptor) {
   guard let leadingDimensions = descriptor.leadingDimensions,
         let matrixDimensions = descriptor.matrixDimensions,

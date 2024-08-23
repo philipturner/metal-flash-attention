@@ -8,7 +8,7 @@
 // Top level specification of the code structure.
 
 extension AttentionKernel {
-  func createSource() -> String {
+  public func createSource() -> String {
     func createLoop() -> String {
       switch type {
       case .forward:

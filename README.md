@@ -22,3 +22,5 @@ Portability:
 - Refactor into a Swift package with a separate module for tests?
   - The benchmark needs to be documented somewhere, so somebody can copy the raw code into a new Xcodeproj for iOS.
   - Minimal examples of the benchmarks that don't actually measure problems large enough to get performance statistics?
+
+Document the need for `-Xswiftc -Onone`, how to force it to be done on iOS.

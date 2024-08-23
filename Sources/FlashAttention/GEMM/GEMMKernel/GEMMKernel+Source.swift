@@ -6,7 +6,7 @@
 //
 
 extension GEMMKernel {
-  func createSource() -> String {
+  public func createSource() -> String {
     return """
 
 \(createMetalSimdgroupEvent())

@@ -5,25 +5,25 @@
 //  Created by Philip Turner on 6/28/24.
 //
 
-struct AttentionKernelDescriptor {
-  var blockDimensions: (
+public struct AttentionKernelDescriptor {
+  public var blockDimensions: (
     parallelization: UInt16, traversal: UInt16, head: UInt16)?
   
   /// Whether each operand is cached in registers.
-  var cacheState: [AttentionOperand: Bool] = [:]
+  public var cacheState: [AttentionOperand: Bool] = [:]
   
   /// Required. The problem size along the head dimension.
-  var headDimension: UInt16?
+  public var headDimension: UInt16?
   
-  var memoryPrecisions: [AttentionOperand: GEMMOperandPrecision] = [:]
+  public var memoryPrecisions: [AttentionOperand: GEMMOperandPrecision] = [:]
   
   /// Reads with a one-to-one mapping to threads (like GEMM store) and writes.
-  var preferAsyncCache: Bool?
+  public var preferAsyncCache: Bool?
   
   /// Reads that are shared among threads (like GEMM load).
-  var preferAsyncLoad: Bool?
+  public var preferAsyncLoad: Bool?
   
-  var registerPrecisions: [AttentionOperand: GEMMOperandPrecision] = [:]
+  public var registerPrecisions: [AttentionOperand: GEMMOperandPrecision] = [:]
   
   /// Whether each operand is transposed in RAM.
   ///
@@ -39,7 +39,11 @@ struct AttentionKernelDescriptor {
   /// state is `false`, change the stride from `D` to `D * H`. Ensure the
   /// value of H is known at compile time, so the product `D * H` can be
   /// embedded into the GPU assembly code.
-  var transposeState: [AttentionOperand: Bool] = [:]
+  public var transposeState: [AttentionOperand: Bool] = [:]
   
-  var type: AttentionKernelType?
+  public var type: AttentionKernelType?
+  
+  public init() {
+    
+  }
 }

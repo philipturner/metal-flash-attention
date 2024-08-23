@@ -7,7 +7,7 @@
 
 // Declaration of the attention kernel data structure.
 
-struct AttentionKernel {
+public struct AttentionKernel {
   var type: AttentionKernelType
   
   // Categorical attributes for each operand.
@@ -19,12 +19,12 @@ struct AttentionKernel {
   var transposeState: [AttentionOperand: Bool]
   
   // Layout of the data in registers and threadgroup memory.
-  var blockDimensions: (
+  public var blockDimensions: (
     parallelization: UInt16, traversal: UInt16, head: UInt16)
   var headDimension: UInt16
-  var threadgroupMemoryAllocation: UInt16
+  public var threadgroupMemoryAllocation: UInt16
   
-  init(descriptor: AttentionKernelDescriptor) {
+  public init(descriptor: AttentionKernelDescriptor) {
     guard let blockDimensions = descriptor.blockDimensions,
           let headDimension = descriptor.headDimension,
           let preferAsyncCache = descriptor.preferAsyncCache,
@@ -265,7 +265,7 @@ extension AttentionKernel {
     return output
   }
   
-  var threadgroupSize: UInt16 {
+  public var threadgroupSize: UInt16 {
     32 * (blockDimensions.parallelization / 8)
   }
   

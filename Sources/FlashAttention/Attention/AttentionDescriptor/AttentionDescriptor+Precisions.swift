@@ -6,7 +6,9 @@
 //
 
 extension AttentionDescriptor {
-  func memoryPrecisions() -> [AttentionOperand: GEMMOperandPrecision] {
+  public func memoryPrecisions() -> [
+    AttentionOperand: GEMMOperandPrecision
+  ] {
     var memoryPrecisions: [AttentionOperand: GEMMOperandPrecision] = [:]
     
     if lowPrecisionInputs {
@@ -144,7 +146,9 @@ extension AttentionDescriptor {
     return memoryPrecisions
   }
   
-  func registerPrecisions() -> [AttentionOperand: GEMMOperandPrecision] {
+  public func registerPrecisions() -> [
+    AttentionOperand: GEMMOperandPrecision
+  ] {
     var registerPrecisions: [AttentionOperand: GEMMOperandPrecision] = [:]
     
     // Query whether the hardware fuses the promotion of BF16 to FP32 with

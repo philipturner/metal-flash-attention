@@ -7,23 +7,27 @@
 
 import Metal
 
-struct AttentionDescriptor {
+public struct AttentionDescriptor {
   // Q, K, V, dO
-  var lowPrecisionInputs: Bool = false
+  public var lowPrecisionInputs: Bool = false
   
   // S, P, L, D, dP, dS
-  var lowPrecisionIntermediates: Bool = false
+  public var lowPrecisionIntermediates: Bool = false
   
-  var matrixDimensions: (R: UInt32, C: UInt32, D: UInt16)?
+  public var matrixDimensions: (R: UInt32, C: UInt32, D: UInt16)?
   
-  var transposeState: (Q: Bool, K: Bool, V: Bool, O: Bool)?
+  public var transposeState: (Q: Bool, K: Bool, V: Bool, O: Bool)?
+  
+  public init() {
+    
+  }
 }
 
 extension AttentionDescriptor {
   /// Initialize the kernel descriptor using another descriptor, which just
   /// specifies the problem size. Then, forget the information about problem
   /// size.
-  func kernelDescriptor(
+  public func kernelDescriptor(
     type: AttentionKernelType
   ) -> AttentionKernelDescriptor {
     // Fetch the kernel-specific parameters.
@@ -129,7 +133,7 @@ extension AttentionDescriptor {
   // You can initialize a MTLFunctionConstantValues object once, then recycle
   // it for all three kernels when gradient is requested. This may simplify
   // the code or incrementally reduce the compilation latency.
-  func setFunctionConstants(_ constants: MTLFunctionConstantValues) {
+  public func setFunctionConstants(_ constants: MTLFunctionConstantValues) {
     guard let matrixDimensions = self.matrixDimensions else {
       fatalError("Descriptor was incomplete.")
     }

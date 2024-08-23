@@ -6,7 +6,7 @@
 //
 
 /// The memory allocations used in attention kernels.
-enum AttentionOperand: Hashable, Equatable, CustomStringConvertible {
+public enum AttentionOperand: Hashable, Equatable, CustomStringConvertible {
   case Q
   case K
   case S
@@ -28,7 +28,7 @@ enum AttentionOperand: Hashable, Equatable, CustomStringConvertible {
   ///
   /// Since the `AttentionOperand` type conforms to `CustomStringConvertible`,
   /// the name can be injected through string interpolation.
-  var description: String {
+  public var description: String {
     switch self {
     case .Q: return "Q"
     case .K: return "K"
@@ -49,7 +49,7 @@ enum AttentionOperand: Hashable, Equatable, CustomStringConvertible {
     }
   }
   
-  var bufferBinding: UInt8? {
+  public var bufferBinding: UInt8? {
     switch self {
     case .Q: return 0
     case .K: return 1

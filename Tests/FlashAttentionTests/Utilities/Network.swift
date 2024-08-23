@@ -161,7 +161,6 @@ extension Network {
     
     // Log-Sum-Exp
     let lse = maximum + log(sum)
-    
     for columnID in 0..<N {
       let value = scaleFactor * output[columnID]
       let expTerm = exp(value - lse)
@@ -281,6 +280,7 @@ extension Network {
     for rowID in 0..<N {
       let matrixPRow = createMatrixPRow(rowID: rowID)
       
+      // P * V
       var matrixORow = [Float](repeating: .zero, count: D)
       for d in 0..<D {
         var dotProduct: Float = .zero
