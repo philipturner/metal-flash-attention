@@ -128,12 +128,33 @@ let ginstrs = Int(instrs / 1e9)
 | M1 Max   | 10616  | 5308    |
 | M4       | 3580   | 1790    |
 
-How well does the Metal port compare to the official FlashAttention repository? Imagine I went with the "atomic dQ" algorithm and achieved 100% performance. Then, switched to the actual MFA repo and found model training to be 4x slower. That would be 25% of the roofline from the official repository. To get this percentage, multiply the average ALU utilization across all three kernels by `7 / 9`.
+How well does the Metal port compare to the official FlashAttention repository? Imagine I went with the "atomic dQ" algorithm and achieved 100% performance. Then, switched to the actual MFA repo and found model training to be 4x slower. That would be 25% of the roofline from the official repository. To get this percentage, multiply the average ALU utilization across all three kernels by `7 / 9`. A more nuanced model was used for the statistics on Apple hardware, but this is the gist of it.
 
-| A100 SXM, Flash2   | D = 64  | D = 128 | D = 256 |
+To calculate utilization on Nvidia hardware, the GFLOPS for FP16/BF16 was used. I divided the GFLOPS from the graph in the paper by 312000 (A100 SXM), 989000 (H100 SXM). Even for the FP8 data points. Keeping the denominator constant makes it easier to compare FP16 to FP8. Notice that, for larger head dimensions and more register pressure heavy kernels (backward), no benchmarks we reported. Perhaps because the main repo has not yet solved the register pressure issue at infinite head dimensions. For example, the accumulator might always be held in registers.
+
+### GFLOPS
+
+| A100, Flash2       | D = 64  | D = 128 | D = 256 |
 | :----------------- | ------: | ------: | ------: |
-| Forward            | 62%     | 71%     | n/a     |
-| Forward + Backward | 56%     | 65%     | n/a     |
+| Forward            | 192000  | 223000  | n/a     |
+| Backward           | 170000  | 196000  | n/a     |
+| Forward + Backward | 176000  | 203000  | n/a     |
+
+| H100, Flash3       | D = 64  | D = 128 | D = 256 |
+| :----------------- | ------: | ------: | ------: |
+| Forward (FP8)      | 613000  | 1008000 | 1171000 |
+| Forward            | 497000  | 648000  | 756000  |
+| Backward (FP8)     | n/a     | n/a     | n/a     |
+| Backward           | 474000  | 561000  | n/a     |
+| Forward + Backward (FP8) | n/a  | n/a  | n/a     |
+| Forward + Backward | 480000  | 585000  | n/a     |
+
+### Compute Utilization
+
+| A100, Flash2       | D = 64  | D = 128 | D = 256 |
+| :----------------- | ------: | ------: | ------: |
+| Forward            |
+| Forward + Backward |
 
 ## Usage
 
