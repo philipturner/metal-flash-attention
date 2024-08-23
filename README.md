@@ -48,7 +48,7 @@ Due to the complexity of FP32 atomics, MFA used a different approach for backwar
 <details>
 <summary>Algorithm Pseudocode</summary>
 
-```
+```swift
 // Forward
 //   for c in 0..<C {
 //     load K[c]
@@ -101,7 +101,32 @@ Due to the complexity of FP32 atomics, MFA used a different approach for backwar
 
 </details>
 
-There are limits to the performance model - M3 generation at small head dimensions.
+Performance is measured by calculating the amount of compute work, then dividing by seconds. The end result is "gigainstructions per second". Next, we need a roofline model. The table below shows rooflines for GINSTRS, calculated as half of GFLOPS. There are limits to this model. It breaks down with the M3 generation at small head dimensions. Different compute units might be utilized simultaneously, making the apparent utilization over 100%. For the most part, the benchmark provides an accurate model of how much performance is left on the table.
+
+```swift
+var operations: Int
+switch benchmarkedKernel {
+case .forward:
+  operations = 2 * headDimension + 5
+case .backwardQuery:
+  operations = 3 * headDimension + 5
+case .backwardKeyValue:
+  operations = 4 * headDimension + 5
+}
+operations *= (sequenceDimension * sequenceDimension)
+operations *= dispatchCount
+
+// Divide the work by the latency, resulting in throughput.
+let instrs = Double(operations) / Double(latencySeconds)
+let ginstrs = Int(instrs / 1e9)
+```
+
+| Hardware | GFLOPS | GINSTRS |
+| :------- | :----: | :-----: |
+| M1 Max   | 10616  | 5308    |
+| M4       | 3580   | 1790    |
+
+How well does the Metal port compare to the official FlashAttention repository? Imagine I went with the "atomic dQ" algorithm and achieved 100% performance. Then, switched to the actual MFA repo and found model training to be 4x slower. That would be 25% of the roofline from the official repository.
 
 ## Usage
 
