@@ -12,11 +12,15 @@ The backward pass uses less memory than [Dao-AILab/flash-attention](https://gith
 
 A lot of crazy stuff was done to overcome register pressure bottlenecks. At large head dimensions (e.g. 256), none of the matrix blocks can fit into registers. Not even the accumulator can. Therefore, intentional register spilling is done, but in a more optimized way. A third block dimension was added to the attention algorithm, which blocks along `D`. The aspect ratio of attention matrix blocks was warped heavily, to minimize the bandwidth cost of register spilling. For example, 16-32 along the parallelization dimension and 80-128 along the traversal dimension. There is a large parameter file that takes the `D` dimension, and determines which operands can fit into registers. It then assigns a block size that balances many competing bottlenecks.
 
-The end result is a consistent 4500 gigainstructions per second (80% ALU utilization) on M1 Max, at infinite sequence length and infinite head dimension.
+The end result is a consistent 4500 gigainstructions per second on M1 Max (80% ALU utilization), at infinite sequence length and infinite head dimension.
 
-TODO: Add Images
+![M1_Max_Image.png](./Documentation/M1_Max_Image.png)
+
+![M4_Image.png](./Documentation/M4_Image.png)
 
 Raw Data: https://docs.google.com/spreadsheets/d/1Xf4jrJ7e19I32J1IWIekGE9uMFTeZKoOpQ6hlUoh-xY/edit?usp=sharing
+
+## Quantifying Performance
 
 TODO: Explain roofline model
 
@@ -45,7 +49,6 @@ Locate of the multi-line string literals in either of these folders:
 ```
 Sources/FlashAttention/Attention/AttentionKernel
 Sources/FlashAttention/GEMM/GEMMKernel
-
 ```
 
 Add random text to one of them. Compile and run the project again. Something should go terribly wrong. For example, the Metal compiler may throw an error. If this does not happen, try messing up a different line of code somewher else. If the test still passes, Xcode is not registering your changes.
