@@ -12,7 +12,7 @@ The backward pass uses less memory than [Dao-AILab/flash-attention](https://gith
 
 A lot of crazy stuff was done to overcome register pressure bottlenecks. At large head dimensions (e.g. 256), none of the matrix blocks can fit into registers. Not even the accumulator can. Therefore, intentional register spilling is done, but in a more optimized way. A third block dimension was added to the attention algorithm, which blocks along `D`. The aspect ratio of attention matrix blocks was warped heavily, to minimize the bandwidth cost of register spilling. For example, 16-32 along the parallelization dimension and 80-128 along the traversal dimension. There is a large parameter file that takes the `D` dimension, and determines which operands can fit into registers. It then assigns a block size that balances many competing bottlenecks.
 
-The end result is a consistent 4500 gigainstructions per second on M1 Max (80% ALU utilization), at infinite sequence length and infinite head dimension. Provided BF16 emulation is being used for mixed precision (Metal's `bfloat` has IEEE-compliant rounding, a major overhead on older chips without hardware BF16).
+The end result is a consistent 4400 gigainstructions per second on M1 Max (83% ALU utilization), at infinite sequence length and infinite head dimension. Provided BF16 emulation is being used for mixed precision (Metal's `bfloat` has IEEE-compliant rounding, a major overhead on older chips without hardware BF16).
 
 ![M1_Max_Image.png](./Documentation/M1_Max_Image.png)
 
@@ -130,34 +130,51 @@ let ginstrs = Int(instrs / 1e9)
 
 How well does the Metal port compare to the official FlashAttention repository? Imagine I went with the "atomic dQ" algorithm and achieved 100% performance. Then, switched to the actual MFA repo and found model training to be 4x slower. That would be 25% of the roofline from the official repository. To get this percentage, multiply the average ALU utilization across all three kernels by `7 / 9`. A more nuanced model was used for the statistics on Apple hardware, but this is the gist of it.
 
-To calculate utilization on Nvidia hardware, the GFLOPS for FP16/BF16 was used. I divided the GFLOPS from the graph in the paper by 312000 (A100 SXM), 989000 (H100 SXM). Notice that, for larger head dimensions and more register pressure heavy kernels (backward), no benchmarks we reported. Perhaps because they did not solve the register pressure issue at infinite head dimensions. For example, the accumulator might always be held in registers.
+To calculate utilization of Nvidia hardware, I used GFLOPS for FP16/BF16 ALUs. I divided the highest GFLOPS from each graph in the paper by 312000 (A100 SXM), 989000 (H100 SXM). Notice that, for larger head dimensions and register intensive kernels (backward pass), no benchmarks were reported. Perhaps because they did not solve the register pressure issue at infinite head dimensions. For example, the accumulator might always be held in registers.
 
 ### GFLOPS
 
-| A100, Flash2       | D = 64  | D = 128 | D = 256 |
+| A100, Flash2, FP16 | D = 64  | D = 128 | D = 256 |
 | :----------------- | ------: | ------: | ------: |
 | Forward            | 192000  | 223000  | n/a     |
 | Backward           | 170000  | 196000  | n/a     |
 | Forward + Backward | 176000  | 203000  | n/a     |
 
-| H100, Flash3       | D = 64  | D = 128 | D = 256 |
+| H100, Flash3, FP16 | D = 64  | D = 128 | D = 256 |
 | :----------------- | ------: | ------: | ------: |
 | Forward            | 497000  | 648000  | 756000  |
 | Backward           | 474000  | 561000  | n/a     |
 | Forward + Backward | 480000  | 585000  | n/a     |
 
-| H100, Flash3       | D = 64  | D = 128 | D = 256 |
+| H100, Flash3, FP8  | D = 64  | D = 128 | D = 256 |
 | :----------------- | ------: | ------: | ------: |
-| Forward (FP8)      | 613000  | 1008000 | 1171000 |
-| Backward (FP8)     | n/a     | n/a     | n/a     |
-| Forward + Backward (FP8) | n/a  | n/a  | n/a     |
+| Forward            | 613000  | 1008000 | 1171000 |
+| Backward           | n/a     | n/a     | n/a     |
+| Forward + Backward | n/a     | n/a     | n/a     |
 
 ### Compute Utilization
 
-| A100, Flash2       | D = 64  | D = 128 | D = 256 |
+| A100, Flash2, FP16 | D = 64  | D = 128 | D = 256 |
 | :----------------- | ------: | ------: | ------: |
-| Forward            |
-| Forward + Backward |
+| Forward            | 62%     | 71%     | n/a     |
+| Forward + Backward | 56%     | 65%     | n/a     |
+
+| H100, Flash2, FP16 | D = 64  | D = 128 | D = 256 |
+| :----------------- | ------: | ------: | ------: |
+| Forward            | 50%     | 66%     | 76%     |
+| Forward + Backward | 48%     | 59%     | n/a     |
+
+| M1 Architecture, FP16 | D = 64  | D = 128 | D = 256 |
+| :-------------------- | ------: | ------: | ------: |
+| Forward               | 89%     | 87%     | 87%     |
+| Forward + Backward    | 62%     | 63%     | 64%     |
+
+| M3 Architecture, FP16 | D = 64  | D = 128 | D = 256 |
+| :-------------------- | ------: | ------: | ------: |
+| Forward               | 97%     | 93%     | 83%     |
+| Forward + Backward    | 71%     | 69%     | 61%     |
+
+Despite issuing more computations, Apple hardware is training transformers faster than Nvidia hardware doing the same work. Normalizing for the difference in size between different GPUs, and just focusing on how efficiently the GPU is utilized. Perhaps the main repository should try the algorithm that avoids FP32 atomics and deliberately spills registers when they cannot fit in the GPU core.
 
 ## Usage
 
@@ -175,7 +192,7 @@ Alternatively, create a new Xcode project with the SwiftUI template. Override th
 
 Add the `-Xswiftc -Ounchecked` option through <b>Project</b> > your project's name > <b>Build Settings</b> > <b>Swift Compiler - Code Generation</b> > <b>Optimization Level</b>. The second column of the table lists your project's name. Click <b>Other</b> in the dropdown and type `-Ounchecked` in the panel that appears. Next, add this repository as a Swift package dependency. Look through some of the tests under `Tests/FlashAttention`. Copy the raw source code for one of these tests into your project. Invoke the test from the function in the previous paragraph. Examine what it displays on the console.
 
-To modify the kernel generation code (e.g. add multi-head or mask support), copy the raw source code into your Xcode project. Either use `git clone` in a separate folder, or download the raw files on GitHub as a ZIP. There is also a way to link to your fork of `metal-flash-attention` and autosave your changes to the cloud, but this is more difficult to set up. Remove the Swift package dependency from the previous paragraph. Re-run the test of your choosing. Does it compile and display something in the console?
+To modify the Metal code generation (e.g. add multi-head or mask support), copy the raw Swift code into your Xcode project. Either use `git clone` in a separate folder, or download the raw files on GitHub as a ZIP. There is also a way to link to your fork of `metal-flash-attention` and autosave your changes to the cloud, but this is more difficult to set up. Remove the Swift package dependency from the previous paragraph. Re-run the test of your choosing. Does it compile and display something in the console?
 
 ### Editing Source Code
 
