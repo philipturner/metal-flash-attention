@@ -42,7 +42,7 @@ extension AttentionDescriptor {
     guard let matrixDimensions = self.matrixDimensions else {
       fatalError("Descriptor was incomplete.")
     }
-    let headDimension = matrixDimensions.D
+    let headDimension = matrixDimensions.head
     
     // Pick a row of the table.
     //

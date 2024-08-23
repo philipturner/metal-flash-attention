@@ -213,8 +213,9 @@ private func validateProblemSize(
   headDimension: Int
 ) {
   var networkDesc = NetworkDescriptor()
-  networkDesc.N = sequenceDimension
-  networkDesc.D = headDimension
+  networkDesc.rowDimension = sequenceDimension
+  networkDesc.columnDimension = sequenceDimension
+  networkDesc.headDimension = headDimension
   let network = Network(descriptor: networkDesc)
   
   // MARK: - Kernels
@@ -223,9 +224,9 @@ private func validateProblemSize(
   attentionDesc.lowPrecisionInputs = false
   attentionDesc.lowPrecisionIntermediates = false
   attentionDesc.matrixDimensions = (
-    R: UInt32(sequenceDimension),
-    C: UInt32(sequenceDimension),
-    D: UInt16(headDimension))
+    row: UInt32(sequenceDimension),
+    column: UInt32(sequenceDimension),
+    head: UInt16(headDimension))
   attentionDesc.transposeState = (Q: false, K: false, V: false, O: false)
   
   func createKernel(type: AttentionKernelType) -> AttentionKernel {
@@ -265,7 +266,7 @@ private func validateProblemSize(
     _ array: [Float],
     _ operand: AttentionOperand
   ) -> MTLBuffer {
-    let memoryPrecisions = attentionDesc.memoryPrecisions()
+    let memoryPrecisions = attentionDesc.memoryPrecisions
     guard let precision = memoryPrecisions[operand] else {
       fatalError("Precision of operand \(operand) was not specified.")
     }
@@ -383,7 +384,7 @@ private func validateProblemSize(
     _ source: MTLBuffer,
     _ operand: AttentionOperand
   ) {
-    let memoryPrecisions = attentionDesc.memoryPrecisions()
+    let memoryPrecisions = attentionDesc.memoryPrecisions
     guard let precision = memoryPrecisions[operand] else {
       fatalError("Precision of operand \(operand) was not specified.")
     }
@@ -557,8 +558,9 @@ private func profileProblemSize(
   benchmarkedKernel: AttentionKernelType = .forward
 ) -> Int {
   var networkDesc = NetworkDescriptor()
-  networkDesc.N = sequenceDimension
-  networkDesc.D = headDimension
+  networkDesc.rowDimension = sequenceDimension
+  networkDesc.columnDimension = sequenceDimension
+  networkDesc.headDimension = headDimension
   let network = Network(descriptor: networkDesc)
   
   // MARK: - Kernels
@@ -567,9 +569,9 @@ private func profileProblemSize(
   attentionDesc.lowPrecisionInputs = false
   attentionDesc.lowPrecisionIntermediates = false
   attentionDesc.matrixDimensions = (
-    R: UInt32(sequenceDimension),
-    C: UInt32(sequenceDimension),
-    D: UInt16(headDimension))
+    row: UInt32(sequenceDimension),
+    column: UInt32(sequenceDimension),
+    head: UInt16(headDimension))
   attentionDesc.transposeState = (Q: false, K: false, V: false, O: false)
   
   func createKernel(type: AttentionKernelType) -> AttentionKernel {
@@ -609,7 +611,7 @@ private func profileProblemSize(
     _ array: [Float],
     _ operand: AttentionOperand
   ) -> MTLBuffer {
-    let memoryPrecisions = attentionDesc.memoryPrecisions()
+    let memoryPrecisions = attentionDesc.memoryPrecisions
     guard let precision = memoryPrecisions[operand] else {
       fatalError("Precision of operand \(operand) was not specified.")
     }

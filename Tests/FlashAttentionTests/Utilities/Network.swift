@@ -10,8 +10,6 @@ import func Foundation.exp
 import func Foundation.log
 import func Foundation.sin
 
-// TODO: Support non-square attention matrices.
-
 // How do I even evaluate the gradient of a transformer?
 //
 // Attempt to find a simple model to compute and take the gradient of:
@@ -61,16 +59,18 @@ import func Foundation.sin
 // - ΔΦ/ΔX = (Φ(+0.001) - Φ(-0.001)) / 0.002
 
 struct NetworkDescriptor {
-  var N: Int?
-  var D: Int?
+  var rowDimension: Int?
+  var columnDimension: Int?
+  var headDimension: Int?
 }
 
 // Utility for testing the correctness of forward and backward attention.
 // This has the same algorithmic complexity as standard attention (unlike
 // finite differences), although it is not very parallel.
 struct Network {
-  let N: Int
-  let D: Int
+  let rowDimension: Int
+  let columnDimension: Int
+  let headDimension: Int
   
   var Q: [Float]
   var K: [Float]
@@ -78,28 +78,36 @@ struct Network {
   var dO: [Float]
   
   init(descriptor: NetworkDescriptor) {
-    guard let N = descriptor.N,
-          let D = descriptor.D else {
+    guard let rowDimension = descriptor.rowDimension,
+          let columnDimension = descriptor.columnDimension,
+          let headDimension = descriptor.headDimension else {
       fatalError("Descriptor was incomplete.")
     }
-    self.N = N
-    self.D = D
+    self.rowDimension = rowDimension
+    self.columnDimension = columnDimension
+    self.headDimension = headDimension
     
     // Randomly initialize Q, K, V, dO ∈ R^{NxD}
-    Q = [Float](repeating: .zero, count: N * D)
-    K = [Float](repeating: .zero, count: N * D)
-    V = [Float](repeating: .zero, count: N * D)
-    dO = [Float](repeating: .zero, count: N * D)
+    Q = [Float](repeating: .zero, count: rowDimension * headDimension)
+    K = [Float](repeating: .zero, count: columnDimension * headDimension)
+    V = [Float](repeating: .zero, count: columnDimension * headDimension)
+    dO = [Float](repeating: .zero, count: rowDimension * headDimension)
     
-    for n in 0..<N {
-      for d in 0..<D {
-        let matrixAddress = n * D + d
-        let randomQK = Network.boxMullerTransform()
-        let randomVdO = Network.boxMullerTransform()
-        Q[matrixAddress] = randomQK[0]
-        K[matrixAddress] = randomQK[1]
-        V[matrixAddress] = randomVdO[0]
-        dO[matrixAddress] = randomVdO[1]
+    for rowID in 0..<rowDimension {
+      for d in 0..<headDimension {
+        let matrixAddress = rowID * headDimension + d
+        let randomNumberPair = Network.boxMullerTransform()
+        Q[matrixAddress] = randomNumberPair[0]
+        dO[matrixAddress] = randomNumberPair[1]
+      }
+    }
+    
+    for columnID in 0..<columnDimension {
+      for d in 0..<headDimension {
+        let matrixAddress = columnID * headDimension + d
+        let randomNumberPair = Network.boxMullerTransform()
+        K[matrixAddress] = randomNumberPair[0]
+        V[matrixAddress] = randomNumberPair[1]
       }
     }
   }
@@ -124,14 +132,14 @@ struct Network {
 // Utilities for materializing the attention matrix, one row at a time.
 extension Network {
   func createMatrixSRow(rowID: Int) -> [Float] {
-    var output = [Float](repeating: .zero, count: N)
+    var output = [Float](repeating: .zero, count: columnDimension)
     
     // Q * K^T
-    for columnID in 0..<N {
+    for columnID in 0..<columnDimension {
       var dotProduct: Float = .zero
-      for d in 0..<D {
-        let addressQ = rowID * D + d
-        let addressK = columnID * D + d
+      for d in 0..<headDimension {
+        let addressQ = rowID * headDimension + d
+        let addressK = columnID * headDimension + d
         dotProduct += Q[addressQ] * K[addressK]
       }
       output[columnID] = dotProduct
@@ -142,18 +150,18 @@ extension Network {
   
   func createMatrixPRow(rowID: Int) -> [Float] {
     var output = createMatrixSRow(rowID: rowID)
-    let scaleFactor = 1 / Float(D).squareRoot()
+    let scaleFactor = 1 / Float(headDimension).squareRoot()
     
     // Maximum
     var maximum: Float = -.greatestFiniteMagnitude
-    for columnID in 0..<N {
+    for columnID in 0..<columnDimension {
       let value = scaleFactor * output[columnID]
       maximum = max(maximum, value)
     }
     
     // Sum
     var sum: Float = .zero
-    for columnID in 0..<N {
+    for columnID in 0..<columnDimension {
       let value = scaleFactor * output[columnID]
       let expTerm = exp(value - maximum)
       sum += expTerm
@@ -161,7 +169,7 @@ extension Network {
     
     // Log-Sum-Exp
     let lse = maximum + log(sum)
-    for columnID in 0..<N {
+    for columnID in 0..<columnDimension {
       let value = scaleFactor * output[columnID]
       let expTerm = exp(value - lse)
       output[columnID] = expTerm
@@ -172,18 +180,18 @@ extension Network {
   
   func createLTerm(rowID: Int) -> Float {
     let matrixSRow = createMatrixSRow(rowID: rowID)
-    let scaleFactor = 1 / Float(D).squareRoot()
+    let scaleFactor = 1 / Float(headDimension).squareRoot()
     
     // Maximum
     var maximum: Float = -.greatestFiniteMagnitude
-    for columnID in 0..<N {
+    for columnID in 0..<columnDimension {
       let value = scaleFactor * matrixSRow[columnID]
       maximum = max(maximum, value)
     }
     
     // Sum
     var sum: Float = .zero
-    for columnID in 0..<N {
+    for columnID in 0..<columnDimension {
       let value = scaleFactor * matrixSRow[columnID]
       let expTerm = exp(value - maximum)
       sum += expTerm
@@ -196,12 +204,12 @@ extension Network {
   
   func createDerivativePRow(rowID: Int) -> [Float] {
     // dO * V^T
-    var output = [Float](repeating: .zero, count: N)
-    for columnID in 0..<N {
+    var output = [Float](repeating: .zero, count: columnDimension)
+    for columnID in 0..<columnDimension {
       var dotProduct: Float = .zero
-      for d in 0..<D {
-        let addressO = rowID * D + d
-        let addressV = columnID * D + d
+      for d in 0..<headDimension {
+        let addressO = rowID * headDimension + d
+        let addressV = columnID * headDimension + d
         dotProduct += dO[addressO] * V[addressV]
       }
       output[columnID] = dotProduct
@@ -213,12 +221,12 @@ extension Network {
     let matrixPRow = createMatrixPRow(rowID: rowID)
     
     // P * V
-    var matrixORow = [Float](repeating: .zero, count: D)
-    for d in 0..<D {
+    var matrixORow = [Float](repeating: .zero, count: headDimension)
+    for d in 0..<headDimension {
       var dotProduct: Float = .zero
-      for columnID in 0..<N {
+      for columnID in 0..<columnDimension {
         let valueP = matrixPRow[columnID]
-        let addressV = columnID * D + d
+        let addressV = columnID * headDimension + d
         dotProduct += valueP * V[addressV]
       }
       matrixORow[d] = dotProduct
@@ -226,23 +234,23 @@ extension Network {
     
     // dO * O
     var termD: Float = .zero
-    for d in 0..<D {
-      let addressC = rowID * D + d
-      termD += matrixORow[d] * dO[addressC]
+    for d in 0..<headDimension {
+      let addressDerivativeO = rowID * headDimension + d
+      termD += matrixORow[d] * dO[addressDerivativeO]
     }
     
-    var derivativeSRow = [Float](repeating: .zero, count: N)
+    var derivativeSRow = [Float](repeating: .zero, count: columnDimension)
     let derivativePRow = createDerivativePRow(rowID: rowID)
-    let scaleFactor = 1 / Float(D).squareRoot()
+    let scaleFactor = 1 / Float(headDimension).squareRoot()
     
     // P * (dP - D)
-    for n in 0..<N {
-      let valueP = matrixPRow[n]
-      let valueDerivativeP = derivativePRow[n]
+    for columnID in 0..<columnDimension {
+      let valueP = matrixPRow[columnID]
+      let valueDerivativeP = derivativePRow[columnID]
       var valueS = valueP * (valueDerivativeP - termD)
       
       valueS *= scaleFactor
-      derivativeSRow[n] = valueS
+      derivativeSRow[columnID] = valueS
     }
     
     return derivativeSRow
@@ -252,12 +260,12 @@ extension Network {
     let matrixPRow = createMatrixPRow(rowID: rowID)
     
     // P * V
-    var matrixORow = [Float](repeating: .zero, count: D)
-    for d in 0..<D {
+    var matrixORow = [Float](repeating: .zero, count: headDimension)
+    for d in 0..<headDimension {
       var dotProduct: Float = .zero
-      for columnID in 0..<N {
+      for columnID in 0..<columnDimension {
         let valueP = matrixPRow[columnID]
-        let addressV = columnID * D + d
+        let addressV = columnID * headDimension + d
         dotProduct += valueP * V[addressV]
       }
       matrixORow[d] = dotProduct
@@ -265,9 +273,9 @@ extension Network {
     
     // dO * O
     var termD: Float = .zero
-    for d in 0..<D {
-      let addressC = rowID * D + d
-      termD += matrixORow[d] * dO[addressC]
+    for d in 0..<headDimension {
+      let addressDerivativeO = rowID * headDimension + d
+      termD += matrixORow[d] * dO[addressDerivativeO]
     }
     return termD
   }
@@ -276,25 +284,25 @@ extension Network {
 extension Network {
   // Compute O.
   func inferenceAttention() -> [Float] {
-    var output = [Float](repeating: .zero, count: N * D)
-    for rowID in 0..<N {
+    var output = [Float](repeating: .zero, count: rowDimension * headDimension)
+    for rowID in 0..<rowDimension {
       let matrixPRow = createMatrixPRow(rowID: rowID)
       
       // P * V
-      var matrixORow = [Float](repeating: .zero, count: D)
-      for d in 0..<D {
+      var matrixORow = [Float](repeating: .zero, count: headDimension)
+      for d in 0..<headDimension {
         var dotProduct: Float = .zero
-        for columnID in 0..<N {
+        for columnID in 0..<columnDimension {
           let valueP = matrixPRow[columnID]
-          let addressV = columnID * D + d
+          let addressV = columnID * headDimension + d
           dotProduct += valueP * V[addressV]
         }
         matrixORow[d] = dotProduct
       }
       
-      for d in 0..<D {
+      for d in 0..<headDimension {
         let valueO = matrixORow[d]
-        let addressO = rowID * D + d
+        let addressO = rowID * headDimension + d
         output[addressO] = valueO
       }
     }
@@ -308,9 +316,9 @@ extension Network {
     var output: Float = .zero
     
     // Σ_n Σ_d dO[n][d] * O[n][d]
-    for n in 0..<N {
-      for d in 0..<D {
-        let address = n * D + d
+    for rowID in 0..<rowDimension {
+      for d in 0..<headDimension {
+        let address = rowID * headDimension + d
         output += dO[address] * O[address]
       }
     }
@@ -319,19 +327,20 @@ extension Network {
   
   // Compute ∂Φ/∂V analytically.
   func derivativeV() -> [Float] {
-    var output = [Float](repeating: .zero, count: N * D)
+    var output = [Float](
+      repeating: .zero, count: columnDimension * headDimension)
     
     // P^T * dO
-    for columnID in 0..<N {
-      let matrixPRow = createMatrixPRow(rowID: columnID)
+    for rowID in 0..<rowDimension {
+      let matrixPRow = createMatrixPRow(rowID: rowID)
       
-      for n in 0..<N {
-        for d in 0..<D {
-          let addressV = n * D + d
-          let addressC = columnID * D + d
+      for columnID in 0..<columnDimension {
+        for d in 0..<headDimension {
+          let addressV = columnID * headDimension + d
+          let addressDerivativeO = rowID * headDimension + d
           
           var dotProduct = output[addressV]
-          dotProduct += matrixPRow[n] * dO[addressC]
+          dotProduct += matrixPRow[columnID] * dO[addressDerivativeO]
           output[addressV] = dotProduct
         }
       }
@@ -341,19 +350,20 @@ extension Network {
   
   // Compute ∂Φ/∂K analytically.
   func derivativeK() -> [Float] {
-    var output = [Float](repeating: .zero, count: N * D)
+    var output = [Float](
+      repeating: .zero, count: columnDimension * headDimension)
     
     // dS^T * Q
-    for columnID in 0..<N {
-      let derivativeSRow = createDerivativeSRow(rowID: columnID)
+    for rowID in 0..<rowDimension {
+      let derivativeSRow = createDerivativeSRow(rowID: rowID)
       
-      for n in 0..<N {
-        for d in 0..<D {
-          let addressK = n * D + d
-          let addressQ = columnID * D + d
+      for columnID in 0..<columnDimension {
+        for d in 0..<headDimension {
+          let addressK = columnID * headDimension + d
+          let addressQ = rowID * headDimension + d
           
           var dotProduct = output[addressK]
-          dotProduct += derivativeSRow[n] * Q[addressQ]
+          dotProduct += derivativeSRow[columnID] * Q[addressQ]
           output[addressK] = dotProduct
         }
       }
@@ -363,26 +373,27 @@ extension Network {
   
   // Compute ∂Φ/∂Q analytically.
   func derivativeQ() -> [Float] {
-    var output = [Float](repeating: .zero, count: N * D)
+    var output = [Float](
+      repeating: .zero, count: rowDimension * headDimension)
     
     // dS * K
-    for rowID in 0..<N {
+    for rowID in 0..<rowDimension {
       let derivativeSRow = createDerivativeSRow(rowID: rowID)
       
-      var derivativeQRow = [Float](repeating: .zero, count: D)
-      for d in 0..<D {
+      var derivativeQRow = [Float](repeating: .zero, count: headDimension)
+      for d in 0..<headDimension {
         var dotProduct: Float = .zero
-        for columnID in 0..<N {
+        for columnID in 0..<columnDimension {
           let derivativeSValue = derivativeSRow[columnID]
-          let addressK = columnID * D + d
+          let addressK = columnID * headDimension + d
           dotProduct += derivativeSValue * K[addressK]
         }
         derivativeQRow[d] = dotProduct
       }
       
-      for d in 0..<D {
+      for d in 0..<headDimension {
         let derivativeQValue = derivativeQRow[d]
-        let addressQ = rowID * D + d
+        let addressQ = rowID * headDimension + d
         output[addressQ] = derivativeQValue
       }
     }

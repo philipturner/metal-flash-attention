@@ -14,7 +14,10 @@ public struct AttentionDescriptor {
   // S, P, L, D, dP, dS
   public var lowPrecisionIntermediates: Bool = false
   
-  public var matrixDimensions: (R: UInt32, C: UInt32, D: UInt16)?
+  // row:    Output sequence length; rows of the attention matrix.
+  // column: Input sequence length; columns of the attention matrix.
+  // head:   Head dimension, typically 32 - 256.
+  public var matrixDimensions: (row: UInt32, column: UInt32, head: UInt16)?
   
   public var transposeState: (Q: Bool, K: Bool, V: Bool, O: Bool)?
   
@@ -86,7 +89,7 @@ extension AttentionDescriptor {
       guard let matrixDimensions = self.matrixDimensions else {
         fatalError("Descriptor was incomplete.")
       }
-      return matrixDimensions.D
+      return matrixDimensions.head
     }
     
     func createTransposeState() -> [AttentionOperand: Bool] {
@@ -111,7 +114,7 @@ extension AttentionDescriptor {
     output.blockDimensions = createBlockDimensions()
     output.cacheState = createCacheState()
     output.headDimension = createHeadDimension()
-    output.memoryPrecisions = memoryPrecisions()
+    output.memoryPrecisions = memoryPrecisions
     if MTLContext.global.device.supportsFamily(.apple9) {
       output.preferAsyncCache = true
       output.preferAsyncLoad = false
@@ -119,7 +122,7 @@ extension AttentionDescriptor {
       output.preferAsyncCache = false
       output.preferAsyncLoad = true
     }
-    output.registerPrecisions = registerPrecisions()
+    output.registerPrecisions = registerPrecisions
     output.transposeState = createTransposeState()
     output.type = type
     
@@ -138,9 +141,9 @@ extension AttentionDescriptor {
       fatalError("Descriptor was incomplete.")
     }
     
-    var R = matrixDimensions.R
-    var C = matrixDimensions.C
-    constants.setConstantValue(&R, type: .uint, index: 0)
-    constants.setConstantValue(&C, type: .uint, index: 1)
+    var rowDimension = matrixDimensions.row
+    var columnDimension = matrixDimensions.column
+    constants.setConstantValue(&rowDimension, type: .uint, index: 0)
+    constants.setConstantValue(&columnDimension, type: .uint, index: 1)
   }
 }
