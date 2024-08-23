@@ -159,7 +159,7 @@ To calculate utilization of Nvidia hardware, I used GFLOPS for FP16/BF16 ALUs. I
 | Forward            | 62%     | 71%     | n/a     |
 | Forward + Backward | 56%     | 65%     | n/a     |
 
-| H100, Flash2, FP16 | D = 64  | D = 128 | D = 256 |
+| H100, Flash3, FP16 | D = 64  | D = 128 | D = 256 |
 | :----------------- | ------: | ------: | ------: |
 | Forward            | 50%     | 66%     | 76%     |
 | Forward + Backward | 48%     | 59%     | n/a     |
