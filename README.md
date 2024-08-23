@@ -101,7 +101,9 @@ Due to the complexity of FP32 atomics, MFA used a different approach for backwar
 
 </details>
 
-Performance is measured by calculating the amount of compute work, then dividing by seconds. The end result is "gigainstructions per second". Next, we need a roofline model. The table below shows rooflines for GINSTRS, calculated as half of GFLOPS. There are limits to this model. It breaks down with the M3 generation at small head dimensions. Different compute units might be utilized simultaneously, making the apparent utilization over 100%. For the most part, the benchmark provides an accurate model of how much performance is left on the table.
+Performance is measured by calculating the amount of compute work, then dividing by seconds. The end result is "gigainstructions per second". Next, we need a roofline model. The table below shows rooflines for GINSTRS, calculated as half of GFLOPS. ALU utilization is (actual gigainstructions per second) / (expected gigainstructions per second). For example, M1 Max typically achieves 80% ALU utilization with mixed precision. 
+
+There are limits to this model. It breaks down with the M3 generation at small head dimensions. Different compute units might be utilized simultaneously, making the apparent utilization over 100%. For the most part, the benchmark provides an accurate model of how much performance is left on the table.
 
 ```swift
 var operations: Int
@@ -126,7 +128,12 @@ let ginstrs = Int(instrs / 1e9)
 | M1 Max   | 10616  | 5308    |
 | M4       | 3580   | 1790    |
 
-How well does the Metal port compare to the official FlashAttention repository? Imagine I went with the "atomic dQ" algorithm and achieved 100% performance. Then, switched to the actual MFA repo and found model training to be 4x slower. That would be 25% of the roofline from the official repository.
+How well does the Metal port compare to the official FlashAttention repository? Imagine I went with the "atomic dQ" algorithm and achieved 100% performance. Then, switched to the actual MFA repo and found model training to be 4x slower. That would be 25% of the roofline from the official repository. To get this percentage, multiply the average ALU utilization across all three kernels by `7 / 9`.
+
+| A100 SXM, Flash2   | D = 64  | D = 128 | D = 256 |
+| :----------------- | :-----: | :-----: | :-----: |
+| Forward            | 62%     | 71%     | n/a     |
+| Forward + Backward | 56%     | 65%     | n/a     |
 
 ## Usage
 
