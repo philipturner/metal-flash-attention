@@ -29,7 +29,7 @@ This question is relevant to attention, where not all floating point operations 
 Instead of gigaflops, I use gigainstructions to understand how well the shader is performing. It maps more directly to the algorithm. For example, one GEMM is `N^3` FMA instructions. Forward attention performs two matrix multiplies, or `2 * D * N^2` FMA instructions. Backward attention (by the [Dao-AILab/flash-attention](https://github.com/Dao-AILab/flash-attention) implementation) is `5 * D * N^2` FMA instructions. Try comparing this table to roofline models in the Flash1, Flash2, or Flash3 papers.
 
 | Operation   | Work |
-| :---------- | :--- |
+| :---------- | ---: |
 | Square GEMM | `N^3`  |
 | Forward Attention | `(2D + 5) * N^2` |
 | Backward Naive Attention | `4D * N^2` |
