@@ -148,6 +148,7 @@ final class SquareAttentionTest: XCTestCase {
     
     var outputString: String = ""
     print()
+    print("Attention Performance Data:")
     
     // Loop over the configurations.
     for D in D_array {
@@ -174,7 +175,9 @@ final class SquareAttentionTest: XCTestCase {
       outputString += "\n"
       print()
     }
+    
     print()
+    print("Converted to CSV Format:")
     print(outputString)
   }
 }

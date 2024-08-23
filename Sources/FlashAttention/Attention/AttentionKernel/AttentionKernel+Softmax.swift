@@ -302,18 +302,6 @@ extension AttentionKernel {
   
   // Reduce sum during the online softmax.
   func onlineReduceSum() -> String {
-    // I don't think keeping the sum in FP16 here, should negatively affect
-    // numerical accuracy too much. It is typically 8-16 summations. If I am
-    // wrong, clients - please just fix this ('float2 l_new_accumulator')
-    // instead of promoting the entire P matrix to FP32. Having P in low
-    // precision is critical for performance on M1, which typically will not
-    // receive high coverage in your performance tests.
-    //
-    // TODO: When debugging mixed precision, revert this to float2. Examine
-    // the impact it has on numerical correctness, with every other variable
-    // in FP32.
-    // - Casting to float2 may cause the Metal compiler to allocate a bunch
-    //   of extra registers for the FP16 attention matrix.
     """
     
     // update 'l'

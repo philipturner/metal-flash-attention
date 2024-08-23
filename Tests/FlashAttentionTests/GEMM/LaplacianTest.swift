@@ -55,6 +55,7 @@ final class LaplacianTest: XCTestCase {
     // to test the performance drop for odd problem sizes that misalign with
     // the GEMM block dimension.
     print()
+    print("GEMM Performance Data:")
     for problemSize in 511...513 {
       for transposeState in transposeStates {
         let n: UInt32 = .init(problemSize)

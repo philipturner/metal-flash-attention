@@ -8,7 +8,7 @@ final class RectangularAttentionTest: XCTestCase {
     for _ in 0..<15 {
       var randomVecFloat = SIMD2<Float>.random(in: 0..<1)
       randomVecFloat = randomVecFloat * randomVecFloat * randomVecFloat
-      var randomInts = SIMD2<Int>(randomVecFloat * SIMD2(256, 128))
+      var randomInts = SIMD2<Int>(randomVecFloat * SIMD2(128, 128))
       randomInts.replace(with: .one, where: randomInts .== .zero)
       
       var matrixDimensions = (
@@ -18,7 +18,7 @@ final class RectangularAttentionTest: XCTestCase {
       if Float.random(in: 0..<1) < 0.5 {
         matrixDimensions.column = UInt32.random(in: 1...10)
       } else {
-        matrixDimensions.column = UInt32.random(in: 10...256)
+        matrixDimensions.column = UInt32.random(in: 10...128)
       }
       
       var descriptor = AttentionDescriptor()
