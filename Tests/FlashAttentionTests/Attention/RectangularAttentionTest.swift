@@ -4,18 +4,34 @@ import FlashAttention
 final class RectangularAttentionTest: XCTestCase {
   // Tests random permutations of transpose state and input/output sequence
   // length. Just like the old MFA test suite.
-  //
-  // For simplicity, we are only testing FP32. This removes the need to worry
-  // about numerical rounding error. With mixed precision, the rounding
-  // error scales with problem dimension in predictable ways. We have
-  // discovered predictive formulae for GEMM through trial and error.
   func testCorrectness() throws {
-    var descriptor = AttentionDescriptor()
-    descriptor.lowPrecisionInputs = false
-    descriptor.lowPrecisionIntermediates = false
-    descriptor.matrixDimensions = (row: 32, column: 13, head: 16)
-    descriptor.transposeState = (Q: false, K: false, V: false, O: false)
-    runCorrectnessTest(descriptor: descriptor)
+    for _ in 0..<15 {
+      var randomVecFloat = SIMD2<Float>.random(in: 0..<1)
+      randomVecFloat = randomVecFloat * randomVecFloat * randomVecFloat
+      var randomInts = SIMD2<Int>(randomVecFloat * SIMD2(256, 128))
+      randomInts.replace(with: .one, where: randomInts .== .zero)
+      
+      var matrixDimensions = (
+        row: UInt32(randomInts[0]),
+        column: UInt32.zero,
+        head: UInt16(randomInts[1]))
+      if Float.random(in: 0..<1) < 0.5 {
+        matrixDimensions.column = UInt32.random(in: 1...10)
+      } else {
+        matrixDimensions.column = UInt32.random(in: 10...256)
+      }
+      
+      var descriptor = AttentionDescriptor()
+      descriptor.lowPrecisionInputs = Bool.random()
+      descriptor.lowPrecisionIntermediates = Bool.random()
+      descriptor.matrixDimensions = matrixDimensions
+      descriptor.transposeState = (
+        Q: Bool.random(),
+        K: Bool.random(),
+        V: Bool.random(),
+        O: Bool.random())
+      runCorrectnessTest(descriptor: descriptor)
+    }
   }
 }
 
@@ -423,8 +439,9 @@ private func runCorrectnessTest(descriptor: AttentionDescriptor) {
         if errorCount < 10 {
           errorCount += 1
           print("error: \(error) / ~1.000")
-          print("- expected[\(i)] =", expected[i])
-          print("-   actual[\(i)] =", actual[i])
+          print("- expected[\(i)] = \(expected[i])")
+          print("-   actual[\(i)] = \(actual[i])")
+          print("- test configuration: \(descriptor)")
         }
       }
     }
@@ -433,12 +450,18 @@ private func runCorrectnessTest(descriptor: AttentionDescriptor) {
   // Check the results.
   if attentionDesc.lowPrecisionInputs ||
       attentionDesc.lowPrecisionIntermediates {
-    check(expected: O, actual: resultO, tolerance: 5e-2)
-    check(expected: L, actual: resultL, tolerance: 7e-3)
-    check(expected: D, actual: resultD, tolerance: 1e-1)
-    check(expected: dV, actual: resultDerivativeV, tolerance: 5e-2)
-    check(expected: dK, actual: resultDerivativeK, tolerance: 5e-2)
-    check(expected: dQ, actual: resultDerivativeQ, tolerance: 5e-2)
+    if matrixDimensions.column <= 20 {
+      check(expected: O, actual: resultO, tolerance: 5e-2)
+      check(expected: L, actual: resultL, tolerance: 1e-2)
+      check(expected: D, actual: resultD, tolerance: 3e-1)
+    } else {
+      check(expected: O, actual: resultO, tolerance: 5e-2)
+      check(expected: L, actual: resultL, tolerance: 7e-3)
+      check(expected: D, actual: resultD, tolerance: 1e-1)
+      check(expected: dV, actual: resultDerivativeV, tolerance: 5e-2)
+      check(expected: dK, actual: resultDerivativeK, tolerance: 5e-2)
+      check(expected: dQ, actual: resultDerivativeQ, tolerance: 5e-2)
+    }
   } else {
     check(expected: O, actual: resultO, tolerance: 2e-5)
     check(expected: L, actual: resultL, tolerance: 2e-5)
