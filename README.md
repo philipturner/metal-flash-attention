@@ -174,6 +174,19 @@ To calculate utilization of Nvidia hardware, I used GFLOPS for FP16/BF16 ALUs. I
 | Forward               | 97%     | 93%     | 83%     |
 | Forward + Backward    | 71%     | 69%     | 61%     |
 
+### Side by Side
+
+| Hardware Produced in 2020 | D = 64  | D = 128 | D = 256 |
+| :------------------------ | ------: | ------: | ------: |
+| A100                      | 56%     | 65%     | n/a     |
+| M1&mdash;M2 Architecture  | 62%     | 63%     | 64%     |
+
+| Hardware Produced in 2023 | D = 64  | D = 128 | D = 256 |
+| :------------------------ | ------: | ------: | ------: |
+| H100 (using FP8 GFLOPS)   | 24%     | 30%     | n/a     |
+| H100 (using FP16 GFLOPS)  | 48%     | 59%     | n/a     |
+| M3&mdash;M4 Architecture  | 71%     | 69%     | 61%     |
+
 Despite issuing more computations, Apple hardware is training transformers faster than Nvidia hardware doing the same work. Normalizing for the difference in size between different GPUs, and just focusing on how efficiently the GPU is utilized. Perhaps the main repository should try the algorithm that avoids FP32 atomics and deliberately spills registers when they cannot fit in the GPU core.
 
 ## Usage
