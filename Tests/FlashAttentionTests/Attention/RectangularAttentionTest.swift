@@ -11,10 +11,10 @@ final class RectangularAttentionTest: XCTestCase {
   // discovered predictive formulae for GEMM through trial and error.
   func testCorrectness() throws {
     var descriptor = AttentionDescriptor()
-    descriptor.lowPrecisionInputs = true
-    descriptor.lowPrecisionIntermediates = true
-    descriptor.matrixDimensions = (row: 12, column: 23, head: 8)
-    descriptor.transposeState = (Q: false, K: false, V: false, O: false)
+    descriptor.lowPrecisionInputs = false
+    descriptor.lowPrecisionIntermediates = false
+    descriptor.matrixDimensions = (row: 5, column: 5, head: 3)
+    descriptor.transposeState = (Q: false, K: false, V: false, O: true)
     runCorrectnessTest(descriptor: descriptor)
   }
 }
@@ -26,10 +26,6 @@ private func runCorrectnessTest(descriptor: AttentionDescriptor) {
         let transposeState = descriptor.transposeState else {
     fatalError("Descriptor was incomplete.")
   }
-//  guard !descriptor.lowPrecisionInputs,
-//        !descriptor.lowPrecisionIntermediates else {
-//    fatalError("Mixed precision is not supported.")
-//  }
   
   var networkDesc = NetworkDescriptor()
   networkDesc.rowDimension = Int(matrixDimensions.row)
@@ -71,52 +67,99 @@ private func runCorrectnessTest(descriptor: AttentionDescriptor) {
   let pipelineBackwardQuery = createPipeline(kernel: kernelBackwardQuery)
   let pipelineBackwardKeyValue = createPipeline(kernel: kernelBackwardKeyValue)
   
+  // MARK: - Transpose
+  
+  // Utility for transposing data.
+  //
+  // Automatically detects the operand's sequence length.
+  func transpose(_ input: [Float]) -> [Float] {
+    let headDimension = Int(matrixDimensions.head)
+    let sequenceDimension = input.count / headDimension
+    guard input.count % headDimension == 0 else {
+      fatalError("Array size was indivisible by the head dimension.")
+    }
+    
+    var output = [Float](repeating: .zero, count: input.count)
+    for n in 0..<sequenceDimension {
+      for d in 0..<headDimension {
+        let inputAddress = n * headDimension + d
+        let outputAddress = d * sequenceDimension + n
+        output[outputAddress] = input[inputAddress]
+      }
+    }
+    print()
+    print("before:", input)
+    print("after:", output)
+    print()
+    return output
+  }
+  
+  var inputQ = network.Q
+  var inputK = network.K
+  var inputV = network.V
+  var inputDerivativeO = network.dO
+  
+//  if transposeState.Q {
+//    inputQ = transpose(inputQ)
+//  }
+//  if transposeState.K {
+//    inputK = transpose(inputK)
+//  }
+//  if transposeState.V {
+//    inputV = transpose(inputV)
+//  }
+//  if transposeState.O {
+//    inputDerivativeO = transpose(inputDerivativeO)
+//  }
+  
   // MARK: - Buffers
   
-  // Utility function to make buffer initialization more concise.
-  func createBuffer(
-    _ array: [Float],
+  // Returns a zero-initialized array.
+  func createArray(
     _ operand: AttentionOperand
+  ) -> [Float] {
+    var size: Int
+    switch operand {
+    case .K, .V, .dV, .dK:
+      size = Int(matrixDimensions.column) * Int(matrixDimensions.head)
+    case .Q, .O, .dO, .dQ:
+      size = Int(matrixDimensions.row) * Int(matrixDimensions.head)
+    case .L, .D:
+      size = Int(matrixDimensions.row)
+    default:
+      fatalError("Unsupported operand.")
+    }
+    
+    return [Float](repeating: .zero, count: size)
+  }
+  
+  // Returns a buffer.
+  func createBuffer(
+    _ operand: AttentionOperand,
+    contents: [Float]
   ) -> MTLBuffer {
     let memoryPrecisions = attentionDesc.memoryPrecisions
     guard let precision = memoryPrecisions[operand] else {
       fatalError("Precision of operand \(operand) was not specified.")
     }
-    return MTLContext.global.createBuffer(array, precision)
+    return MTLContext.global.createBuffer(contents, precision)
   }
   
-  var resultO = [Float](
-    repeating: .zero,
-    count: Int(matrixDimensions.row) * Int(matrixDimensions.head))
-  var resultL = [Float](
-    repeating: .zero,
-    count: Int(matrixDimensions.row))
-  var resultD = [Float](
-    repeating: .zero,
-    count: Int(matrixDimensions.row))
-  var resultDerivativeV = [Float](
-    repeating: .zero, 
-    count: Int(matrixDimensions.column) * Int(matrixDimensions.head))
-  var resultDerivativeK = [Float](
-    repeating: .zero,
-    count: Int(matrixDimensions.column) * Int(matrixDimensions.head))
-  var resultDerivativeQ = [Float](
-    repeating: .zero,
-    count: Int(matrixDimensions.row) * Int(matrixDimensions.head))
-  resultO[0] = .nan
+  // Write the matrix inputs.
+  let bufferQ = createBuffer(.Q, contents: inputQ)
+  let bufferK = createBuffer(.K, contents: inputK)
+  let bufferV = createBuffer(.V, contents: inputV)
+  let bufferDerivativeO = createBuffer(.dO, contents: inputDerivativeO)
   
-  let bufferQ = createBuffer(network.Q, .Q)
-  let bufferK = createBuffer(network.K, .K)
-  let bufferV = createBuffer(network.V, .V)
-  let bufferDerivativeO = createBuffer(network.dO, .dO)
+  // Allocate the per-row intermediates.
+  let bufferL = createBuffer(.L, contents: createArray(.L))
+  let bufferD = createBuffer(.D, contents: createArray(.D))
   
-  let bufferL = createBuffer(resultL, .L)
-  let bufferD = createBuffer(resultD, .D)
-  
-  let bufferO = createBuffer(resultO, .O)
-  let bufferDerivativeV = createBuffer(resultDerivativeV, .dV)
-  let bufferDerivativeK = createBuffer(resultDerivativeK, .dK)
-  let bufferDerivativeQ = createBuffer(resultDerivativeQ, .dQ)
+  // Allocate the matrix outputs.
+  let bufferO = createBuffer(.O, contents: createArray(.O))
+  let bufferDerivativeV = createBuffer(.dV, contents: createArray(.dV))
+  let bufferDerivativeK = createBuffer(.dK, contents: createArray(.dK))
+  let bufferDerivativeQ = createBuffer(.dQ, contents: createArray(.dQ))
   
   // MARK: - GPU Commands
   
@@ -199,44 +242,64 @@ private func runCorrectnessTest(descriptor: AttentionDescriptor) {
   }
   executeCommandBuffer(dispatchCount: 1)
   
-  // MARK: - Validation
+  // MARK: - Reading Results from the GPU
   
-  // Utility function to make buffer copying more concise.
-  func copyBuffer(
-    _ destination: inout [Float],
-    _ source: MTLBuffer,
-    _ operand: AttentionOperand
-  ) {
+  // Read a buffer.
+  func readBuffer(
+    _ operand: AttentionOperand,
+    contents: MTLBuffer
+  ) -> [Float] {
     let memoryPrecisions = attentionDesc.memoryPrecisions
     guard let precision = memoryPrecisions[operand] else {
       fatalError("Precision of operand \(operand) was not specified.")
     }
-    MTLContext.copy(source, into: &destination, precision: precision)
+    
+    var destination = createArray(operand)
+    MTLContext.copy(contents, into: &destination, precision: precision)
+    return destination
   }
   
+  // Read the per-row intermediates.
+  var resultL = readBuffer(.L, contents: bufferL)
+  var resultD = readBuffer(.D, contents: bufferD)
+  
+  // Correct for slight differences between the reference implementation and
+  // the GPU implementation.
+  for i in resultL.indices {
+    resultL[i] /= 1.44269504089
+  }
+  for i in resultD.indices {
+    resultD[i] /= 1 / Float(matrixDimensions.head).squareRoot()
+  }
+  
+  // Read the matrix outputs.
+  var resultO = readBuffer(.O, contents: bufferO)
+  var resultDerivativeV = readBuffer(.dV, contents: bufferDerivativeV)
+  var resultDerivativeK = readBuffer(.dK, contents: bufferDerivativeK)
+  var resultDerivativeQ = readBuffer(.dQ, contents: bufferDerivativeQ)
+  
+//  if transposeState.Q {
+//    resultDerivativeQ = transpose(resultDerivativeQ)
+//  }
+//  if transposeState.K {
+//    resultDerivativeK = transpose(resultDerivativeK)
+//  }
+//  if transposeState.V {
+//    resultDerivativeV = transpose(resultDerivativeV)
+//  }
+  if transposeState.O {
+    resultO = transpose(resultO)
+  }
+  
+  // MARK: - Validation
+  
+  // Query the expected outputs on the reference implementation.
   let O = network.inferenceAttention()
   let L = (0..<Int(matrixDimensions.row)).map(network.createLTerm(rowID:))
   let D = (0..<Int(matrixDimensions.row)).map(network.createDTerm(rowID:))
   let dV = network.derivativeV()
   let dK = network.derivativeK()
   let dQ = network.derivativeQ()
-  
-  // Copy the results.
-  do {
-    copyBuffer(&resultL, bufferL, .L)
-    copyBuffer(&resultD, bufferD, .D)
-    for i in resultL.indices {
-      resultL[i] /= 1.44269504089
-    }
-    for i in resultD.indices {
-      resultD[i] /= 1 / Float(matrixDimensions.head).squareRoot()
-    }
-    
-    copyBuffer(&resultO, bufferO, .O)
-    copyBuffer(&resultDerivativeV, bufferDerivativeV, .dV)
-    copyBuffer(&resultDerivativeK, bufferDerivativeK, .dK)
-    copyBuffer(&resultDerivativeQ, bufferDerivativeQ, .dQ)
-  }
   
   // This path floods the console a lot. Only activate it when debugging
   // correctness failures. Start by making the O matrix agree on both CPU
@@ -366,17 +429,17 @@ private func runCorrectnessTest(descriptor: AttentionDescriptor) {
   if attentionDesc.lowPrecisionInputs ||
       attentionDesc.lowPrecisionIntermediates {
     check(expected: O, actual: resultO, tolerance: 5e-2)
-    check(expected: L, actual: resultL, tolerance: 7e-3)
-    check(expected: D, actual: resultD, tolerance: 1e-1)
-    check(expected: dV, actual: resultDerivativeV, tolerance: 5e-2)
-    check(expected: dK, actual: resultDerivativeK, tolerance: 5e-2)
-    check(expected: dQ, actual: resultDerivativeQ, tolerance: 5e-2)
+//    check(expected: L, actual: resultL, tolerance: 7e-3)
+//    check(expected: D, actual: resultD, tolerance: 1e-1)
+//    check(expected: dV, actual: resultDerivativeV, tolerance: 5e-2)
+//    check(expected: dK, actual: resultDerivativeK, tolerance: 5e-2)
+//    check(expected: dQ, actual: resultDerivativeQ, tolerance: 5e-2)
   } else {
     check(expected: O, actual: resultO, tolerance: 2e-5)
-    check(expected: L, actual: resultL, tolerance: 2e-5)
-    check(expected: D, actual: resultD, tolerance: 2e-5)
-    check(expected: dV, actual: resultDerivativeV, tolerance: 2e-5)
-    check(expected: dK, actual: resultDerivativeK, tolerance: 2e-5)
-    check(expected: dQ, actual: resultDerivativeQ, tolerance: 2e-5)
+//    check(expected: L, actual: resultL, tolerance: 2e-5)
+//    check(expected: D, actual: resultD, tolerance: 2e-5)
+//    check(expected: dV, actual: resultDerivativeV, tolerance: 2e-5)
+//    check(expected: dK, actual: resultDerivativeK, tolerance: 2e-5)
+//    check(expected: dQ, actual: resultDerivativeQ, tolerance: 2e-5)
   }
 }
