@@ -216,6 +216,6 @@ Sources/FlashAttention/Attention/AttentionKernel
 Sources/FlashAttention/GEMM/GEMMKernel
 ```
 
-Add random text to one of them. Compile and run the project again. Something should go terribly wrong. For example, the Metal compiler may throw an error. If this does not happen, try messing up a different line of code somewher else. If the test still passes, Xcode is not registering your changes.
+Add random text to one of them. Compile and run the project again. Something should go terribly wrong. For example, the Metal compiler may throw an error. If this does not happen, try messing up a different line of code somewhere else. If the test still passes, Xcode is not registering your changes.
 
 Proceed with coding up [block sparsity](https://pytorch.org/blog/flexattention/) or something. Get feedback about whether the code works at all, whether it works fast, whether it works fast at every problem size. Integrate the raw source code into your app, or translate it to another programming language.
