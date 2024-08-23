@@ -16,12 +16,13 @@ The backward pass uses less memory. The official implementation allocates scratc
 
 Portability:
 - Test problems where the attention matrix is not a square.
-- Leading dimension to handle multi-head attention.
 - Adversarial shape test to handle the above cases.
 - Extend and refactor `Network.swift` to handle such problems before implementing on GPU.
 - Refactor into a Swift package with a separate module for tests?
   - The benchmark needs to be documented somewhere, so somebody can copy the raw code into a new Xcodeproj for iOS.
   - Minimal examples of the benchmarks that don't actually measure problems large enough to get performance statistics?
+
+Document the set of compilation passes: \*Descriptor -> \*KernelDescriptor -> \*Kernel?
 
 Document the use of "gigainstructions per second" instead of "GFLOPS".
 
