@@ -197,7 +197,7 @@ On macOS, download the Swift package and compile with `-Xswiftc -Ounchecked`. Th
 
 ```
 git clone https://github.com/philipturner/metal-flash-attention
-swift build -Xswiftc -Ounchecked # Does is even compile?
+swift build -Xswiftc -Ounchecked # Does it even compile?
 swift test -Xswiftc -Ounchecked # Does the test suite finish in ~10 seconds?
 ```
 
