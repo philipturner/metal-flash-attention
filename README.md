@@ -209,7 +209,7 @@ To modify the Metal code generation (e.g. add multi-head or mask support), copy 
 
 ### Editing Source Code
 
-Locate of the multi-line string literals in either of these folders:
+Locate one of the multi-line string literals in either of these folders:
 
 ```
 Sources/FlashAttention/Attention/AttentionKernel
