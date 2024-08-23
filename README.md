@@ -12,7 +12,7 @@ The backward pass uses less memory than [Dao-AILab/flash-attention](https://gith
 
 A lot of crazy stuff was done to overcome register pressure bottlenecks. At large head dimensions (e.g. 256), none of the matrix blocks can fit into registers. Not even the accumulator can. Therefore, intentional register spilling is done, but in a more optimized way. A third block dimension was added to the attention algorithm, which blocks along `D`. The aspect ratio of attention matrix blocks was warped heavily, to minimize the bandwidth cost of register spilling. For example, 16-32 along the parallelization dimension and 80-128 along the traversal dimension. There is a large parameter file that takes the `D` dimension, and determines which operands can fit into registers. It then assigns a block size that balances many competing bottlenecks.
 
-The end result is a consistent 4500 gigainstructions per second on M1 Max (80% ALU utilization), at infinite sequence length and infinite head dimension.
+The end result is a consistent 4500 gigainstructions per second on M1 Max (80% ALU utilization), at infinite sequence length and infinite head dimension. Provided BF16 emulation is being used for mixed precision (Metal's `bfloat` has IEEE-compliant rounding, a major overhead on older chips without hardware BF16).
 
 ![M1_Max_Image.png](./Documentation/M1_Max_Image.png)
 
@@ -36,7 +36,7 @@ Instead of gigaflops, I use gigainstructions to understand how well the shader i
 | Backward FlashAttention | `(5D + 5) * N^2` |
 | FWD + BWD Combined | `(7D + 10) * N^2` | 
 
-Due to the complexity of the floating point atomics, MFA had to use a different approach for backward pass. This one has higher compute cost. It splits the backward pass into two separate kernels: `dQ` and `dK/dV`.
+Due to the complexity of FP32 atomics, MFA used a different approach for backward pass. This one has higher compute cost. It splits the backward pass into two separate kernels: `dQ` and `dK/dV`. A dropdown shows the pseudocode. Compare this to one of the algorithms in the Flash1, Flash2, or Flash3 papers.
 
 | Operation   | Work |
 | :---------- | :--- |
@@ -44,6 +44,64 @@ Due to the complexity of the floating point atomics, MFA had to use a different 
 | Backward dQ | `(3D + 5) * N^2` |
 | Backward dK/dV | `(4D + 5) * N^2` |
 | FWD + BWD Combined | `(9D + 15) * N^2` | 
+
+<details>
+<summary>Algorithm Pseudocode</summary>
+
+```
+// Forward
+//   for c in 0..<C {
+//     load K[c]
+//     S = Q * K^T
+//     (m, l, P) = softmax(m, l, S * scaleFactor)
+//
+//     O *= correction
+//     load V[c]
+//     O += P * V
+//   }
+//   O /= l
+//
+//   L = m + logBaseE(l)
+//
+// Backward Query
+//   D = dO * O
+//
+//   for c in 0..<C {
+//     load K[c]
+//     S = Q * K^T
+//     P = exp(S - L)
+//
+//     load V[c]
+//     dP = dO * V^T
+//     dS = P * (dP - D) * scaleFactor
+//
+//     load K[c]
+//     dQ += dS * K
+//   }
+//
+// Backward Key-Value
+//   for r in 0..<R {
+//     load Q[r]
+//     load L[r]
+//     S^T = K * Q^T
+//     P^T = exp(S^T - L)
+//
+//     load dO[r]
+//     dV += P^T * dO
+//
+//     load dO[r]
+//     load D[r]
+//     dP^T = V * dO^T
+//     dS^T = P^T * (dP^T - D) * scaleFactor
+//
+//     load Q[r]
+//     dK += dS^T * Q
+//   }
+```
+
+</details>
+
+There are limits to the performance model - M3 generation at small head dimensions.
 
 ## Usage
 
