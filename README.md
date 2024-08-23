@@ -39,7 +39,7 @@ Instead of gigaflops, I use gigainstructions to understand how well the shader i
 Due to the complexity of FP32 atomics, MFA used a different approach for backward pass. This one has higher compute cost. It splits the backward pass into two separate kernels: `dQ` and `dK/dV`. A dropdown shows the pseudocode. Compare this to one of the algorithms in the Flash1, Flash2, or Flash3 papers.
 
 | Operation   | Work |
-| :---------- | :--- |
+| :---------- | ---: |
 | Forward | `(2D + 5) * N^2` |
 | Backward dQ | `(3D + 5) * N^2` |
 | Backward dK/dV | `(4D + 5) * N^2` |
@@ -124,14 +124,14 @@ let ginstrs = Int(instrs / 1e9)
 ```
 
 | Hardware | GFLOPS | GINSTRS |
-| :------- | :----: | :-----: |
+| :------- | -----: | ------: |
 | M1 Max   | 10616  | 5308    |
 | M4       | 3580   | 1790    |
 
 How well does the Metal port compare to the official FlashAttention repository? Imagine I went with the "atomic dQ" algorithm and achieved 100% performance. Then, switched to the actual MFA repo and found model training to be 4x slower. That would be 25% of the roofline from the official repository. To get this percentage, multiply the average ALU utilization across all three kernels by `7 / 9`.
 
 | A100 SXM, Flash2   | D = 64  | D = 128 | D = 256 |
-| :----------------- | :-----: | :-----: | :-----: |
+| :----------------- | ------: | ------: | ------: |
 | Forward            | 62%     | 71%     | n/a     |
 | Forward + Backward | 56%     | 65%     | n/a     |
 
