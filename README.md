@@ -166,12 +166,12 @@ To calculate utilization of Nvidia hardware, I used GFLOPS for FP16/BF16 ALUs. I
 
 | M1 Architecture, FP16 | D = 64  | D = 128 | D = 256 |
 | :-------------------- | ------: | ------: | ------: |
-| Forward               | 89%     | 87%     | 87%     |
+| Forward               | 86%     | 85%     | 86%     |
 | Forward + Backward    | 62%     | 63%     | 64%     |
 
 | M3 Architecture, FP16 | D = 64  | D = 128 | D = 256 |
 | :-------------------- | ------: | ------: | ------: |
-| Forward               | 97%     | 93%     | 83%     |
+| Forward               | 94%     | 91%     | 82%     |
 | Forward + Backward    | 71%     | 69%     | 61%     |
 
 ### Side by Side
