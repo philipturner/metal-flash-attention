@@ -13,8 +13,8 @@ final class RectangularAttentionTest: XCTestCase {
     var descriptor = AttentionDescriptor()
     descriptor.lowPrecisionInputs = false
     descriptor.lowPrecisionIntermediates = false
-    descriptor.matrixDimensions = (row: 5, column: 5, head: 3)
-    descriptor.transposeState = (Q: false, K: false, V: false, O: true)
+    descriptor.matrixDimensions = (row: 32, column: 13, head: 16)
+    descriptor.transposeState = (Q: false, K: false, V: false, O: false)
     runCorrectnessTest(descriptor: descriptor)
   }
 }
@@ -69,131 +69,57 @@ private func runCorrectnessTest(descriptor: AttentionDescriptor) {
   
   // MARK: - Transpose
   
-  // Utility for transposing data.
-  //
-  // Automatically detects the operand's sequence length.
-  func transpose(_ input: [Float]) -> [Float] {
+  func transposeIn(_ input: [Float]) -> [Float] {
     let headDimension = Int(matrixDimensions.head)
     let sequenceDimension = input.count / headDimension
-    guard input.count % headDimension == 0 else {
-      fatalError("Array size was indivisible by the head dimension.")
-    }
     
-    print()
-    print("Output 1")
-    print()
-    var output1 = [Float](repeating: .zero, count: input.count)
+    var output = [Float](
+      repeating: .zero, count: sequenceDimension * headDimension)
     for n in 0..<sequenceDimension {
       for d in 0..<headDimension {
         let inputAddress = n * headDimension + d
         let outputAddress = d * sequenceDimension + n
-        print("input[\(outputAddress)] -> output[\(inputAddress)]")
-        output1[inputAddress] = input[outputAddress]
+        output[outputAddress] = input[inputAddress]
       }
     }
     
-    print()
-    print("Output 2")
-    print()
-    var output2 = [Float](repeating: .zero, count: input.count)
-    for n in 0..<sequenceDimension {
-      for d in 0..<headDimension {
-        let inputAddress = n * headDimension + d
-        let outputAddress = d * sequenceDimension + n
-        print("input[\(inputAddress)] -> output[\(outputAddress)]")
-        output2[outputAddress] = input[inputAddress]
-      }
-    }
-    
-    print()
-    print("before:", input)
-    print("after:", output1)
-    print("output 1:", output1)
-    print("output 2:", output2)
-    print()
-    
-    /*
-     before: [
-     1.1284415, 0.38466945, 1.1532598, 1.468534, 2.0469744, -0.3987839, -0.79459083, -0.108481325, 0.46287277, 1.0048082, 0.7764682, 0.84684145, 0.76761913, 0.9954017, 1.0747932]
-     
-     after: [
-     1.1284415, 1.468534, -0.79459083,
-     1.0048082, 0.76761913, 0.38466945,
-     2.0469744, -0.108481325, 0.7764682, 
-     0.9954017, 1.1532598, -0.3987839, 0.46287277, 0.84684145, 1.0747932]
-     */
-    
-    /*
-     before: [
-     -0.39310038, 0.078228064, 0.08812927, 0.37617692, -0.21796104, -0.61496484, -0.58857936, -0.6493126, -0.4913063, -0.66127926, 0.26529828, 0.48618513, 0.33744544, 0.8313465, 0.22129166]
-     after: [
-     -0.39310038, -0.61496484, 0.26529828, 
-     0.078228064, -0.58857936, 0.48618513,
-     0.08812927, -0.6493126, 0.33744544,
-     0.37617692, -0.4913063, 0.8313465,
-     -0.21796104, -0.66127926, 0.22129166]
-     
-     before: [0.042357754, -0.11670769, 0.004373575, 0.25964418, -0.16472085, 0.09223048, -0.051782653, 0.054542586, 0.035156548, -0.18292303, 1.1250842, 1.0917723, 1.1090381, 0.8391857, 0.79724026]
-     after: [0.042357754, 0.09223048, 1.1250842, -0.11670769, -0.051782653, 1.0917723, 0.004373575, 0.054542586, 1.1090381, 0.25964418, 0.035156548, 0.8391857, -0.16472085, -0.18292303, 0.79724026]
-     
-     output 1: [
-     0.042357754,
-     0.09223048,
-     1.1250842,
-     -0.11670769,
-     -0.051782653,
-     1.0917723,
-     0.004373575,
-     0.054542586,
-     1.1090381,
-     0.25964418,
-     0.035156548,
-     0.8391857,
-     -0.16472085,
-     -0.18292303,
-     0.79724026
-     ]
-     
-     output 2: [
-     0.042357754,
-     0.25964418,
-     -0.051782653,
-     -0.18292303,
-     1.1090381,
-     -0.11670769, 
-     -0.16472085,
-     0.054542586,
-     1.1250842,
-     0.8391857,
-     0.004373575,
-     0.09223048,
-     0.035156548,
-     1.0917723,
-     0.79724026
-     ]
-
-     */
-    
-    return output1
+    return output
   }
   
+  func transposeOut(_ output: [Float]) -> [Float] {
+    let headDimension = Int(matrixDimensions.head)
+    let sequenceDimension = output.count / headDimension
+    
+    var input = [Float](
+      repeating: .zero, count: sequenceDimension * headDimension)
+    for n in 0..<sequenceDimension {
+      for d in 0..<headDimension {
+        let inputAddress = n * headDimension + d
+        let outputAddress = d * sequenceDimension + n
+        input[inputAddress] = output[outputAddress]
+      }
+    }
+    
+    return input
+  }
+  
+  // Read the matrix inputs.
   var inputQ = network.Q
   var inputK = network.K
   var inputV = network.V
   var inputDerivativeO = network.dO
-  
-//  if transposeState.Q {
-//    inputQ = transpose(inputQ)
-//  }
-//  if transposeState.K {
-//    inputK = transpose(inputK)
-//  }
-//  if transposeState.V {
-//    inputV = transpose(inputV)
-//  }
-//  if transposeState.O {
-//    inputDerivativeO = transpose(inputDerivativeO)
-//  }
+  if transposeState.Q {
+    inputQ = transposeIn(inputQ)
+  }
+  if transposeState.K {
+    inputK = transposeIn(inputK)
+  }
+  if transposeState.V {
+    inputV = transposeIn(inputV)
+  }
+  if transposeState.O {
+    inputDerivativeO = transposeIn(inputDerivativeO)
+  }
   
   // MARK: - Buffers
   
@@ -244,7 +170,7 @@ private func runCorrectnessTest(descriptor: AttentionDescriptor) {
   let bufferDerivativeK = createBuffer(.dK, contents: createArray(.dK))
   let bufferDerivativeQ = createBuffer(.dQ, contents: createArray(.dQ))
   
-  // MARK: - GPU Commands
+  // MARK: - Issuing GPU Work
   
   // - Parameter dispatchCount: Number of times to duplicate the FWD / BWD
   //                            combined pass.
@@ -325,7 +251,7 @@ private func runCorrectnessTest(descriptor: AttentionDescriptor) {
   }
   executeCommandBuffer(dispatchCount: 1)
   
-  // MARK: - Reading Results from the GPU
+  // MARK: - Collecting Results
   
   // Read a buffer.
   func readBuffer(
@@ -345,9 +271,6 @@ private func runCorrectnessTest(descriptor: AttentionDescriptor) {
   // Read the per-row intermediates.
   var resultL = readBuffer(.L, contents: bufferL)
   var resultD = readBuffer(.D, contents: bufferD)
-  
-  // Correct for slight differences between the reference implementation and
-  // the GPU implementation.
   for i in resultL.indices {
     resultL[i] /= 1.44269504089
   }
@@ -360,18 +283,17 @@ private func runCorrectnessTest(descriptor: AttentionDescriptor) {
   var resultDerivativeV = readBuffer(.dV, contents: bufferDerivativeV)
   var resultDerivativeK = readBuffer(.dK, contents: bufferDerivativeK)
   var resultDerivativeQ = readBuffer(.dQ, contents: bufferDerivativeQ)
-  
-//  if transposeState.Q {
-//    resultDerivativeQ = transpose(resultDerivativeQ)
-//  }
-//  if transposeState.K {
-//    resultDerivativeK = transpose(resultDerivativeK)
-//  }
-//  if transposeState.V {
-//    resultDerivativeV = transpose(resultDerivativeV)
-//  }
+  if transposeState.Q {
+    resultDerivativeQ = transposeOut(resultDerivativeQ)
+  }
+  if transposeState.K {
+    resultDerivativeK = transposeOut(resultDerivativeK)
+  }
+  if transposeState.V {
+    resultDerivativeV = transposeOut(resultDerivativeV)
+  }
   if transposeState.O {
-    resultO = transpose(resultO)
+    resultO = transposeOut(resultO)
   }
   
   // MARK: - Validation
@@ -387,7 +309,7 @@ private func runCorrectnessTest(descriptor: AttentionDescriptor) {
   // This path floods the console a lot. Only activate it when debugging
   // correctness failures. Start by making the O matrix agree on both CPU
   // and GPU. Then, get the remaining operands to match.
-#if true
+#if false
   
   // Displays a matrix with dimensions N * 1.
   func printVector(_ matrix: [Float]) {
@@ -512,17 +434,17 @@ private func runCorrectnessTest(descriptor: AttentionDescriptor) {
   if attentionDesc.lowPrecisionInputs ||
       attentionDesc.lowPrecisionIntermediates {
     check(expected: O, actual: resultO, tolerance: 5e-2)
-//    check(expected: L, actual: resultL, tolerance: 7e-3)
-//    check(expected: D, actual: resultD, tolerance: 1e-1)
-//    check(expected: dV, actual: resultDerivativeV, tolerance: 5e-2)
-//    check(expected: dK, actual: resultDerivativeK, tolerance: 5e-2)
-//    check(expected: dQ, actual: resultDerivativeQ, tolerance: 5e-2)
+    check(expected: L, actual: resultL, tolerance: 7e-3)
+    check(expected: D, actual: resultD, tolerance: 1e-1)
+    check(expected: dV, actual: resultDerivativeV, tolerance: 5e-2)
+    check(expected: dK, actual: resultDerivativeK, tolerance: 5e-2)
+    check(expected: dQ, actual: resultDerivativeQ, tolerance: 5e-2)
   } else {
     check(expected: O, actual: resultO, tolerance: 2e-5)
-//    check(expected: L, actual: resultL, tolerance: 2e-5)
-//    check(expected: D, actual: resultD, tolerance: 2e-5)
-//    check(expected: dV, actual: resultDerivativeV, tolerance: 2e-5)
-//    check(expected: dK, actual: resultDerivativeK, tolerance: 2e-5)
-//    check(expected: dQ, actual: resultDerivativeQ, tolerance: 2e-5)
+    check(expected: L, actual: resultL, tolerance: 2e-5)
+    check(expected: D, actual: resultD, tolerance: 2e-5)
+    check(expected: dV, actual: resultDerivativeV, tolerance: 2e-5)
+    check(expected: dK, actual: resultDerivativeK, tolerance: 2e-5)
+    check(expected: dQ, actual: resultDerivativeQ, tolerance: 2e-5)
   }
 }
