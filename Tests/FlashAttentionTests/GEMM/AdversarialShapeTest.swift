@@ -268,11 +268,13 @@ private func runCorrectnessTest(descriptor: GEMMDescriptor) {
     checkpoint3 - checkpoint2,
     checkpoint4 - checkpoint3
   ]
+  #if false
   for latency in latencies {
     let repr = String(format: "%.1f", latency * 1000)
     print(repr, terminator: " ms | ")
   }
   print()
+  #endif
   
   guard maxDistance < tolerance else {
     fatalError("Failed correctness test for problem config: \(descriptor)\n\(maxDistance) \(tolerance)")

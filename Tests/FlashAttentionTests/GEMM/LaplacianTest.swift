@@ -3,7 +3,6 @@ import FlashAttention
 
 final class LaplacianTest: XCTestCase {
   func testCorrectness() throws {
-    // Correctness tests.
     let problemSizes: [Int] = [
       7, 8, 9, 10,
       15, 16, 17, 18,
@@ -24,15 +23,20 @@ final class LaplacianTest: XCTestCase {
       (true, false),
     ]
     
-    print()
-    print("Correctness tests:")
     for problemSize in problemSizes {
       for transposeState in transposeStates {
-        var testDescriptor = TestDescriptor()
-        testDescriptor.precision = .FP32
-        testDescriptor.problemSize = problemSize
-        testDescriptor.transposeState = transposeState
-        runTest(descriptor: testDescriptor)
+        let n: UInt32 = .init(problemSize)
+        let precision: GEMMOperandPrecision = .FP32
+        
+        // Set up the kernel.
+        var gemmDesc = GEMMDescriptor()
+        gemmDesc.loadPreviousC = false
+        gemmDesc.matrixDimensions = (M: n, N: n, K: n)
+        gemmDesc.memoryPrecisions = (A: precision, B: precision, C: precision)
+        gemmDesc.transposeState = transposeState
+        
+        // Test the kernel.
+        _ = profileProblemSize(descriptor: gemmDesc)
       }
     }
   }
@@ -45,78 +49,57 @@ final class LaplacianTest: XCTestCase {
       (true, true),
     ]
     
-    print()
-    print("Performance tests:")
     for problemSize in 511...513 {
       for transposeState in transposeStates {
-        var testDescriptor = TestDescriptor()
-        testDescriptor.precision = .BF16
-        testDescriptor.problemSize = problemSize
-        testDescriptor.transposeState = transposeState
-        runTest(descriptor: testDescriptor)
+        let n: UInt32 = .init(problemSize)
+        let precision: GEMMOperandPrecision = .BF16
+        
+        // Set up the kernel.
+        var gemmDesc = GEMMDescriptor()
+        gemmDesc.loadPreviousC = false
+        gemmDesc.matrixDimensions = (M: n, N: n, K: n)
+        gemmDesc.memoryPrecisions = (A: precision, B: precision, C: precision)
+        gemmDesc.transposeState = transposeState
+        
+        // Test the kernel.
+        let statistic = profileProblemSize(descriptor: gemmDesc)
+        
+        // Report the results.
+        do {
+          var repr = "\(problemSize)"
+          while repr.count < 4 {
+            repr = " " + repr
+          }
+          print("problemSize = \(repr)", terminator: " | ")
+        }
+        if transposeState.0 {
+          print("A^T", terminator: " ")
+        } else {
+          print("A  ", terminator: " ")
+        }
+        if transposeState.1 {
+          print("B^T", terminator: " | ")
+        } else {
+          print("B  ", terminator: " | ")
+        }
+        
+        for laneID in [Int(1), Int(0)] {
+          var repr = "\(statistic[laneID])"
+          while repr.count < 4 {
+            repr = " " + repr
+          }
+          
+          // Log the number to the console.
+          if laneID == 0 {
+            print(repr, terminator: " GFLOPS")
+          } else {
+            print(repr, terminator: " threads/core | ")
+          }
+        }
+        print("")
       }
     }
   }
-}
-
-private struct TestDescriptor {
-  var precision: GEMMOperandPrecision?
-  var problemSize: Int?
-  var transposeState: (Bool, Bool)?
-}
-
-/// Run a test with the specified configuration.
-private func runTest(descriptor: TestDescriptor) {
-  guard let precision = descriptor.precision,
-        let problemSize = descriptor.problemSize,
-        let transposeState = descriptor.transposeState else {
-    fatalError("Descriptor was incomplete.")
-  }
-  
-  // Set up the kernel.
-  var gemmDesc = GEMMDescriptor()
-  let n = UInt32(problemSize)
-  gemmDesc.loadPreviousC = false
-  gemmDesc.matrixDimensions = (M: n, N: n, K: n)
-  gemmDesc.memoryPrecisions = (precision, precision, precision)
-  gemmDesc.transposeState = descriptor.transposeState
-  
-  // Test the kernel.
-  let statistic = profileProblemSize(descriptor: gemmDesc)
-  
-  // Report the results.
-  do {
-    var repr = "\(problemSize)"
-    while repr.count < 4 {
-      repr = " " + repr
-    }
-    print("problemSize = \(repr)", terminator: " | ")
-  }
-  if transposeState.0 {
-    print("A^T", terminator: " ")
-  } else {
-    print("A  ", terminator: " ")
-  }
-  if transposeState.1 {
-    print("B^T", terminator: " | ")
-  } else {
-    print("B  ", terminator: " | ")
-  }
-  
-  for laneID in [Int(1), Int(0)] {
-    var repr = "\(statistic[laneID])"
-    while repr.count < 4 {
-      repr = " " + repr
-    }
-    
-    // Log the number to the console.
-    if laneID == 0 {
-      print(repr, terminator: " GFLOPS")
-    } else {
-      print(repr, terminator: " threads/core | ")
-    }
-  }
-  print("")
 }
 
 /// A continuous (integration) test of both correctness and performance. This
