@@ -23,4 +23,6 @@ Portability:
   - The benchmark needs to be documented somewhere, so somebody can copy the raw code into a new Xcodeproj for iOS.
   - Minimal examples of the benchmarks that don't actually measure problems large enough to get performance statistics?
 
-Document the need for `-Xswiftc -Onone`, how to force it to be done on iOS.
+Document the use of "gigainstructions per second" instead of "GFLOPS".
+
+Document the need for `-Xswiftc -Onone`, how to force it to be done on iOS. Cannot use release mode because that prevents incremental compilation, and now recompilation latency is a bottleneck.

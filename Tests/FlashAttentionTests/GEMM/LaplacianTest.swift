@@ -49,6 +49,12 @@ final class LaplacianTest: XCTestCase {
       (true, true),
     ]
     
+    // The size embedded here (512) is too small to actually measure
+    // performance. Instead, pick a number like 1024, 1488, or 1512. Expand
+    // the range to three numbers: e.g. 1024 - 1, 1024, 1024 + 1. This is
+    // to test the performance drop for odd problem sizes that misalign with
+    // the GEMM block dimension.
+    print()
     for problemSize in 511...513 {
       for transposeState in transposeStates {
         let n: UInt32 = .init(problemSize)
@@ -96,7 +102,7 @@ final class LaplacianTest: XCTestCase {
             print(repr, terminator: " threads/core | ")
           }
         }
-        print("")
+        print()
       }
     }
   }
