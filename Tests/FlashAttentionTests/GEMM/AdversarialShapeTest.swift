@@ -4,7 +4,7 @@ import FlashAttention
 import func Foundation.exp2
 
 final class AdversarialShapeTest: XCTestCase {
-  func testAdversarialShapes() throws {
+  func testCorrectness() throws {
     // I would typically run 100 trials. It was shrunk down to 20, to
     // get reasonable latency in tight debugging feedback loops. A
     // comprehensive test is of no use, if it takes so long that you bypass it
