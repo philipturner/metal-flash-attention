@@ -22,7 +22,28 @@ Raw Data: https://docs.google.com/spreadsheets/d/1Xf4jrJ7e19I32J1IWIekGE9uMFTeZK
 
 ## Quantifying Performance
 
-TODO: Explain roofline model
+In the AI field, performance is most often reported in giga-floating point operations per second (GFLOPS). This metric reflects a simplified model of performance, that every instruction occurs in GEMM. As hardware has advanced from early FPUs to modern vector processors, the most common floating-point operations were fused into a single instruction. Fused multiply-add (FMA). When one multiplies two 100x100 matrices, 1 million FMA instructions are issued. Why must we treat this FMA as two separate instructions?
+
+This question is relevant to attention, where not all floating point operations are created equal. The exponentiation during softmax occurs in a single clock cycle, granted that most of the other instructions go to the FMA unit. Some of the multiplies and adds during softmax, cannot be fused with a nearby add or multiply. Should we treat these the same as FMA, and pretend the hardware is just executing the FMA two times slower? It is unclear how the GEMM performance model can explain whether my shader is using the ALU hardware effectively.
+
+Instead of gigaflops, I use gigainstructions to understand how well the shader is performing. It maps more directly to the algorithm. For example, one GEMM is `N^3` FMA instructions. Forward attention performs two matrix multiplies, or `2 * D * N^2` FMA instructions. Backward attention (by the [Dao-AILab/flash-attention](https://github.com/Dao-AILab/flash-attention) implementation) is `5 * D * N^2` FMA instructions. Try comparing this table to roofline models in the Flash1, Flash2, or Flash3 papers.
+
+| Operation   | Work |
+| :---------- | :--- |
+| Square GEMM | `N^3`  |
+| Forward Attention | `(2D + 5) * N^2` |
+| Backward Naive Attention | `4D * N^2` |
+| Backward FlashAttention | `(5D + 5) * N^2` |
+| FWD + BWD Combined | `(7D + 10) * N^2` | 
+
+Due to the complexity of the floating point atomics, MFA had to use a different approach for backward pass. This one has higher compute cost. It splits the backward pass into two separate kernels: `dQ` and `dK/dV`.
+
+| Operation   | Work |
+| :---------- | :--- |
+| Forward | `(2D + 5) * N^2` |
+| Backward dQ | `(3D + 5) * N^2` |
+| Backward dK/dV | `(4D + 5) * N^2` |
+| FWD + BWD Combined | `(9D + 15) * N^2` | 
 
 ## Usage
 
