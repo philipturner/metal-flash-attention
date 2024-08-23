@@ -6,9 +6,19 @@ This repository ports the official implementation of [FlashAttention](https://gi
 
 Single-headed attention only, to focus on the core bottlenecks of different attention algorithms (register pressure, parallelism). With the basic algorithm done correctly, it should be comparatively trivial to add customizations like block sparsity.
 
+Everything is JIT compiled at runtime. This constrasts with the previous implementation, which relied on an executable embedded in Xcode 14.2.
+
 The backward pass uses less memory than [Dao-AILab/flash-attention](https://github.com/Dao-AILab/flash-attention). The official implementation allocates scratch space for atomics and partial sums. Apple hardware lacks native FP32 atomics (`metal::atomic<float>` is emulated). While attempting to circumvent the lack of hardware support, bandwidth and parallelization bottlenecks in the FlashAttention-2 backward kernel were revealed. An alternative backward pass was designed with higher compute cost (7 GEMMs instead of 5 GEMMs). It achieves 100% parallelization efficiency across both the row and column dimensions of the attention matrix. Most importantly, it is easier to code and maintain.
 
-Everything is JIT compiled at runtime. This constrasts with the previous implementation, which relied on an executable embedded in Xcode 14.2.
+A lot of crazy stuff was done to overcome register pressure bottlenecks. At large head dimensions (e.g. 256), none of the matrix blocks can fit into registers. Not even the accumulator can. Therefore, intentional register spilling is done, but in a more optimized way. A third block dimension was added to the attention algorithm, which blocks along `D`. The aspect ratio of attention matrix blocks was warped heavily, to minimize the bandwidth cost of register spilling. For example, 16-32 along the parallelization dimension and 80-128 along the traversal dimension. There is a large parameter file that takes the `D` dimension, and determines which operands can fit into registers. It then assigns a block size that balances many competing bottlenecks.
+
+The end result is a consistent 4500 gigainstructions per second (80% ALU utilization) on M1 Max, at infinite sequence length and infinite head dimension.
+
+TODO: Add Images
+
+Raw Data: https://docs.google.com/spreadsheets/d/1Xf4jrJ7e19I32J1IWIekGE9uMFTeZKoOpQ6hlUoh-xY/edit?usp=sharing
+
+TODO: Explain roofline model
 
 ## Usage
 
@@ -37,3 +47,7 @@ Sources/FlashAttention/Attention/AttentionKernel
 Sources/FlashAttention/GEMM/GEMMKernel
 
 ```
+
+Add random text to one of them. Compile and run the project again. Something should go terribly wrong. For example, the Metal compiler may throw an error. If this does not happen, try messing up a different line of code somewher else. If the test still passes, Xcode is not registering your changes.
+
+Proceed with coding up [block sparsity](https://pytorch.org/blog/flexattention/) or something. Get feedback about whether the code works at all, whether it works fast, and whether it works fast for any problem size. Then integrate the raw source code into your app, or translate it to another language.
