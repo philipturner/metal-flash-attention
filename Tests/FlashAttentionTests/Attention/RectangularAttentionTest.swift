@@ -79,19 +79,102 @@ private func runCorrectnessTest(descriptor: AttentionDescriptor) {
       fatalError("Array size was indivisible by the head dimension.")
     }
     
-    var output = [Float](repeating: .zero, count: input.count)
+    print()
+    print("Output 1")
+    print()
+    var output1 = [Float](repeating: .zero, count: input.count)
     for n in 0..<sequenceDimension {
       for d in 0..<headDimension {
         let inputAddress = n * headDimension + d
         let outputAddress = d * sequenceDimension + n
-        output[outputAddress] = input[inputAddress]
+        print("input[\(outputAddress)] -> output[\(inputAddress)]")
+        output1[inputAddress] = input[outputAddress]
       }
     }
+    
+    print()
+    print("Output 2")
+    print()
+    var output2 = [Float](repeating: .zero, count: input.count)
+    for n in 0..<sequenceDimension {
+      for d in 0..<headDimension {
+        let inputAddress = n * headDimension + d
+        let outputAddress = d * sequenceDimension + n
+        print("input[\(inputAddress)] -> output[\(outputAddress)]")
+        output2[outputAddress] = input[inputAddress]
+      }
+    }
+    
     print()
     print("before:", input)
-    print("after:", output)
+    print("after:", output1)
+    print("output 1:", output1)
+    print("output 2:", output2)
     print()
-    return output
+    
+    /*
+     before: [
+     1.1284415, 0.38466945, 1.1532598, 1.468534, 2.0469744, -0.3987839, -0.79459083, -0.108481325, 0.46287277, 1.0048082, 0.7764682, 0.84684145, 0.76761913, 0.9954017, 1.0747932]
+     
+     after: [
+     1.1284415, 1.468534, -0.79459083,
+     1.0048082, 0.76761913, 0.38466945,
+     2.0469744, -0.108481325, 0.7764682, 
+     0.9954017, 1.1532598, -0.3987839, 0.46287277, 0.84684145, 1.0747932]
+     */
+    
+    /*
+     before: [
+     -0.39310038, 0.078228064, 0.08812927, 0.37617692, -0.21796104, -0.61496484, -0.58857936, -0.6493126, -0.4913063, -0.66127926, 0.26529828, 0.48618513, 0.33744544, 0.8313465, 0.22129166]
+     after: [
+     -0.39310038, -0.61496484, 0.26529828, 
+     0.078228064, -0.58857936, 0.48618513,
+     0.08812927, -0.6493126, 0.33744544,
+     0.37617692, -0.4913063, 0.8313465,
+     -0.21796104, -0.66127926, 0.22129166]
+     
+     before: [0.042357754, -0.11670769, 0.004373575, 0.25964418, -0.16472085, 0.09223048, -0.051782653, 0.054542586, 0.035156548, -0.18292303, 1.1250842, 1.0917723, 1.1090381, 0.8391857, 0.79724026]
+     after: [0.042357754, 0.09223048, 1.1250842, -0.11670769, -0.051782653, 1.0917723, 0.004373575, 0.054542586, 1.1090381, 0.25964418, 0.035156548, 0.8391857, -0.16472085, -0.18292303, 0.79724026]
+     
+     output 1: [
+     0.042357754,
+     0.09223048,
+     1.1250842,
+     -0.11670769,
+     -0.051782653,
+     1.0917723,
+     0.004373575,
+     0.054542586,
+     1.1090381,
+     0.25964418,
+     0.035156548,
+     0.8391857,
+     -0.16472085,
+     -0.18292303,
+     0.79724026
+     ]
+     
+     output 2: [
+     0.042357754,
+     0.25964418,
+     -0.051782653,
+     -0.18292303,
+     1.1090381,
+     -0.11670769, 
+     -0.16472085,
+     0.054542586,
+     1.1250842,
+     0.8391857,
+     0.004373575,
+     0.09223048,
+     0.035156548,
+     1.0917723,
+     0.79724026
+     ]
+
+     */
+    
+    return output1
   }
   
   var inputQ = network.Q
