@@ -3,7 +3,7 @@ import FlashAttention
 
 final class SquareAttentionTest: XCTestCase {
   func testCorrectness() throws {
-    validateProblemSize(sequenceDimension: 8, headDimension: 8)
+    validateProblemSize(sequenceDimension: 10, headDimension: 3)
     validateProblemSize(sequenceDimension: 10, headDimension: 80)
     validateProblemSize(sequenceDimension: 8, headDimension: 2)
     validateProblemSize(sequenceDimension: 9, headDimension: 2)
