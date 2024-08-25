@@ -136,33 +136,33 @@ To calculate utilization of Nvidia hardware, I used GFLOPS for FP16/BF16 ALUs. I
 
 | A100, Flash2, FP16 | D = 64  | D = 128 | D = 256 |
 | :----------------- | ------: | ------: | ------: |
-| Forward            | 192000  | 223000  | n/a     |
-| Backward           | 170000  | 196000  | n/a     |
-| Forward + Backward | 176000  | 203000  | n/a     |
+| Forward            | 192000  | 223000  | 0       |
+| Backward           | 170000  | 196000  | 0       |
+| Forward + Backward | 176000  | 203000  | 0       |
 
 | H100, Flash3, FP16 | D = 64  | D = 128 | D = 256 |
 | :----------------- | ------: | ------: | ------: |
 | Forward            | 497000  | 648000  | 756000  |
-| Backward           | 474000  | 561000  | n/a     |
-| Forward + Backward | 480000  | 585000  | n/a     |
+| Backward           | 474000  | 561000  | 0       |
+| Forward + Backward | 480000  | 585000  | 0       |
 
 | H100, Flash3, FP8  | D = 64  | D = 128 | D = 256 |
 | :----------------- | ------: | ------: | ------: |
 | Forward            | 613000  | 1008000 | 1171000 |
-| Backward           | n/a     | n/a     | n/a     |
-| Forward + Backward | n/a     | n/a     | n/a     |
+| Backward           | 0       | 0       | 0       |
+| Forward + Backward | 0       | 0       | 0       |
 
 ### Compute Utilization
 
 | A100, Flash2, FP16 | D = 64  | D = 128 | D = 256 |
 | :----------------- | ------: | ------: | ------: |
-| Forward            | 62%     | 71%     | n/a     |
-| Forward + Backward | 56%     | 65%     | n/a     |
+| Forward            | 62%     | 71%     | 0%      |
+| Forward + Backward | 56%     | 65%     | 0%      |
 
 | H100, Flash3, FP16 | D = 64  | D = 128 | D = 256 |
 | :----------------- | ------: | ------: | ------: |
 | Forward            | 50%     | 66%     | 76%     |
-| Forward + Backward | 48%     | 59%     | n/a     |
+| Forward + Backward | 48%     | 59%     | 0%      |
 
 | M1 Architecture, FP16 | D = 64  | D = 128 | D = 256 |
 | :-------------------- | ------: | ------: | ------: |
@@ -178,13 +178,13 @@ To calculate utilization of Nvidia hardware, I used GFLOPS for FP16/BF16 ALUs. I
 
 | Hardware Produced in 2020 | D = 64  | D = 128 | D = 256 |
 | :------------------------ | ------: | ------: | ------: |
-| A100                      | 56%     | 65%     | n/a     |
+| A100                      | 56%     | 65%     | 0%      |
 | M1&mdash;M2 Architecture  | 62%     | 63%     | 64%     |
 
 | Hardware Produced in 2023 | D = 64  | D = 128 | D = 256 |
 | :------------------------ | ------: | ------: | ------: |
-| H100 (using FP8 GFLOPS)   | 24%     | 30%     | n/a     |
-| H100 (using FP16 GFLOPS)  | 48%     | 59%     | n/a     |
+| H100 (using FP8 GFLOPS)   | 24%     | 30%     | 0%      |
+| H100 (using FP16 GFLOPS)  | 48%     | 59%     | 0%      |
 | M3&mdash;M4 Architecture  | 71%     | 69%     | 61%     |
 
 Despite issuing more computations, Apple hardware is training transformers <b>faster than Nvidia hardware doing the same work</b>. Normalizing for the difference in size between different GPUs. Just focusing on how efficiently the GPU is utilized. Perhaps the main repository should try the algorithm that avoids FP32 atomics and deliberately spills registers when they cannot fit in the GPU core.
