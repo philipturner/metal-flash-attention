@@ -130,7 +130,7 @@ let ginstrs = Int(instrs / 1e9)
 
 How well does the Metal port compare to the official FlashAttention repository? Imagine I went with the "atomic dQ" algorithm and achieved 100% performance. Then, switched to the actual MFA repo and found model training to be 4x slower. That would be 25% of the roofline from the official repository. To get this percentage, multiply the average ALU utilization across all three kernels by `7 / 9`. A more nuanced model was used for the statistics on Apple hardware, but this is the gist of it.
 
-To calculate utilization of Nvidia hardware, I used GFLOPS for FP16/BF16 ALUs. I divided the highest GFLOPS from each graph in the paper by 312000 (A100 SXM), 989000 (H100 SXM). Notice that, for larger head dimensions and register intensive kernels (backward pass), no benchmarks were reported. Perhaps because they did not solve the register pressure issue at infinite head dimensions. For example, the accumulator might always be held in registers.
+To calculate utilization of Nvidia hardware, I used GFLOPS for FP16/BF16 ALUs. I divided the highest GFLOPS from each graph in the paper by 312000 (A100 SXM), 989000 (H100 SXM). Notice that, for larger head dimensions and register intensive kernels (backward pass), no benchmarks were reported. I confirmed they did not solve the register pressure issue at infinite head dimensions. For example, the accumulator is always held in registers. At the time of writing, I had not seen concrete evidence of D=256 backward gradient executing with correct results.
 
 ### GFLOPS
 
@@ -187,7 +187,9 @@ To calculate utilization of Nvidia hardware, I used GFLOPS for FP16/BF16 ALUs. I
 | H100 (using FP16 GFLOPS)  | 48%     | 59%     | 0%      |
 | M3&mdash;M4 Architecture  | 71%     | 69%     | 61%     |
 
-Despite issuing more computations, Apple hardware is training transformers <b>faster than Nvidia hardware doing the same work</b>. Normalizing for the difference in size between different GPUs. Just focusing on how efficiently the GPU is utilized. Perhaps the main repository should try the algorithm that avoids FP32 atomics and deliberately spills registers when they cannot fit in the GPU core.
+Despite issuing more computations, Apple hardware is training transformers <b>faster than Nvidia hardware doing the same work</b>. Normalizing for the difference in size between different GPUs. Just focusing on how efficiently the GPU is utilized.
+
+Perhaps the main repository should try the algorithm that avoids FP32 atomics and deliberately spills registers when they cannot fit in the GPU core. This seems unlikely, as they have hard-coded support for a small subset of the possible problem sizes. The motivation seems to be supporting the most common models, where `D` is a power of 2, and less than 128. For anything else, users need to rely on alternative fallback implementations (e.g. the MFA repository), which might use a completely different underlying algorithm.
 
 ## Usage
 
