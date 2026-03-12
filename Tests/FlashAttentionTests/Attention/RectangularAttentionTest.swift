@@ -1,16 +1,27 @@
 import XCTest
 import FlashAttention
+import MetalASM
 
 final class RectangularAttentionTest: XCTestCase {
   // Tests random permutations of transpose state and input/output sequence
   // length. Just like the old MFA test suite.
   func testCorrectness() throws {
+    // Deterministic BF16 test — isolate which kernel is broken
+    do {
+      var descriptor = AttentionDescriptor()
+      descriptor.lowPrecisionInputs = true
+      descriptor.lowPrecisionIntermediates = true
+      descriptor.matrixDimensions = (row: 32, column: 32, head: 32)
+      descriptor.transposeState = (Q: false, K: false, V: false, O: false)
+      runCorrectnessTest(descriptor: descriptor)
+    }
+
     for _ in 0..<15 {
       var randomVecFloat = SIMD2<Float>.random(in: 0..<1)
       randomVecFloat = randomVecFloat * randomVecFloat * randomVecFloat
       var randomInts = SIMD2<Int>(randomVecFloat * SIMD2(128, 128))
       randomInts.replace(with: .one, where: randomInts .== .zero)
-      
+
       var matrixDimensions = (
         row: UInt32(randomInts[0]),
         column: UInt32.zero,
@@ -20,7 +31,7 @@ final class RectangularAttentionTest: XCTestCase {
       } else {
         matrixDimensions.column = UInt32.random(in: 10...128)
       }
-      
+
       var descriptor = AttentionDescriptor()
       descriptor.lowPrecisionInputs = Bool.random()
       descriptor.lowPrecisionIntermediates = Bool.random()
@@ -62,26 +73,41 @@ private func runCorrectnessTest(descriptor: AttentionDescriptor) {
   let kernelBackwardQuery = createKernel(type: .backwardQuery)
   let kernelBackwardKeyValue = createKernel(type: .backwardKeyValue)
   
-  func createPipeline(kernel: AttentionKernel) -> MTLComputePipelineState {
+  func createPipeline(
+    kernel: AttentionKernel,
+    type: AttentionKernelType
+  ) -> MTLComputePipelineState {
     let device = MTLContext.global.device
-    let source = kernel.createSource()
-    let library = try! device.makeLibrary(source: source, options: nil)
-    
-    let functionConstants = MTLFunctionConstantValues()
-    attentionDesc.setFunctionConstants(functionConstants)
-    let function = try! library.makeFunction(
-      name: "attention", constantValues: functionConstants)
-    
-    // A critical part of the heuristic: force the occupancy to 1024 on M1.
-    let pipelineDesc = MTLComputePipelineDescriptor()
-    pipelineDesc.computeFunction = function
-    pipelineDesc.maxTotalThreadsPerThreadgroup = 1024
-    return try! device.makeComputePipelineState(
-      descriptor: pipelineDesc, options: [], reflection: nil)
+    guard let matrixDimensions = attentionDesc.matrixDimensions,
+          let transposeState = attentionDesc.transposeState else {
+      fatalError("Descriptor was incomplete.")
+    }
+
+    var monoDesc = AttentionKernel.MonolithicDescriptor()
+    monoDesc.R = matrixDimensions.row
+    monoDesc.C = matrixDimensions.column
+    let R = matrixDimensions.row
+    let C = matrixDimensions.column
+    let D = UInt32(matrixDimensions.head)
+    monoDesc.leadingDimensions[.Q] = transposeState.Q ? R : D
+    monoDesc.leadingDimensions[.K] = transposeState.K ? C : D
+    monoDesc.leadingDimensions[.V] = transposeState.V ? C : D
+    monoDesc.leadingDimensions[.O] = transposeState.O ? R : D
+    monoDesc.leadingDimensions[.dO] = transposeState.O ? R : D
+    monoDesc.leadingDimensions[.dV] = transposeState.V ? C : D
+    monoDesc.leadingDimensions[.dK] = transposeState.K ? C : D
+    monoDesc.leadingDimensions[.dQ] = transposeState.Q ? R : D
+
+    let ir = kernel.createSource(descriptor: monoDesc)
+    let metallibData = try! MetalASM.assemble(ir: ir, platform: .macOS(version: 26))
+    let dispatchData = metallibData.withUnsafeBytes { DispatchData(bytes: $0) }
+    let library = try! device.makeLibrary(data: dispatchData)
+    let function = library.makeFunction(name: "attention")!
+    return try! device.makeComputePipelineState(function: function)
   }
-  let pipelineForward = createPipeline(kernel: kernelForward)
-  let pipelineBackwardQuery = createPipeline(kernel: kernelBackwardQuery)
-  let pipelineBackwardKeyValue = createPipeline(kernel: kernelBackwardKeyValue)
+  let pipelineForward = createPipeline(kernel: kernelForward, type: .forward)
+  let pipelineBackwardQuery = createPipeline(kernel: kernelBackwardQuery, type: .backwardQuery)
+  let pipelineBackwardKeyValue = createPipeline(kernel: kernelBackwardKeyValue, type: .backwardKeyValue)
   
   // MARK: - Transpose
   
@@ -212,7 +238,7 @@ private func runCorrectnessTest(descriptor: AttentionDescriptor) {
       encoder.setComputePipelineState(pipeline)
       encoder.setThreadgroupMemoryLength(
         Int(kernel.threadgroupMemoryAllocation), index: 0)
-      
+
       let blockCount = ceilDivide(
         parallelizationDimension, kernel.blockDimensions.parallelization)
       let gridSize = MTLSize(
@@ -326,7 +352,7 @@ private func runCorrectnessTest(descriptor: AttentionDescriptor) {
   // correctness failures. Start by making the O matrix agree on both CPU
   // and GPU. Then, get the remaining operands to match.
 #if false
-  
+
   // Displays a matrix with dimensions N * 1.
   func printVector(_ matrix: [Float]) {
     let sequenceDimension = matrix.count / 1
@@ -421,7 +447,7 @@ private func runCorrectnessTest(descriptor: AttentionDescriptor) {
 #endif
   
   var errorCount: Int = .zero
-  func check(expected: [Float], actual: [Float], tolerance: Float) {
+  func check(expected: [Float], actual: [Float], tolerance: Float, label: String = "") {
     guard expected.count == actual.count else {
       fatalError("Arrays had different length.")
     }
@@ -441,6 +467,7 @@ private func runCorrectnessTest(descriptor: AttentionDescriptor) {
           print("error: \(error) / ~1.000")
           print("- expected[\(i)] = \(expected[i])")
           print("-   actual[\(i)] = \(actual[i])")
+          print("- operand: \(label)")
           print("- test configuration: \(descriptor)")
         }
       }
@@ -451,23 +478,23 @@ private func runCorrectnessTest(descriptor: AttentionDescriptor) {
   if attentionDesc.lowPrecisionInputs ||
       attentionDesc.lowPrecisionIntermediates {
     if matrixDimensions.column <= 20 {
-      check(expected: O, actual: resultO, tolerance: 5e-2)
-      check(expected: L, actual: resultL, tolerance: 1e-2)
-      check(expected: D, actual: resultD, tolerance: 3e-1)
+      check(expected: O, actual: resultO, tolerance: 5e-2, label: "O")
+      check(expected: L, actual: resultL, tolerance: 1e-2, label: "L")
+      check(expected: D, actual: resultD, tolerance: 3e-1, label: "D")
     } else {
-      check(expected: O, actual: resultO, tolerance: 5e-2)
-      check(expected: L, actual: resultL, tolerance: 7e-3)
-      check(expected: D, actual: resultD, tolerance: 1e-1)
-      check(expected: dV, actual: resultDerivativeV, tolerance: 5e-2)
-      check(expected: dK, actual: resultDerivativeK, tolerance: 5e-2)
-      check(expected: dQ, actual: resultDerivativeQ, tolerance: 5e-2)
+      check(expected: O, actual: resultO, tolerance: 5e-2, label: "O")
+      check(expected: L, actual: resultL, tolerance: 7e-3, label: "L")
+      check(expected: D, actual: resultD, tolerance: 1e-1, label: "D_term")
+      check(expected: dV, actual: resultDerivativeV, tolerance: 5e-2, label: "dV")
+      check(expected: dK, actual: resultDerivativeK, tolerance: 5e-2, label: "dK")
+      check(expected: dQ, actual: resultDerivativeQ, tolerance: 5e-2, label: "dQ")
     }
   } else {
-    check(expected: O, actual: resultO, tolerance: 2e-5)
-    check(expected: L, actual: resultL, tolerance: 2e-5)
-    check(expected: D, actual: resultD, tolerance: 2e-5)
-    check(expected: dV, actual: resultDerivativeV, tolerance: 2e-5)
-    check(expected: dK, actual: resultDerivativeK, tolerance: 2e-5)
-    check(expected: dQ, actual: resultDerivativeQ, tolerance: 2e-5)
+    check(expected: O, actual: resultO, tolerance: 2e-5, label: "O")
+    check(expected: L, actual: resultL, tolerance: 2e-5, label: "L")
+    check(expected: D, actual: resultD, tolerance: 2e-5, label: "D_term")
+    check(expected: dV, actual: resultDerivativeV, tolerance: 2e-5, label: "dV")
+    check(expected: dK, actual: resultDerivativeK, tolerance: 2e-5, label: "dK")
+    check(expected: dQ, actual: resultDerivativeQ, tolerance: 2e-5, label: "dQ")
   }
 }

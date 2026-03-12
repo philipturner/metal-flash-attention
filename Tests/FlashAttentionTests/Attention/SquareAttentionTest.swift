@@ -220,9 +220,9 @@ private func validateProblemSize(
   networkDesc.columnDimension = sequenceDimension
   networkDesc.headDimension = headDimension
   let network = Network(descriptor: networkDesc)
-  
+
   // MARK: - Kernels
-  
+
   var attentionDesc = AttentionDescriptor()
   attentionDesc.lowPrecisionInputs = false
   attentionDesc.lowPrecisionIntermediates = false
@@ -231,39 +231,15 @@ private func validateProblemSize(
     column: UInt32(sequenceDimension),
     head: UInt16(headDimension))
   attentionDesc.transposeState = (Q: false, K: false, V: false, O: false)
-  
-  func createKernel(type: AttentionKernelType) -> AttentionKernel {
-    let attentionKernelDesc = attentionDesc.kernelDescriptor(type: type)
-    let attentionKernel = AttentionKernel(descriptor: attentionKernelDesc)
-    return attentionKernel
-  }
-  let kernelForward = createKernel(type: .forward)
-  let kernelBackwardQuery = createKernel(type: .backwardQuery)
-  let kernelBackwardKeyValue = createKernel(type: .backwardKeyValue)
-  
-  func createPipeline(kernel: AttentionKernel) -> MTLComputePipelineState {
-    let device = MTLContext.global.device
-    let source = kernel.createSource()
-    let library = try! device.makeLibrary(source: source, options: nil)
-    
-    let functionConstants = MTLFunctionConstantValues()
-    attentionDesc.setFunctionConstants(functionConstants)
-    let function = try! library.makeFunction(
-      name: "attention", constantValues: functionConstants)
-    
-    // A critical part of the heuristic: force the occupancy to 1024 on M1.
-    let pipelineDesc = MTLComputePipelineDescriptor()
-    pipelineDesc.computeFunction = function
-    pipelineDesc.maxTotalThreadsPerThreadgroup = 1024
-    return try! device.makeComputePipelineState(
-      descriptor: pipelineDesc, options: [], reflection: nil)
-  }
-  let pipelineForward = createPipeline(kernel: kernelForward)
-  let pipelineBackwardQuery = createPipeline(kernel: kernelBackwardQuery)
-  let pipelineBackwardKeyValue = createPipeline(kernel: kernelBackwardKeyValue)
-  
+
+  AttentionKernel.register(descriptor: attentionDesc)
+  let cache = AttentionKernel.pipelineCache[attentionDesc]!
+  let (kernelForward, pipelineForward) = cache[.forward]!
+  let (kernelBackwardQuery, pipelineBackwardQuery) = cache[.backwardQuery]!
+  let (kernelBackwardKeyValue, pipelineBackwardKeyValue) = cache[.backwardKeyValue]!
+
   // MARK: - Buffers
-  
+
   // Utility function to make buffer initialization more concise.
   func createBuffer(
     _ array: [Float],
@@ -275,7 +251,7 @@ private func validateProblemSize(
     }
     return MTLContext.global.createBuffer(array, precision)
   }
-  
+
   let operandSize = sequenceDimension * headDimension
   var resultO = [Float](repeating: .zero, count: operandSize)
   var resultL = [Float](repeating: .zero, count: sequenceDimension)
@@ -284,22 +260,23 @@ private func validateProblemSize(
   var resultDerivativeK = [Float](repeating: .zero, count: operandSize)
   var resultDerivativeQ = [Float](repeating: .zero, count: operandSize)
   resultO[0] = .nan
-  
+
+  // Create all 10 buffers (unused ones get a dummy 4-byte buffer).
   let bufferQ = createBuffer(network.Q, .Q)
   let bufferK = createBuffer(network.K, .K)
   let bufferV = createBuffer(network.V, .V)
   let bufferDerivativeO = createBuffer(network.dO, .dO)
-  
+
   let bufferL = createBuffer(resultL, .L)
   let bufferD = createBuffer(resultD, .D)
-  
+
   let bufferO = createBuffer(resultO, .O)
   let bufferDerivativeV = createBuffer(resultDerivativeV, .dV)
   let bufferDerivativeK = createBuffer(resultDerivativeK, .dK)
   let bufferDerivativeQ = createBuffer(resultDerivativeQ, .dQ)
-  
+
   // MARK: - GPU Commands
-  
+
   // - Parameter dispatchCount: Number of times to duplicate the FWD / BWD
   //                            combined pass.
   // - Returns: Latency of the entire command buffer, in seconds.
@@ -310,11 +287,11 @@ private func validateProblemSize(
     let commandQueue = MTLContext.global.commandQueue
     let commandBuffer = commandQueue.makeCommandBuffer()!
     let encoder = commandBuffer.makeComputeCommandEncoder()!
-    
+
     func ceilDivide(_ target: Int, _ granularity: UInt16) -> Int {
       (target + Int(granularity) - 1) / Int(granularity)
     }
-    
+
     // Bind all necessary MTLBuffer arguments before calling this function.
     func dispatch(
       kernel: AttentionKernel,
@@ -324,7 +301,7 @@ private func validateProblemSize(
       encoder.setComputePipelineState(pipeline)
       encoder.setThreadgroupMemoryLength(
         Int(kernel.threadgroupMemoryAllocation), index: 0)
-      
+
       let blockCount = ceilDivide(
         parallelizationDimension, kernel.blockDimensions.parallelization)
       let gridSize = MTLSize(
@@ -577,38 +554,14 @@ private func profileProblemSize(
     head: UInt16(headDimension))
   attentionDesc.transposeState = (Q: false, K: false, V: false, O: false)
   
-  func createKernel(type: AttentionKernelType) -> AttentionKernel {
-    let attentionKernelDesc = attentionDesc.kernelDescriptor(type: type)
-    let attentionKernel = AttentionKernel(descriptor: attentionKernelDesc)
-    return attentionKernel
-  }
-  let kernelForward = createKernel(type: .forward)
-  let kernelBackwardQuery = createKernel(type: .backwardQuery)
-  let kernelBackwardKeyValue = createKernel(type: .backwardKeyValue)
-  
-  func createPipeline(kernel: AttentionKernel) -> MTLComputePipelineState {
-    let device = MTLContext.global.device
-    let source = kernel.createSource()
-    let library = try! device.makeLibrary(source: source, options: nil)
-    
-    let functionConstants = MTLFunctionConstantValues()
-    attentionDesc.setFunctionConstants(functionConstants)
-    let function = try! library.makeFunction(
-      name: "attention", constantValues: functionConstants)
-    
-    // A critical part of the heuristic: force the occupancy to 1024 on M1.
-    let pipelineDesc = MTLComputePipelineDescriptor()
-    pipelineDesc.computeFunction = function
-    pipelineDesc.maxTotalThreadsPerThreadgroup = 1024
-    return try! device.makeComputePipelineState(
-      descriptor: pipelineDesc, options: [], reflection: nil)
-  }
-  let pipelineForward = createPipeline(kernel: kernelForward)
-  let pipelineBackwardQuery = createPipeline(kernel: kernelBackwardQuery)
-  let pipelineBackwardKeyValue = createPipeline(kernel: kernelBackwardKeyValue)
-  
+  AttentionKernel.register(descriptor: attentionDesc)
+  let cache = AttentionKernel.pipelineCache[attentionDesc]!
+  let (kernelForward, pipelineForward) = cache[.forward]!
+  let (kernelBackwardQuery, pipelineBackwardQuery) = cache[.backwardQuery]!
+  let (kernelBackwardKeyValue, pipelineBackwardKeyValue) = cache[.backwardKeyValue]!
+
   // MARK: - Buffers
-  
+
   // Utility function to make buffer initialization more concise.
   func createBuffer(
     _ array: [Float],
@@ -620,7 +573,7 @@ private func profileProblemSize(
     }
     return MTLContext.global.createBuffer(array, precision)
   }
-  
+
   let operandSize = sequenceDimension * headDimension
   var resultO = [Float](repeating: .zero, count: operandSize)
   let resultL = [Float](repeating: .zero, count: sequenceDimension)
@@ -629,22 +582,22 @@ private func profileProblemSize(
   let resultDerivativeK = [Float](repeating: .zero, count: operandSize)
   let resultDerivativeQ = [Float](repeating: .zero, count: operandSize)
   resultO[0] = .nan
-  
+
   let bufferQ = createBuffer(network.Q, .Q)
   let bufferK = createBuffer(network.K, .K)
   let bufferV = createBuffer(network.V, .V)
   let bufferDerivativeO = createBuffer(network.dO, .dO)
-  
+
   let bufferL = createBuffer(resultL, .L)
   let bufferD = createBuffer(resultD, .D)
-  
+
   let bufferO = createBuffer(resultO, .O)
   let bufferDerivativeV = createBuffer(resultDerivativeV, .dV)
   let bufferDerivativeK = createBuffer(resultDerivativeK, .dK)
   let bufferDerivativeQ = createBuffer(resultDerivativeQ, .dQ)
-  
+
   // MARK: - GPU Commands
-  
+
   // - Parameter dispatchCount: Number of times to duplicate the FWD / BWD
   //                            combined pass.
   // - Returns: Latency of the entire command buffer, in seconds.
@@ -655,11 +608,11 @@ private func profileProblemSize(
     let commandQueue = MTLContext.global.commandQueue
     let commandBuffer = commandQueue.makeCommandBuffer()!
     let encoder = commandBuffer.makeComputeCommandEncoder()!
-    
+
     func ceilDivide(_ target: Int, _ granularity: UInt16) -> Int {
       (target + Int(granularity) - 1) / Int(granularity)
     }
-    
+
     // Bind all necessary MTLBuffer arguments before calling this function.
     func dispatch(
       kernel: AttentionKernel,
@@ -669,7 +622,7 @@ private func profileProblemSize(
       encoder.setComputePipelineState(pipeline)
       encoder.setThreadgroupMemoryLength(
         Int(kernel.threadgroupMemoryAllocation), index: 0)
-      
+
       let blockCount = ceilDivide(
         parallelizationDimension, kernel.blockDimensions.parallelization)
       let gridSize = MTLSize(
@@ -683,20 +636,20 @@ private func profileProblemSize(
       encoder.dispatchThreadgroups(
         gridSize, threadsPerThreadgroup: groupSize)
     }
-    
+
     encoder.setBuffer(bufferQ, offset: 0, index: 0)
     encoder.setBuffer(bufferK, offset: 0, index: 1)
     encoder.setBuffer(bufferV, offset: 0, index: 2)
     encoder.setBuffer(bufferO, offset: 0, index: 3)
-    
+
     encoder.setBuffer(bufferL, offset: 0, index: 4)
     encoder.setBuffer(bufferD, offset: 0, index: 5)
-    
+
     encoder.setBuffer(bufferDerivativeO, offset: 0, index: 6)
     encoder.setBuffer(bufferDerivativeV, offset: 0, index: 7)
     encoder.setBuffer(bufferDerivativeK, offset: 0, index: 8)
     encoder.setBuffer(bufferDerivativeQ, offset: 0, index: 9)
-    
+
     for _ in 0..<dispatchCount {
       switch benchmarkedKernel {
       case .forward:

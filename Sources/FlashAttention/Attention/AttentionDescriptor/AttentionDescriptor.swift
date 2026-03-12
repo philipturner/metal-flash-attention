@@ -140,10 +140,47 @@ extension AttentionDescriptor {
     guard let matrixDimensions = self.matrixDimensions else {
       fatalError("Descriptor was incomplete.")
     }
-    
+
     var rowDimension = matrixDimensions.row
     var columnDimension = matrixDimensions.column
     constants.setConstantValue(&rowDimension, type: .uint, index: 0)
     constants.setConstantValue(&columnDimension, type: .uint, index: 1)
+  }
+}
+
+// MARK: - Hashable
+
+struct AttentionKey: Equatable, Hashable {
+  var lowPrecisionInputs: UInt8
+  var lowPrecisionIntermediates: UInt8
+  var matrixDimensions: SIMD4<UInt32> // row, column, head, 0
+  var transposeState: SIMD4<UInt8>    // Q, K, V, O
+
+  init(copying source: AttentionDescriptor) {
+    lowPrecisionInputs = source.lowPrecisionInputs ? 1 : 0
+    lowPrecisionIntermediates = source.lowPrecisionIntermediates ? 1 : 0
+    if let dims = source.matrixDimensions {
+      matrixDimensions = SIMD4(dims.row, dims.column, UInt32(dims.head), 0)
+    } else {
+      matrixDimensions = SIMD4(repeating: .max)
+    }
+    if let ts = source.transposeState {
+      transposeState = SIMD4(ts.Q ? 1 : 0, ts.K ? 1 : 0, ts.V ? 1 : 0, ts.O ? 1 : 0)
+    } else {
+      transposeState = SIMD4(repeating: .max)
+    }
+  }
+}
+
+extension AttentionDescriptor: Hashable, Equatable {
+  public static func == (
+    lhs: AttentionDescriptor,
+    rhs: AttentionDescriptor
+  ) -> Bool {
+    AttentionKey(copying: lhs) == AttentionKey(copying: rhs)
+  }
+
+  public func hash(into hasher: inout Hasher) {
+    hasher.combine(AttentionKey(copying: self))
   }
 }

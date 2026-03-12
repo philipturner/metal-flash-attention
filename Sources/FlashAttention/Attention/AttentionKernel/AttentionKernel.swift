@@ -23,7 +23,11 @@ public struct AttentionKernel {
     parallelization: UInt16, traversal: UInt16, head: UInt16)
   var headDimension: UInt16
   public var threadgroupMemoryAllocation: UInt16
-  
+
+  /// For forward double-buffering: size of one TG slot (K or V).
+  /// The total TG allocation is 2 * forwardTGSlotSize for forward kernels.
+  public var forwardTGSlotSize: UInt16
+
   public init(descriptor: AttentionKernelDescriptor) {
     guard let blockDimensions = descriptor.blockDimensions,
           let headDimension = descriptor.headDimension,
@@ -43,7 +47,26 @@ public struct AttentionKernel {
     
     self.blockDimensions = blockDimensions
     self.headDimension = headDimension
-    
+
+    // Compute forward TG slot size for double-buffering
+    if type == .forward {
+      var slotSize: UInt16 = 0
+      var kBytes: UInt16 = 1
+      kBytes *= blockDimensions.traversal
+      kBytes *= blockDimensions.head
+      kBytes *= UInt16(descriptor.memoryPrecisions[.K]!.size)
+      slotSize = max(slotSize, kBytes)
+
+      var vBytes: UInt16 = 1
+      vBytes *= blockDimensions.traversal
+      vBytes *= blockDimensions.head
+      vBytes *= UInt16(descriptor.memoryPrecisions[.V]!.size)
+      slotSize = max(slotSize, vBytes)
+      forwardTGSlotSize = slotSize
+    } else {
+      forwardTGSlotSize = .zero
+    }
+
     // Pick the threadgroup memory allocation size.
     threadgroupMemoryAllocation = .zero
     threadgroupMemoryAllocation = createThreadgroupMemoryAllocation()
@@ -302,14 +325,14 @@ extension AttentionKernel {
     // Allocate memory for the GEMM operands.
     switch type {
     case .forward:
-      // S = Q * K^T
+      // Double-buffer: K uses TG slot A, V uses TG slot B.
+      // Both slots are forwardTGSlotSize bytes. Total = 2 * slotSize.
+      output = 2 * forwardTGSlotSize
+
+      // Also ensure enough for cleanup store (Q/O parallelization operands)
       allocateParallelization(.Q)
-      allocateTraversal(.K)
-      
-      // O += P * V
       allocateParallelization(.O)
-      allocateTraversal(.V)
-      
+
     case .backwardQuery:
       // S = Q * K^T
       allocateParallelization(.Q)
