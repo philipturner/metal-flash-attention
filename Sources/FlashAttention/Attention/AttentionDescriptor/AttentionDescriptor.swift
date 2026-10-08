@@ -126,6 +126,38 @@ extension AttentionDescriptor {
     output.transposeState = createTransposeState()
     output.type = type
     
+    // Fast forward path: register-resident Q, double-buffered K/V.
+    // Auto-gated for non-quantized forward kernels with head_dim <= 128
+    // (multiple of 8) whose double-buffered K/V tiles fit in threadgroup memory.
+    if type == .forward, let matrixDimensions {
+      let device = MTLContext.global.device
+      let head = Int(matrixDimensions.head)
+      let seq = Int(max(matrixDimensions.row, matrixDimensions.column))
+      let supported: Set<GEMMOperandPrecision> = [.FP32, .FP16, .BF16]
+      let isEligible = supported.contains(memoryPrecisions[.Q] ?? .FP32)
+        && supported.contains(memoryPrecisions[.O] ?? .FP32)
+        && memoryPrecisions[.K] == memoryPrecisions[.V]
+        && supported.contains(memoryPrecisions[.K] ?? .FP32)
+        && head > 0 && head % 8 == 0 && head <= 128 && seq >= 96
+      if isEligible {
+        let elemSize = memoryPrecisions[.K]!.size
+        let maxTG = Int(device.maxThreadgroupMemoryLength)
+        var fastTraversal: UInt16 = 0
+        for candidate in [UInt16(64), 32, 16] {
+          let bytes = 2 * Int(candidate) * head * elemSize * 2
+          if bytes + 1024 <= maxTG { fastTraversal = candidate; break }
+        }
+        if fastTraversal > 0 {
+          output.preferFastForward = true
+          output.blockDimensions = (
+            parallelization: UInt16(64),
+            traversal: fastTraversal,
+            head: output.blockDimensions!.head
+          )
+        }
+      }
+    }
+
     return output
   }
 }

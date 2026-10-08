@@ -42,6 +42,10 @@ public struct AttentionKernelDescriptor {
   public var transposeState: [AttentionOperand: Bool] = [:]
   
   public var type: AttentionKernelType?
+
+  /// Opt into the fast forward path: register-resident Q, double-buffered K/V.
+  public var softmaxScale: Float?
+  public var preferFastForward: Bool = false
   
   public init() {
     

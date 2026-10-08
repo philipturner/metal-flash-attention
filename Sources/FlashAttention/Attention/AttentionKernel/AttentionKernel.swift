@@ -17,6 +17,7 @@ public struct AttentionKernel {
   var preferAsyncLoad: Bool
   var registerPrecisions: [AttentionOperand: GEMMOperandPrecision]
   var transposeState: [AttentionOperand: Bool]
+  var preferFastForward: Bool
   
   // Layout of the data in registers and threadgroup memory.
   public var blockDimensions: (
@@ -42,6 +43,7 @@ public struct AttentionKernel {
     self.transposeState = descriptor.transposeState
     
     self.blockDimensions = blockDimensions
+    preferFastForward = descriptor.preferFastForward
     self.headDimension = headDimension
     
     // Pick the threadgroup memory allocation size.
@@ -270,6 +272,13 @@ extension AttentionKernel {
   }
   
   private func createThreadgroupMemoryAllocation() -> UInt16 {
+    // Fast forward path: K/V double buffers only (Q and O stay in registers).
+    if preferFastForward {
+      let elemSize = Int(memoryPrecisions[.K]!.size)
+      let tileElems = Int(blockDimensions.traversal) * Int(paddedHeadDimension)
+      let bytes = 2 * tileElems * elemSize * 2
+      return UInt16(min(bytes, Int(UInt16.max)))
+    }
     var output: UInt16 = .zero
     
     // Sets the allocation to the maximum of this and the previous allocated

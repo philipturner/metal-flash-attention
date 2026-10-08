@@ -12,7 +12,7 @@ extension AttentionKernel {
     func createLoop() -> String {
       switch type {
       case .forward:
-        return loopForward()
+        return useFastForwardPath ? loopForwardFast() : loopForward()
       case .backwardQuery:
         return loopBackwardQuery()
       case .backwardKeyValue:
